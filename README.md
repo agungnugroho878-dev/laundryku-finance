@@ -1,23 +1,73 @@
 # LaundryKu Finance
 
-Aplikasi laporan keuangan sederhana untuk UMKM laundry. Cukup catat **kas masuk** dan **kas keluar** sehari-hari — aplikasi otomatis menyusun **Laporan Laba Rugi** dan **Neraca** di baliknya. Semua data tersimpan langsung di perangkat (offline, tidak ada server), dan aplikasinya bisa dipasang di HP, tablet, maupun laptop.
+Aplikasi laporan keuangan untuk UMKM laundry — kini **online** (Firebase), sehingga data yang sama bisa diakses dari HP, tablet, maupun laptop, oleh Owner dan Pegawai sekaligus, secara real-time.
+
+---
+
+## 0. Setup Firebase (WAJIB dilakukan sebelum aplikasi bisa dipakai)
+
+Kalau Anda belum menyelesaikan semua langkah ini di Firebase Console (console.firebase.google.com, project **laundryku-finance**), aplikasi tidak akan bisa login/menyimpan data:
+
+1. **Authentication** → Sign-in method → aktifkan **Email/Password**
+2. **Firestore Database** → Create database (kalau belum) → mode **production**
+3. **Firestore Database → Rules** tab → hapus rules default, ganti dengan yang di bawah ini → **Publish**:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function isOwner() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == uid && request.resource.data.role == 'pegawai';
+      allow update, delete: if isOwner();
+    }
+
+    match /transactions/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isOwner();
+    }
+
+    match /categories/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /settings/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /members/{id} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}
+```
+
+4. **Daftar akun Owner pertama**: buka aplikasi → klik "Daftar" → isi nama, email, password → daftar (akun baru otomatis jadi role **pegawai** dulu)
+5. **Naikkan jadi Owner**: buka Firestore Database → koleksi **`users`** → cari dokumen dengan email Anda → klik field `role` → ubah nilainya dari `pegawai` jadi `owner` → Save
+6. Logout dari aplikasi lalu login lagi — sekarang akses Owner (Laporan, Pengaturan, hapus transaksi, dll) sudah aktif
+
+Untuk akun pegawai selanjutnya: mereka tinggal buka aplikasi → **Daftar** sendiri → otomatis dapat role Pegawai (akses terbatas: catat transaksi, lihat member, tidak bisa lihat Laporan keuangan atau ubah Pengaturan).
 
 ---
 
 ## 1. Cara pakai cepat
 
-1. Buka `index.html` (lihat cara menjalankan di bawah).
-2. Buka menu **Atur → Saldo Awal Pembukuan** dan isi saldo kas/aset/utang saat ini (boleh dikosongkan/0 kalau baru mulai dari nol).
-3. Mulai catat transaksi lewat tombol **+ Kas Masuk** / **+ Kas Keluar** di Beranda atau Transaksi.
-4. Untuk transaksi kategori **Pendapatan Jasa Cuci**, akan muncul kolom opsional Nama Pelanggan, No. WhatsApp, dan Berat (kg) — isi ini untuk bisa langsung **kirim struk via WhatsApp** setelah transaksi tersimpan (atau kirim ulang kapan saja lewat ikon chat di daftar transaksi).
-5. Buka menu **Laporan** untuk melihat Laba Rugi (per periode) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV**.
-6. Cadangkan data secara berkala lewat **Atur → Cadangkan Data (JSON)** — file ini bisa dipakai untuk memulihkan data di HP lain.
-
-### Rencana pengembangan selanjutnya
-Fitur berikut butuh database online (bukan lagi offline-only) karena harus dipakai bersama oleh pegawai & owner dari perangkat berbeda: akun login pegawai/owner, tracking status cucian, dan member/loyalty pelanggan. Ini akan dibangun di fase berikutnya setelah backend (Firebase/Supabase) disiapkan.
+1. Buka aplikasinya → login (atau daftar kalau belum punya akun)
+2. **Owner**: buka menu **Atur → Saldo Awal Pembukuan** dan isi saldo kas/aset/utang saat ini (boleh dikosongkan/0 kalau baru mulai dari nol)
+3. Mulai catat transaksi lewat tombol **+ Kas Masuk** / **+ Kas Keluar** di Beranda atau Transaksi
+4. Untuk transaksi kategori **Pendapatan Jasa Cuci** atau **Pendapatan Self-Service**, akan muncul kolom opsional Nama Pelanggan & No. WhatsApp — isi ini untuk bisa langsung **kirim struk via WhatsApp** setelah transaksi tersimpan
+5. Untuk self-service: setiap 10x kunjungan (dengan nomor WA diisi), pelanggan otomatis dapat 1x gratis cuci+kering — progress-nya bisa dilihat di tab **Member**
+6. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV**
 
 ### Menjalankan di komputer (untuk dicoba dulu)
-Karena aplikasi ini pakai IndexedDB & Service Worker, buka lewat server lokal, bukan langsung double-click file:
+Karena aplikasi ini pakai Service Worker dan Firebase, buka lewat server lokal (bukan langsung double-click file), dan pastikan komputer terhubung internet (untuk login & sinkronisasi data):
 
 ```bash
 cd laundryku
@@ -60,7 +110,7 @@ bubblewrap build
 1. Daftar di **https://play.google.com/console** (biaya pendaftaran sekali ± USD 25).
 2. Buat aplikasi baru, isi Store Listing (nama, deskripsi, screenshot — bisa screenshot dari aplikasi ini langsung di HP).
 3. Upload file `.aab` dari Langkah B ke bagian **Production → Create new release**.
-4. Isi kuesioner **Content Rating**, **Data Safety** (jelaskan bahwa data keuangan hanya disimpan lokal di perangkat, tidak dikirim ke server manapun — karena memang begitu adanya).
+4. Isi kuesioner **Content Rating**, **Data Safety** (jelaskan bahwa data keuangan disimpan online di Firebase/Firestore milik Anda sendiri, terenkripsi dalam pengiriman, dan hanya bisa diakses akun yang login).
 5. Submit untuk review. Biasanya butuh beberapa hari sampai disetujui Google.
 
 ### Ikon & splash screen
@@ -90,12 +140,13 @@ Untuk UMKM laundry pada umumnya, penyederhanaan ini sudah memadai. Jika kebutuha
 laundryku/
 ├── index.html          # halaman utama
 ├── manifest.json        # konfigurasi PWA (nama, ikon, warna)
-├── sw.js                 # service worker (mode offline)
+├── sw.js                 # service worker (cache offline untuk file aplikasi)
 ├── css/styles.css        # desain aplikasi
-├── js/db.js               # penyimpanan data (IndexedDB)
+├── js/firebase-config.js   # koneksi ke project Firebase Anda
+├── js/db.js               # penyimpanan data (Firestore)
 ├── js/reports.js          # mesin Laba Rugi & Neraca
 ├── js/app.js               # tampilan & interaksi
 └── icons/                  # ikon aplikasi
 ```
 
-Semua data pengguna disimpan di **IndexedDB milik browser/perangkat masing-masing** — tidak ada backend, tidak ada biaya server, dan cocok dipakai di banyak toko laundry secara independen (masing-masing device punya datanya sendiri, kecuali di-backup/restore manual lewat file JSON).
+Semua data (transaksi, member, kategori, saldo) tersimpan di **Firestore** milik project Firebase Anda sendiri — bukan server milik siapa pun yang lain. Data yang sama otomatis muncul di semua perangkat yang login, real-time. Firestore juga menyimpan cache lokal, jadi aplikasi tetap bisa dipakai singkat saat offline dan otomatis sinkron lagi saat online.

@@ -1,11 +1,8 @@
-/* LaundryKu Finance — data layer (IndexedDB)
- * Every transaction is cash in/out from the user's point of view, but each
- * category carries an "account" tag so we can generate a real Laba Rugi
- * (Income Statement) and Neraca (Balance Sheet) behind the scenes.
+/* LaundryKu Finance — data layer (Firestore edition)
+ * Same public API as before (DB.getTransactions, DB.addTransaction, etc.)
+ * so app.js and reports.js work unchanged. Internally now backed by
+ * Firestore instead of IndexedDB, so data syncs across every device/user.
  */
-
-const DB_NAME = "laundryku-db";
-const DB_VERSION = 2;
 
 const ACCOUNT = {
   KAS: "kas",
@@ -21,7 +18,6 @@ const ACCOUNT = {
 };
 
 const DEFAULT_CATEGORIES = [
-  // Kas masuk
   { id: "jasa-cuci", name: "Pendapatan Jasa Cuci", type: "in", account: ACCOUNT.PENDAPATAN, system: true },
   { id: "self-service", name: "Pendapatan Self-Service (Cuci+Kering)", type: "in", account: ACCOUNT.PENDAPATAN, system: true },
   { id: "pendapatan-lain", name: "Pendapatan Lain-lain", type: "in", account: ACCOUNT.PENDAPATAN, system: true },
@@ -29,7 +25,6 @@ const DEFAULT_CATEGORIES = [
   { id: "pinjaman-masuk", name: "Pinjaman/Modal Bank Masuk", type: "in", account: ACCOUNT.UTANG_BANK, system: true },
   { id: "setor-modal", name: "Setor Modal Usaha", type: "in", account: ACCOUNT.MODAL, system: true },
 
-  // Kas keluar
   { id: "bahan-baku", name: "Beli Bahan Baku & Perlengkapan", type: "out", account: ACCOUNT.BEBAN, system: true },
   { id: "gaji", name: "Gaji Karyawan", type: "out", account: ACCOUNT.BEBAN, system: true },
   { id: "listrik-air", name: "Listrik, Air & Internet", type: "out", account: ACCOUNT.BEBAN, system: true },
@@ -41,158 +36,102 @@ const DEFAULT_CATEGORIES = [
   { id: "prive", name: "Ambil Pribadi (Prive)", type: "out", account: ACCOUNT.PRIVE, system: true }
 ];
 
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains("transactions")) {
-        const store = db.createObjectStore("transactions", { keyPath: "id", autoIncrement: true });
-        store.createIndex("date", "date");
-        store.createIndex("categoryId", "categoryId");
-      }
-      if (!db.objectStoreNames.contains("categories")) {
-        db.createObjectStore("categories", { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings", { keyPath: "key" });
-      }
-      if (!db.objectStoreNames.contains("members")) {
-        db.createObjectStore("members", { keyPath: "phone" });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
+// Simple in-memory cache for the current session, invalidated on writes.
+// Keeps the app fast and avoids re-reading the whole transactions list
+// from Firestore on every render (dashboard + laporan both need it).
+let _txCache = null;
 
-let dbPromise = null;
-function getDB() {
-  if (!dbPromise) dbPromise = openDB();
-  return dbPromise;
-}
-
-async function tx(storeName, mode) {
-  const db = await getDB();
-  return db.transaction(storeName, mode).objectStore(storeName);
-}
+function invalidateTxCache(){ _txCache = null; }
 
 const DB = {
   ACCOUNT,
 
-  async init() {
-    const store = await tx("categories", "readwrite");
-    const existing = await new Promise((res) => {
-      const req = store.getAll();
-      req.onsuccess = () => res(req.result);
-    });
-    if (existing.length === 0) {
-      for (const cat of DEFAULT_CATEGORIES) store.put(cat);
+  async init(){
+    const snap = await fs.collection("categories").limit(1).get();
+    if(snap.empty){
+      const batch = fs.batch();
+      for(const cat of DEFAULT_CATEGORIES){
+        batch.set(fs.collection("categories").doc(cat.id), cat);
+      }
+      await batch.commit();
     }
   },
 
-  async getSetting(key, fallback = null) {
-    const store = await tx("settings", "readonly");
-    return new Promise((resolve) => {
-      const req = store.get(key);
-      req.onsuccess = () => resolve(req.result ? req.result.value : fallback);
-    });
+  async getSetting(key, fallback = null){
+    const doc = await fs.collection("settings").doc(key).get();
+    return doc.exists ? doc.data().value : fallback;
   },
 
-  async setSetting(key, value) {
-    const store = await tx("settings", "readwrite");
-    return new Promise((resolve) => {
-      const req = store.put({ key, value });
-      req.onsuccess = () => resolve(true);
-    });
+  async setSetting(key, value){
+    await fs.collection("settings").doc(key).set({ value });
+    return true;
   },
 
-  async getCategories() {
-    const store = await tx("categories", "readonly");
-    return new Promise((resolve) => {
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result);
-    });
+  async getCategories(){
+    const snap = await fs.collection("categories").get();
+    return snap.docs.map(d => d.data());
   },
 
-  async addCategory(cat) {
-    const store = await tx("categories", "readwrite");
-    return new Promise((resolve) => {
-      const req = store.put(cat);
-      req.onsuccess = () => resolve(true);
-    });
+  async addCategory(cat){
+    await fs.collection("categories").doc(cat.id).set(cat);
+    return true;
   },
 
-  async deleteCategory(id) {
-    const store = await tx("categories", "readwrite");
-    return new Promise((resolve) => {
-      const req = store.delete(id);
-      req.onsuccess = () => resolve(true);
-    });
+  async deleteCategory(id){
+    await fs.collection("categories").doc(id).delete();
+    return true;
   },
 
-  async addTransaction(t) {
-    const store = await tx("transactions", "readwrite");
-    return new Promise((resolve, reject) => {
-      const req = store.add(t);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+  async addTransaction(t){
+    const payload = {
+      ...t,
+      createdBy: auth.currentUser ? auth.currentUser.uid : null,
+      createdByEmail: auth.currentUser ? auth.currentUser.email : null,
+      createdAt: Date.now()
+    };
+    const ref = await fs.collection("transactions").add(payload);
+    invalidateTxCache();
+    return ref.id;
   },
 
-  async deleteTransaction(id) {
-    const store = await tx("transactions", "readwrite");
-    return new Promise((resolve) => {
-      const req = store.delete(id);
-      req.onsuccess = () => resolve(true);
-    });
+  async deleteTransaction(id){
+    await fs.collection("transactions").doc(String(id)).delete();
+    invalidateTxCache();
+    return true;
   },
 
-  async getTransactions() {
-    const store = await tx("transactions", "readonly");
-    return new Promise((resolve) => {
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id));
-    });
+  async getTransactions(){
+    if(_txCache) return _txCache;
+    const snap = await fs.collection("transactions").get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => b.date.localeCompare(a.date) || (b.createdAt||0) - (a.createdAt||0));
+    _txCache = list;
+    return list;
   },
 
-  async getTransactionsInRange(startDate, endDate) {
+  async getTransactionsInRange(startDate, endDate){
     const all = await this.getTransactions();
     return all.filter((t) => t.date >= startDate && t.date <= endDate);
   },
 
-  async getMember(phone) {
+  async getMember(phone){
     if(!phone) return null;
-    const store = await tx("members", "readonly");
-    return new Promise((resolve) => {
-      const req = store.get(phone);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    });
+    const doc = await fs.collection("members").doc(phone).get();
+    return doc.exists ? doc.data() : null;
   },
 
-  async getAllMembers() {
-    const store = await tx("members", "readonly");
-    return new Promise((resolve) => {
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => resolve([]);
-    });
+  async getAllMembers(){
+    const snap = await fs.collection("members").get();
+    return snap.docs.map(d => d.data());
   },
 
-  async upsertMember(rec) {
-    const store = await tx("members", "readwrite");
-    return new Promise((resolve) => {
-      const req = store.put(rec);
-      req.onsuccess = () => resolve(true);
-    });
+  async upsertMember(rec){
+    await fs.collection("members").doc(rec.phone).set(rec);
+    return true;
   },
 
-  async deleteMember(phone) {
-    const store = await tx("members", "readwrite");
-    return new Promise((resolve) => {
-      const req = store.delete(phone);
-      req.onsuccess = () => resolve(true);
-    });
+  async deleteMember(phone){
+    await fs.collection("members").doc(phone).delete();
+    return true;
   }
 };

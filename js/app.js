@@ -22,6 +22,9 @@ const state = {
   page: "dashboard",
   businessName: "Usaha Laundry Saya",
   categories: [],
+  role: null,
+  user: null,
+  userName: "",
   txForm: { type: "in" },
   reportTab: "labarugi",
   labaRugiRange: { start: Reports.startOfMonth(), end: Reports.todayStr() },
@@ -64,8 +67,13 @@ const NAV_ITEMS = [
   { id:"pengaturan", label:"Atur", icon:ICONS.settings }
 ];
 
+function visibleNavItems(){
+  if(state.role === "owner") return NAV_ITEMS;
+  return NAV_ITEMS.filter(i => i.id !== "laporan");
+}
+
 function renderNav(){
-  const items = NAV_ITEMS.map(i => `
+  const items = visibleNavItems().map(i => `
     <button data-page="${i.id}" class="${state.page===i.id?'active':''}">
       ${i.icon}<span>${i.label}</span>
     </button>`).join("");
@@ -77,6 +85,7 @@ function renderNav(){
 }
 
 async function render(){
+  if(state.page === "laporan" && state.role !== "owner") state.page = "dashboard";
   renderNav();
   document.getElementById("bizName").textContent = state.businessName;
   const main = document.getElementById("appMain");
@@ -84,7 +93,7 @@ async function render(){
   if(state.page === "dashboard") main.innerHTML = await pageDashboard();
   if(state.page === "transaksi") main.innerHTML = await pageTransaksi();
   if(state.page === "member") main.innerHTML = await pageMember();
-  if(state.page === "laporan") main.innerHTML = await pageLaporan();
+  if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
   if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
   bindPageEvents();
   if(state.page === "dashboard") runDashboardCountUps();
@@ -170,7 +179,7 @@ async function pageTransaksi(){
     <div class="card">
       <div class="card-title">Semua Transaksi (${txs.length})</div>
       ${txs.length===0 ? emptyState("Belum ada transaksi tercatat.") :
-        txs.map(t=>txItemHtml(t, cats, true)).join("")}
+        txs.map(t=>txItemHtml(t, cats, state.role==='owner')).join("")}
     </div>
   `;
 }
@@ -313,10 +322,36 @@ function fmtDate(d){
 /* ---------------- Pengaturan ---------------- */
 
 async function pagePengaturan(){
-  const opening = await Reports.getOpeningBalances();
+  const isOwner = state.role === "owner";
+  const opening = isOwner ? await Reports.getOpeningBalances() : null;
   const customCats = state.categories.filter(c=>!c.system);
 
+  const accountCard = `
+    <h3 class="section-title">Akun</h3>
+    <div class="card">
+      <div class="row-between">
+        <div>
+          <div style="font-weight:700;">${state.userName || state.user?.email || ""}</div>
+          <div class="small muted">${state.user?.email || ""} · ${isOwner ? "Owner" : "Pegawai"}</div>
+        </div>
+        <button class="btn btn-outline" data-action="logout">Keluar</button>
+      </div>
+    </div>
+  `;
+
+  if(!isOwner){
+    return `
+      ${accountCard}
+      <h3 class="section-title">Tentang</h3>
+      <div class="card small muted">
+        LaundryKu Finance — aplikasi laporan keuangan UMKM laundry. Laporan keuangan & pengaturan lanjutan hanya bisa diakses oleh akun Owner.
+      </div>
+    `;
+  }
+
   return `
+    ${accountCard}
+
     <h3 class="section-title">Profil Usaha</h3>
     <div class="card">
       <div class="field">
@@ -352,6 +387,11 @@ async function pagePengaturan(){
       </div>
     </div>
 
+    <h3 class="section-title">Pegawai</h3>
+    <div class="card small muted">
+      Untuk menambah akun pegawai: minta pegawai mendaftar sendiri lewat halaman "Daftar" di layar login (otomatis dapat akses terbatas). Anda tidak perlu melakukan apa pun setelah itu — akun baru otomatis muncul dengan role Pegawai.
+    </div>
+
     <h3 class="section-title">Data</h3>
     <div class="card">
       <div class="btn-row" style="margin-bottom:10px;">
@@ -363,7 +403,7 @@ async function pagePengaturan(){
 
     <h3 class="section-title">Tentang</h3>
     <div class="card small muted">
-      LaundryKu Finance v1.0 — aplikasi laporan keuangan untuk UMKM laundry. Semua data tersimpan di perangkat ini (offline), tidak dikirim ke server manapun.
+      LaundryKu Finance v1.0 — aplikasi laporan keuangan untuk UMKM laundry. Data tersimpan online (Firestore) dan tersinkron ke semua perangkat yang login.
     </div>
   `;
 }
@@ -721,7 +761,7 @@ function bindPageEvents(){
   document.querySelectorAll("[data-action='delete-tx']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       if(!confirm("Hapus transaksi ini?")) return;
-      await DB.deleteTransaction(parseInt(btn.dataset.id));
+      await DB.deleteTransaction(btn.dataset.id);
       toast("Transaksi dihapus");
       render();
     });
@@ -729,7 +769,7 @@ function bindPageEvents(){
   document.querySelectorAll("[data-action='send-receipt']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const txs = await DB.getTransactions();
-      const t = txs.find(x => x.id === parseInt(btn.dataset.id));
+      const t = txs.find(x => x.id === btn.dataset.id);
       if(t) sendReceiptWA(t);
     });
   });
@@ -793,6 +833,8 @@ function bindPageEvents(){
   if(importJsonBtn) importJsonBtn.addEventListener("click", importJson);
   const wipeBtn = document.querySelector("[data-action='wipe-data']");
   if(wipeBtn) wipeBtn.addEventListener("click", wipeData);
+  const logoutBtn = document.querySelector("[data-action='logout']");
+  if(logoutBtn) logoutBtn.addEventListener("click", ()=> auth.signOut());
 }
 
 /* ---------------- Export / Import / Backup ---------------- */
@@ -855,15 +897,140 @@ function importJson(){
 }
 
 async function wipeData(){
-  if(!confirm("Semua transaksi, kategori tambahan, dan saldo awal akan dihapus permanen. Lanjutkan?")) return;
-  if(!confirm("Yakin? Tindakan ini tidak bisa dibatalkan.")) return;
-  indexedDB.deleteDatabase("laundryku-db");
+  if(!confirm("Semua transaksi, member, kategori tambahan, dan saldo awal akan dihapus permanen dari server. Lanjutkan?")) return;
+  if(!confirm("Yakin? Tindakan ini tidak bisa dibatalkan dan berlaku untuk semua perangkat.")) return;
+  const collections = ["transactions", "members", "categories", "settings"];
+  for(const name of collections){
+    const snap = await fs.collection(name).get();
+    const batch = fs.batch();
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
   location.reload();
+}
+
+/* ---------------- Auth (Login / Daftar) ---------------- */
+
+function authShellHtml(inner){
+  return `
+    <div class="auth-shell">
+      <div class="auth-card">
+        <div class="auth-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#F3F7F6" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M9 12a3 3 0 0 0 4.5 2.6"/><circle cx="16" cy="8" r="1.4" fill="#C98A3B" stroke="none"/></svg>
+        </div>
+        <h1>LaundryKu Finance</h1>
+        <p class="small muted" style="margin-bottom:20px;">Laporan keuangan UMKM laundry</p>
+        ${inner}
+      </div>
+    </div>
+  `;
+}
+
+function loginFormHtml(){
+  return authShellHtml(`
+    <div class="field"><label>Email</label><input type="email" id="authEmail" placeholder="nama@email.com"></div>
+    <div class="field"><label>Password</label><input type="password" id="authPassword" placeholder="••••••••"></div>
+    <div id="authError" class="auth-error"></div>
+    <button class="btn btn-primary btn-block" data-action="do-login">Masuk</button>
+    <p class="small muted" style="text-align:center; margin-top:16px;">
+      Belum punya akun? <a href="#" data-action="show-register">Daftar</a>
+    </p>
+  `);
+}
+
+function registerFormHtml(){
+  return authShellHtml(`
+    <div class="field"><label>Nama</label><input type="text" id="authName" placeholder="Nama Anda"></div>
+    <div class="field"><label>Email</label><input type="email" id="authEmail" placeholder="nama@email.com"></div>
+    <div class="field"><label>Password</label><input type="password" id="authPassword" placeholder="Minimal 6 karakter"></div>
+    <div id="authError" class="auth-error"></div>
+    <button class="btn btn-primary btn-block" data-action="do-register">Daftar</button>
+    <p class="small muted" style="text-align:center; margin-top:16px;">
+      Akun baru otomatis dapat akses <b>Pegawai</b>. Untuk akun Owner pertama, hubungi pemilik usaha.
+    </p>
+    <p class="small muted" style="text-align:center; margin-top:6px;">
+      Sudah punya akun? <a href="#" data-action="show-login">Masuk</a>
+    </p>
+  `);
+}
+
+function showAuthScreen(mode){
+  document.getElementById("app").style.display = "none";
+  let root = document.getElementById("authRoot");
+  if(!root){
+    root = document.createElement("div");
+    root.id = "authRoot";
+    document.body.appendChild(root);
+  }
+  root.innerHTML = mode === "register" ? registerFormHtml() : loginFormHtml();
+  root.style.display = "block";
+  wireAuthForm(mode, root);
+}
+
+function hideAuthScreen(){
+  const root = document.getElementById("authRoot");
+  if(root) root.style.display = "none";
+  document.getElementById("app").style.display = "";
+}
+
+function wireAuthForm(mode, root){
+  const errBox = root.querySelector("#authError");
+  const setErr = (msg) => { errBox.textContent = msg; };
+
+  root.querySelector("[data-action='show-register']")?.addEventListener("click", (e)=>{ e.preventDefault(); showAuthScreen("register"); });
+  root.querySelector("[data-action='show-login']")?.addEventListener("click", (e)=>{ e.preventDefault(); showAuthScreen("login"); });
+
+  root.querySelector("[data-action='do-login']")?.addEventListener("click", async ()=>{
+    const email = root.querySelector("#authEmail").value.trim();
+    const password = root.querySelector("#authPassword").value;
+    if(!email || !password){ setErr("Isi email dan password."); return; }
+    try{
+      await auth.signInWithEmailAndPassword(email, password);
+    }catch(err){
+      setErr(authErrorMessage(err));
+    }
+  });
+
+  root.querySelector("[data-action='do-register']")?.addEventListener("click", async ()=>{
+    const name = root.querySelector("#authName").value.trim();
+    const email = root.querySelector("#authEmail").value.trim();
+    const password = root.querySelector("#authPassword").value;
+    if(!name || !email || !password){ setErr("Lengkapi semua kolom."); return; }
+    if(password.length < 6){ setErr("Password minimal 6 karakter."); return; }
+    try{
+      const cred = await auth.createUserWithEmailAndPassword(email, password);
+      await fs.collection("users").doc(cred.user.uid).set({
+        name, email, role: "pegawai", createdAt: Date.now()
+      });
+    }catch(err){
+      setErr(authErrorMessage(err));
+    }
+  });
+}
+
+function authErrorMessage(err){
+  const map = {
+    "auth/invalid-email": "Format email tidak valid.",
+    "auth/user-not-found": "Akun tidak ditemukan.",
+    "auth/wrong-password": "Password salah.",
+    "auth/invalid-credential": "Email atau password salah.",
+    "auth/email-already-in-use": "Email ini sudah terdaftar.",
+    "auth/weak-password": "Password terlalu lemah (minimal 6 karakter)."
+  };
+  return map[err.code] || "Terjadi kesalahan. Coba lagi.";
 }
 
 /* ---------------- Boot ---------------- */
 
-async function boot(){
+async function loadUserProfile(user){
+  const doc = await fs.collection("users").doc(user.uid).get();
+  if(doc.exists) return doc.data();
+  const rec = { name: user.email.split("@")[0], email: user.email, role: "pegawai", createdAt: Date.now() };
+  await fs.collection("users").doc(user.uid).set(rec);
+  return rec;
+}
+
+async function startApp(){
   await DB.init();
   state.businessName = await DB.getSetting("businessName", "Usaha Laundry Saya");
   state.categories = await DB.getCategories();
@@ -875,4 +1042,17 @@ async function boot(){
   await render();
 }
 
-boot();
+auth.onAuthStateChanged(async (user) => {
+  if(user){
+    const profile = await loadUserProfile(user);
+    state.user = user;
+    state.role = profile.role || "pegawai";
+    state.userName = profile.name || user.email;
+    hideAuthScreen();
+    await startApp();
+  } else {
+    state.user = null;
+    state.role = null;
+    showAuthScreen("login");
+  }
+});
