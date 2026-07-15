@@ -133,5 +133,38 @@ const DB = {
   async deleteMember(phone){
     await fs.collection("members").doc(phone).delete();
     return true;
+  },
+
+  async getOrders(){
+    const snap = await fs.collection("orders").get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    return list;
+  },
+
+  async addOrder(o){
+    const payload = {
+      ...o,
+      status: "diterima",
+      statusHistory: [{ status: "diterima", at: Date.now() }],
+      createdBy: auth.currentUser ? auth.currentUser.uid : null,
+      createdAt: Date.now()
+    };
+    const ref = await fs.collection("orders").add(payload);
+    return ref.id;
+  },
+
+  async updateOrderStatus(id, status){
+    const ref = fs.collection("orders").doc(id);
+    await ref.update({
+      status,
+      statusHistory: firebase.firestore.FieldValue.arrayUnion({ status, at: Date.now() })
+    });
+    return true;
+  },
+
+  async deleteOrder(id){
+    await fs.collection("orders").doc(id).delete();
+    return true;
   }
 };

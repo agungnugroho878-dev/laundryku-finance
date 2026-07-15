@@ -15,7 +15,9 @@ const ICONS = {
   download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6 11l6 6 6-6"/><path d="M4 21h16"/></svg>`,
   chat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`,
   scale: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M7 7l-4 8a4 4 0 0 0 8 0zM21 7l-4 8a4 4 0 0 0 8 0zM3 7h18M12 3l4 4M12 3L8 7"/></svg>`,
-  star: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.9 6.3L22 9.3l-5 5 1.2 7.2L12 18l-6.2 3.5L7 14.3l-5-5 7.1-1z"/></svg>`
+  star: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.9 6.3L22 9.3l-5 5 1.2 7.2L12 18l-6.2 3.5L7 14.3l-5-5 7.1-1z"/></svg>`,
+  clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`
 };
 
 const state = {
@@ -62,6 +64,7 @@ function openModal(innerHtml){
 const NAV_ITEMS = [
   { id:"dashboard", label:"Beranda", icon:ICONS.home },
   { id:"transaksi", label:"Transaksi", icon:ICONS.list },
+  { id:"cucian", label:"Cucian", icon:ICONS.clock },
   { id:"member", label:"Member", icon:ICONS.star },
   { id:"laporan", label:"Laporan", icon:ICONS.report },
   { id:"pengaturan", label:"Atur", icon:ICONS.settings }
@@ -92,6 +95,7 @@ async function render(){
   main.innerHTML = `<div class="empty-state">Memuat...</div>`;
   if(state.page === "dashboard") main.innerHTML = await pageDashboard();
   if(state.page === "transaksi") main.innerHTML = await pageTransaksi();
+  if(state.page === "cucian") main.innerHTML = await pageCucian();
   if(state.page === "member") main.innerHTML = await pageMember();
   if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
   if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
@@ -456,7 +460,114 @@ function runDashboardCountUps(){
   });
 }
 
-/* ---------------- Member (Self-Service Loyalty) ---------------- */
+/* ---------------- Cucian (Order Tracking) ---------------- */
+
+const ORDER_FLOW = ["diterima", "dicuci", "selesai", "diambil"];
+const STATUS_LABEL = {
+  diterima: "Diterima",
+  dicuci: "Sedang Dicuci",
+  selesai: "Selesai, Siap Diambil",
+  diambil: "Sudah Diambil"
+};
+
+function nextOrderStatus(current){
+  const i = ORDER_FLOW.indexOf(current);
+  return (i >= 0 && i < ORDER_FLOW.length - 1) ? ORDER_FLOW[i+1] : null;
+}
+
+async function pageCucian(){
+  const all = await DB.getOrders();
+  const filter = state.cucianFilter || "aktif";
+  const orders = filter === "semua" ? all
+    : filter === "riwayat" ? all.filter(o => o.status === "diambil")
+    : all.filter(o => o.status !== "diambil");
+
+  const tabBtn = (id,label) => `<button class="btn ${filter===id?'btn-primary':'btn-outline'}" data-cucian-tab="${id}">${label}</button>`;
+
+  return `
+    <button class="btn btn-primary btn-block" data-action="add-order" style="margin-bottom:14px;">${ICONS.plus} Pesanan Cucian Baru</button>
+    <div class="btn-row no-print" style="margin-bottom:14px;">
+      ${tabBtn("aktif","Aktif")}
+      ${tabBtn("semua","Semua")}
+      ${tabBtn("riwayat","Riwayat")}
+    </div>
+    <div class="card">
+      <div class="card-title">${filter === "aktif" ? "Pesanan Aktif" : filter === "riwayat" ? "Riwayat Diambil" : "Semua Pesanan"} (${orders.length})</div>
+      ${orders.length === 0 ? emptyState("Belum ada pesanan cucian di sini.") : orders.map(orderCardHtml).join("")}
+    </div>
+  `;
+}
+
+function orderCardHtml(o){
+  const dateLabel = new Date(o.createdAt).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"});
+  const next = nextOrderStatus(o.status);
+  return `
+    <div class="order-card status-${o.status}">
+      <div class="row-between">
+        <div>
+          <div style="font-weight:700;">${o.customerName || "Tanpa nama"}</div>
+          <div class="small muted">${o.customerPhone || ""}${o.weightKg ? ` · ${o.weightKg} kg` : ""}</div>
+        </div>
+        <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
+      </div>
+      ${o.note ? `<div class="small" style="margin-top:8px;">${escapeHtml(o.note)}</div>` : ""}
+      <div class="small muted" style="margin-top:8px;">Diterima ${dateLabel}</div>
+      <div class="btn-row" style="margin-top:12px;">
+        ${next ? `<button class="btn btn-primary btn-block" data-action="advance-order" data-id="${o.id}" data-next="${next}">Tandai: ${STATUS_LABEL[next]}</button>` : ""}
+        ${o.customerPhone ? `<button class="btn btn-outline" data-action="wa-order" data-id="${o.id}">${ICONS.chat}</button>` : ""}
+        ${state.role === "owner" ? `<button class="btn btn-outline" data-action="delete-order" data-id="${o.id}">${ICONS.trash}</button>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function buildOrderStatusText(o){
+  const lines = [];
+  lines.push(`*${state.businessName}*`);
+  lines.push(`Halo${o.customerName ? " " + o.customerName : ""}, update status cucianmu:`);
+  lines.push("");
+  lines.push(`📦 *${STATUS_LABEL[o.status]}*`);
+  if(o.weightKg) lines.push(`Berat: ${o.weightKg} kg`);
+  if(o.note) lines.push(`Catatan: ${o.note}`);
+  lines.push("");
+  lines.push(o.status === "selesai" ? "Cucian sudah siap diambil ya! 🙏" : "Terima kasih sudah mencuci di tempat kami 🙏");
+  return lines.join("\n");
+}
+
+function sendOrderStatusWA(o){
+  const text = encodeURIComponent(buildOrderStatusText(o));
+  const phone = normalizePhone(o.customerPhone);
+  const url = phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
+  window.open(url, "_blank");
+}
+
+function openAddOrderModal(){
+  const modal = openModal(`
+    <h2>Pesanan Cucian Baru</h2>
+    <div class="field"><label>Nama Pelanggan</label><input type="text" id="ordCustName" placeholder="Contoh: Budi"></div>
+    <div class="field"><label>No. WhatsApp Pelanggan (opsional)</label><input type="tel" inputmode="numeric" id="ordCustPhone" placeholder="08xxxxxxxxxx"></div>
+    <div class="field"><label>Berat (kg, opsional)</label><input type="number" step="0.1" id="ordWeight" placeholder="Contoh: 5"></div>
+    <div class="field"><label>Catatan (opsional)</label><textarea id="ordNote" placeholder="Contoh: Cuci + setrika, jangan pakai pewangi"></textarea></div>
+    <button class="btn btn-primary btn-block" data-action="save-order">Simpan Pesanan</button>
+  `);
+  modal.querySelector("[data-action='save-order']").addEventListener("click", async ()=>{
+    const customerName = modal.querySelector("#ordCustName").value.trim();
+    const customerPhone = modal.querySelector("#ordCustPhone").value.trim();
+    const weightKg = parseFloat(modal.querySelector("#ordWeight").value) || null;
+    const note = modal.querySelector("#ordNote").value.trim();
+    if(!customerName){ toast("Isi nama pelanggan", "warn"); return; }
+    const payload = { customerName, note };
+    if(customerPhone) payload.customerPhone = customerPhone;
+    if(weightKg) payload.weightKg = weightKg;
+    const id = await DB.addOrder(payload);
+    closeModal();
+    toast("Pesanan cucian tersimpan");
+    if(customerPhone){
+      sendOrderStatusWA({ ...payload, id, status: "diterima" });
+    }
+    render();
+  });
+}
 
 async function pageMember(){
   const members = (await DB.getAllMembers()).sort((a,b)=> (b.visits+b.freeRedeemed*LOYALTY_TARGET) - (a.visits+a.freeRedeemed*LOYALTY_TARGET));
@@ -776,6 +887,33 @@ function bindPageEvents(){
   document.querySelectorAll("[data-action='wa-member']").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       window.open(`https://wa.me/${btn.dataset.phone}`, "_blank");
+    });
+  });
+  const addOrderBtn = document.querySelector("[data-action='add-order']");
+  if(addOrderBtn) addOrderBtn.addEventListener("click", openAddOrderModal);
+  document.querySelectorAll("[data-cucian-tab]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{ state.cucianFilter = btn.dataset.cucianTab; render(); });
+  });
+  document.querySelectorAll("[data-action='advance-order']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      await DB.updateOrderStatus(btn.dataset.id, btn.dataset.next);
+      toast(`Status diubah: ${STATUS_LABEL[btn.dataset.next]}`);
+      render();
+    });
+  });
+  document.querySelectorAll("[data-action='wa-order']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const orders = await DB.getOrders();
+      const o = orders.find(x => x.id === btn.dataset.id);
+      if(o) sendOrderStatusWA(o);
+    });
+  });
+  document.querySelectorAll("[data-action='delete-order']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      if(!confirm("Hapus pesanan ini?")) return;
+      await DB.deleteOrder(btn.dataset.id);
+      toast("Pesanan dihapus");
+      render();
     });
   });
   document.querySelectorAll("[data-report-tab]").forEach(btn=>{

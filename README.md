@@ -45,6 +45,11 @@ service cloud.firestore {
     match /members/{id} {
       allow read, write: if isSignedIn();
     }
+
+    match /orders/{id} {
+      allow read, create, update: if isSignedIn();
+      allow delete: if isOwner();
+    }
   }
 }
 ```
