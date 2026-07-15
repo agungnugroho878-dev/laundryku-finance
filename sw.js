@@ -1,8 +1,9 @@
-const CACHE_NAME = "laundryku-v4";
+const CACHE_NAME = "laundryku-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./css/styles.css",
+  "./js/firebase-config.js",
   "./js/db.js",
   "./js/app.js",
   "./manifest.json",
