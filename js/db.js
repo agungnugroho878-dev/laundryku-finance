@@ -19,6 +19,7 @@ const ACCOUNT = {
 
 const DEFAULT_CATEGORIES = [
   { id: "jasa-cuci", name: "Pendapatan Jasa Cuci", type: "in", account: ACCOUNT.PENDAPATAN, system: true },
+  { id: "cuci-satuan", name: "Pendapatan Cuci Satuan", type: "in", account: ACCOUNT.PENDAPATAN, system: true },
   { id: "self-service", name: "Pendapatan Self-Service (Cuci+Kering)", type: "in", account: ACCOUNT.PENDAPATAN, system: true },
   { id: "pendapatan-lain", name: "Pendapatan Lain-lain", type: "in", account: ACCOUNT.PENDAPATAN, system: true },
   { id: "terima-piutang", name: "Penerimaan Piutang Pelanggan", type: "in", account: ACCOUNT.PIUTANG, system: true },
@@ -145,8 +146,8 @@ const DB = {
   async addOrder(o){
     const payload = {
       ...o,
-      status: "diterima",
-      statusHistory: [{ status: "diterima", at: Date.now() }],
+      status: "belum-diproses",
+      statusHistory: [{ status: "belum-diproses", at: Date.now() }],
       createdBy: auth.currentUser ? auth.currentUser.uid : null,
       createdAt: Date.now()
     };

@@ -267,18 +267,16 @@ a{ color:var(--suds-blue); }
   border-radius:12px; border:1px solid var(--line); border-left:4px solid var(--suds-blue);
   padding:14px; margin-bottom:12px; animation:fadeInUp .3s ease both;
 }
-.order-card.status-diterima{ border-left-color:var(--suds-blue); }
-.order-card.status-dicuci{ border-left-color:var(--coin); }
-.order-card.status-selesai{ border-left-color:var(--mint); }
-.order-card.status-diambil{ border-left-color:var(--text-muted); opacity:.75; }
+.order-card.status-belum-diproses{ border-left-color:var(--suds-blue); }
+.order-card.status-sedang-diproses{ border-left-color:var(--coin); }
+.order-card.status-selesai{ border-left-color:var(--mint); opacity:.85; }
 
 .status-badge{
   font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; white-space:nowrap;
 }
-.status-badge.status-diterima{ background:#E4EEF6; color:var(--suds-blue-dark); }
-.status-badge.status-dicuci{ background:var(--coin-bg); color:var(--coin); }
+.status-badge.status-belum-diproses{ background:#E4EEF6; color:var(--suds-blue-dark); }
+.status-badge.status-sedang-diproses{ background:var(--coin-bg); color:var(--coin); }
 .status-badge.status-selesai{ background:var(--mint-bg); color:var(--mint); }
-.status-badge.status-diambil{ background:var(--foam-white); color:var(--text-muted); }
 
 /* ---------- Buttons ---------- */
 .btn{

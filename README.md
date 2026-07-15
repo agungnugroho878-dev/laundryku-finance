@@ -65,11 +65,27 @@ Untuk akun pegawai selanjutnya: mereka tinggal buka aplikasi → **Daftar** send
 ## 1. Cara pakai cepat
 
 1. Buka aplikasinya → login (atau daftar kalau belum punya akun)
-2. **Owner**: buka menu **Atur → Saldo Awal Pembukuan** dan isi saldo kas/aset/utang saat ini (boleh dikosongkan/0 kalau baru mulai dari nol)
-3. Mulai catat transaksi lewat tombol **+ Kas Masuk** / **+ Kas Keluar** di Beranda atau Transaksi
-4. Untuk transaksi kategori **Pendapatan Jasa Cuci** atau **Pendapatan Self-Service**, akan muncul kolom opsional Nama Pelanggan & No. WhatsApp — isi ini untuk bisa langsung **kirim struk via WhatsApp** setelah transaksi tersimpan
-5. Untuk self-service: setiap 10x kunjungan (dengan nomor WA diisi), pelanggan otomatis dapat 1x gratis cuci+kering — progress-nya bisa dilihat di tab **Member**
-6. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV**
+2. **Owner**: buka menu **Atur → Harga Layanan** — untuk tiap jenis kiloan (Cuci Kering Lipat, Cuci Setrika, Setrika Saja), isi harga per kg **dan** estimasi durasi pengerjaan (dalam jam atau hari, bebas beda-beda tiap jenis). Isi juga harga self-service.
+3. **Owner**: buka menu **Atur → Harga Cuci Satuan** dan kelola daftar barang (Jas, Gaun, Sprei, PDL, dll)
+4. **Owner**: buka menu **Atur → Promo Kiloan** untuk mengaktifkan promo akumulasi berat cucian — tentukan target kg, dan bentuk promonya (potongan harga Rp, atau gratis sejumlah kg)
+5. **Owner**: buka menu **Atur → Saldo Awal Pembukuan** dan isi saldo kas/aset/utang saat ini (boleh dikosongkan/0 kalau baru mulai dari nol)
+6. **Member bisa ditambah manual** di tab **Member → "+ Tambah Member"** (No. HP jadi ID unik member, plus nama & alamat), atau otomatis muncul saat nomor WA diisi di transaksi cucian
+7. Untuk pendapatan cucian (Kiloan, Satuan, maupun Self-Service), gunakan menu **Cucian → "+ Pesanan Cucian Baru"**. Kalau nomor WA pelanggan diisi:
+   - **Kiloan**: berat otomatis terakumulasi ke saldo kg member; kalau sudah mencapai target promo, diskon otomatis diterapkan ke total (dan tercatat di struk)
+   - **Self-Service**: kunjungan ke-10 otomatis gratis
+8. Total pesanan otomatis terhitung dari harga & berat/jenis layanan (bisa diubah manual kalau perlu), dan langsung tercatat sebagai pendapatan — tidak perlu input dua kali di menu Transaksi
+9. Setelah pesanan tersimpan, muncul pilihan **kirim struk (gambar) via WhatsApp** — ketuk sekali, pilih WhatsApp dari menu bagikan HP
+10. Update status pesanan di tab **Cucian**: **Belum Diproses → Sedang Diproses → Selesai**. Untuk pesanan kiloan yang belum selesai, muncul indikator **sisa waktu** (atau **terlambat**, ditandai merah) berdasarkan estimasi durasi yang di-set di Harga Layanan — membantu Anda dan pegawai mengatur prioritas kerja
+11. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
+
+### Catatan soal indikator waktu di tab Cucian
+Indikator "sisa waktu"/"terlambat" dihitung saat halaman Cucian dibuka/di-refresh (bukan berjalan otomatis tiap detik seperti jam) — cukup akurat untuk penggunaan sehari-hari, cukup buka ulang tab Cucian sesekali untuk lihat update terbaru.
+
+### Catatan soal kirim struk/gambar ke WhatsApp
+WhatsApp tidak menyediakan cara untuk melampirkan gambar secara otomatis dari sebuah link (beda dengan teks yang bisa auto-terisi). Jadi struk digambar sebagai file PNG, lalu sistem memakai fitur **share bawaan HP** (Web Share API) — pegawai tinggal 1x ketuk "Bagikan", pilih WhatsApp, gambar otomatis terlampir, tinggal pilih kontak pelanggan. Di beberapa browser desktop yang tidak mendukung fitur share gambar, sistem otomatis mengunduh gambarnya untuk dilampirkan manual.
+
+### Fitur yang masih tertunda (butuh keputusan Anda)
+**Foto pakaian per item + link pantau untuk pelanggan** — fitur ini butuh Firebase Storage, yang sejak akhir 2024 mewajibkan upgrade project ke paket **Blaze** (pay-as-you-go, perlu kartu kredit terdaftar meski pemakaian kecil tetap gratis). Fitur ini belum dibangun sampai ada konfirmasi dari Anda soal upgrade paket ini.
 
 ### Menjalankan di komputer (untuk dicoba dulu)
 Karena aplikasi ini pakai Service Worker dan Firebase, buka lewat server lokal (bukan langsung double-click file), dan pastikan komputer terhubung internet (untuk login & sinkronisasi data):
