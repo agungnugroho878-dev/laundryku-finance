@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>LaundryKu Finance</title>
+<meta name="description" content="Aplikasi laporan keuangan sederhana untuk UMKM laundry: catat kas masuk/keluar, lihat Laba Rugi dan Neraca otomatis.">
+<meta name="theme-color" content="#16232E">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LaundryKu">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div id="app">
+  <header class="app-header">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#F3F7F6" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M9 12a3 3 0 0 0 4.5 2.6"/><circle cx="16" cy="8" r="1.4" fill="#C98A3B" stroke="none"/></svg>
+    </div>
+    <div class="titles">
+      <div class="biz-name" id="bizName">LaundryKu Finance</div>
+      <div class="tagline">Laporan keuangan UMKM laundry</div>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <nav class="sidebar" id="sidebar"></nav>
+    <main class="app-main" id="appMain"></main>
+  </div>
+
+  <nav class="bottom-nav" id="bottomNav"></nav>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/reports.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
