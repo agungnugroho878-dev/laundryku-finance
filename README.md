@@ -56,19 +56,19 @@ service cloud.firestore {
     }
 
     match /transactions/{id} {
-      allow read: if sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId);
       allow create: if isSignedIn() && sameBusiness(request.resource.data.businessId);
       allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
     }
 
     match /categories/{id} {
-      allow read: if sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId);
       allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
       allow delete: if isSignedIn() && sameBusiness(resource.data.businessId);
     }
 
     match /members/{id} {
-      allow read: if sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId);
       allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
       allow delete: if isSignedIn() && sameBusiness(resource.data.businessId);
     }
@@ -113,19 +113,22 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
 ## 1. Cara pakai cepat
 
 1. Buka aplikasinya → login (atau daftar kalau belum punya akun)
-2. **Owner**: buka menu **Atur → Harga Layanan** — untuk tiap jenis kiloan (Cuci Kering Lipat, Cuci Setrika, Setrika Saja), isi harga per kg **dan** estimasi durasi pengerjaan (dalam jam atau hari, bebas beda-beda tiap jenis). Isi juga harga self-service.
-3. **Owner**: buka menu **Atur → Harga Cuci Satuan** dan kelola daftar barang (Jas, Gaun, Sprei, PDL, dll)
+2. **Owner**: buka menu **Atur → Profil Usaha** dan isi nama, tagline, **No. WhatsApp usaha**, dan **Instagram usaha** (opsional, semuanya otomatis muncul di struk)
+3. **Owner**: di menu **Atur → Harga Layanan**, klik tombol **"Setting Harga"** — popup ini menangani 3 hal sekaligus:
+   - **Kiloan**: untuk tiap jenis (Cuci Kering Lipat, Cuci Setrika, Setrika Saja), bisa tambah **beberapa opsi harga & durasi berbeda** (misal "3 hari — Rp6.000/kg" dan "1 hari — Rp8.000/kg" untuk jenis yang sama) — cocok kalau Anda punya tarif reguler vs kilat/express. Tiap opsi langsung muncul di daftar rekap setelah disimpan
+   - **Self-Service**: isi harga Cuci Saja/Kering Saja/Cuci+Kering
+   - **Cuci Satuan**: kelola daftar barang (Jas, Gaun, Sprei, PDL, dll) beserta harganya
 4. **Owner**: buka menu **Atur → Promo Kiloan** untuk mengaktifkan promo akumulasi berat cucian — tentukan target kg, dan bentuk promonya (potongan harga Rp, atau gratis sejumlah kg)
 5. **Owner**: buka menu **Atur → Saldo Awal Pembukuan** dan isi saldo kas/aset/utang saat ini (boleh dikosongkan/0 kalau baru mulai dari nol)
 6. **Member bisa ditambah manual** di tab **Member → "+ Tambah Member"** (No. HP jadi ID unik member, plus nama & alamat), atau otomatis muncul saat nomor WA diisi di transaksi cucian
 7. Untuk pendapatan cucian (Kiloan, Satuan, maupun Self-Service), gunakan menu **Cucian → "+ Pesanan Cucian Baru"**:
-   - **Kiloan**: sekarang seperti keranjang — bisa tambah beberapa jenis layanan sekaligus dalam 1 pesanan (misal 3kg Cuci Setrika + 2kg Setrika Saja), masing-masing dengan berat sendiri
+   - **Kiloan**: sekarang seperti keranjang — pilih jenis (Cuci Kering Lipat/Cuci Setrika/Setrika Saja), lalu pilih **opsi durasi & harga** yang tersedia untuk jenis itu (kalau Anda sudah setting beberapa opsi, misal reguler vs express), isi berat, klik "+". Bisa tambah beberapa baris berbeda dalam 1 pesanan
    - **Satuan**: pilih barang + jumlah, bisa banyak jenis barang
    - **Self-Service**: pilih 1 jenis
    - Isi **Bayar** (uang yang diterima dari pelanggan) — **Kembalian** otomatis terhitung
    - Kalau nomor WA pelanggan diisi: kiloan otomatis terakumulasi ke saldo kg member (promo otomatis diterapkan kalau target tercapai), self-service kunjungan ke-10 otomatis gratis
 8. Setiap pesanan otomatis dapat **nomor struk urut** — total pesanan otomatis terhitung dari harga & berat/jenis layanan (bisa diubah manual), langsung tercatat sebagai pendapatan
-9. Setelah pesanan tersimpan, muncul pilihan **kirim atau cetak struk**: kirim gambar/teks via WhatsApp, cetak lewat **printer thermal Bluetooth**, atau cetak lewat **dialog print/PDF biasa** — semua format strukturnya sama persis (nama usaha, tagline, tanggal, no. struk, pelanggan, rincian tiap item, subtotal, diskon, total, bayar, kembalian)
+9. Setelah pesanan tersimpan, muncul pilihan **kirim atau cetak struk**: kirim gambar/teks via WhatsApp, cetak lewat **printer thermal Bluetooth**, atau cetak lewat **dialog print/PDF biasa** — semua format strukturnya sama persis (nama usaha, tagline, No. WA & Instagram usaha, tanggal, no. struk, pelanggan, rincian tiap item, **estimasi tanggal & jam selesai** untuk pesanan kiloan, subtotal, diskon, total, bayar, kembalian). Estimasi selesai ini juga muncul di halaman pantau online yang dikirim ke pelanggan
 10. **Foto barang (opsional)**: saat isi pesanan, ada 2 cara ambil foto:
     - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup
     - **"Galeri/File"** — cara lama, buka galeri atau file manager biasa

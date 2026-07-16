@@ -16,6 +16,13 @@ function fmtDate(d){
   return new Date(d+"T00:00:00").toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"});
 }
 
+function fmtDateTime(timestamp){
+  const d = new Date(timestamp);
+  const datePart = d.toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"});
+  const timePart = d.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
+  return `${datePart}, ${timePart}`;
+}
+
 function formatCountdown(estimatedReadyAt){
   const diff = estimatedReadyAt - Date.now();
   const overdue = diff < 0;
@@ -59,7 +66,8 @@ async function loadOrder(){
     const settingsDoc = await fs.collection("businessSettings").doc(o.businessId).get();
     const settings = settingsDoc.exists ? settingsDoc.data() : {};
     document.getElementById("bizName").textContent = settings.businessName || "LaundryKu";
-    document.getElementById("bizTagline").textContent = settings.businessTagline || "";
+    const contactBits = [settings.businessTagline, settings.businessPhone ? `WA: ${settings.businessPhone}` : null, settings.businessInstagram ? `IG: ${settings.businessInstagram}` : null].filter(Boolean);
+    document.getElementById("bizTagline").textContent = contactBits.join(" · ");
 
     renderOrder(o, content);
   }catch(err){
@@ -90,6 +98,7 @@ function renderOrder(o, content){
     <div class="card">
       <div class="muted center">Status Pesanan${o.receiptNo ? ` · #${String(o.receiptNo).padStart(6,'0')}` : ""}</div>
       <div class="status-track">${stepsHtml}</div>
+      ${o.estimatedReadyAt ? `<div class="center muted small-est">Estimasi selesai: <b>${fmtDateTime(o.estimatedReadyAt)}</b></div>` : ""}
       ${countdown ? `<div class="countdown" style="color:${countdown.overdue?'#C1554D':'#3E7CB1'}">${countdown.overdue?'⚠':'⏱'} ${countdown.text}</div>` : ""}
     </div>
 

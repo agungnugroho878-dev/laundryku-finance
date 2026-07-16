@@ -32,6 +32,8 @@ const state = {
   page: "dashboard",
   businessName: "Usaha Laundry Saya",
   businessTagline: "",
+  businessPhone: "",
+  businessInstagram: "",
   categories: [],
   role: null,
   user: null,
@@ -340,6 +342,13 @@ function fmtDate(d){
   return new Date(d+"T00:00:00").toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"});
 }
 
+function fmtDateTime(timestamp){
+  const d = new Date(timestamp);
+  const datePart = d.toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"});
+  const timePart = d.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
+  return `${datePart}, ${timePart}`;
+}
+
 /* ---------------- Pengaturan ---------------- */
 
 async function pagePengaturan(){
@@ -386,6 +395,14 @@ async function pagePengaturan(){
         <label>Tagline (opsional, muncul di struk)</label>
         <input type="text" id="bizTaglineInput" placeholder="Contoh: Membersihkan dengan Sempurna, Harga Terjangkau" value="${escapeHtml(state.businessTagline||'')}">
       </div>
+      <div class="field">
+        <label>No. WhatsApp Usaha (opsional, muncul di struk)</label>
+        <input type="tel" inputmode="numeric" id="bizPhoneInput" placeholder="08xxxxxxxxxx" value="${escapeHtml(state.businessPhone||'')}">
+      </div>
+      <div class="field">
+        <label>Instagram Usaha (opsional, muncul di struk)</label>
+        <input type="text" id="bizInstagramInput" placeholder="@namausaha" value="${escapeHtml(state.businessInstagram||'')}">
+      </div>
       <button class="btn btn-primary" data-action="save-biz-name">Simpan Profil</button>
     </div>
 
@@ -394,35 +411,20 @@ async function pagePengaturan(){
       <p class="small muted">Harga & estimasi waktu pengerjaan ini otomatis dipakai saat mencatat pesanan cucian baru di menu Cucian.</p>
       <p class="small" style="font-weight:700; margin:14px 0 6px;">Kiloan</p>
       ${Object.entries(KILOAN_LABELS).map(([id,label]) => `
-        <div style="border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px;">
-          <p class="small" style="font-weight:600; margin-bottom:8px;">${label}</p>
-          <div class="field"><label>Harga per kg (Rp)</label><input type="number" id="price-${id}" value="${pricing.kiloan[id].rate}"></div>
-          <div class="field-row" style="display:flex; gap:8px;">
-            <div class="field" style="flex:1;"><label>Estimasi Durasi</label><input type="number" id="dur-${id}" value="${pricing.kiloan[id].duration}"></div>
-            <div class="field" style="flex:1;"><label>Satuan</label>
-              <select id="unit-${id}">
-                <option value="jam" ${pricing.kiloan[id].unit==='jam'?'selected':''}>Jam</option>
-                <option value="hari" ${pricing.kiloan[id].unit==='hari'?'selected':''}>Hari</option>
-              </select>
-            </div>
-          </div>
+        <div class="small" style="margin-bottom:6px;">
+          <b>${label}:</b>
+          ${(pricing.kiloan[id]||[]).length === 0 ? ' <span class="muted">belum ada opsi</span>' :
+            (pricing.kiloan[id]||[]).map(t=>`<span class="tag" style="margin:2px;">${tierLabel(t)} · Rp${t.rate.toLocaleString('id-ID')}/kg</span>`).join("")}
         </div>
       `).join("")}
-      <p class="small" style="font-weight:700; margin:14px 0 6px;">Self-Service (Rp per sesi)</p>
-      <div class="field"><label>Cuci Saja</label><input type="number" id="price-ss-cuci" value="${pricing.selfService['cuci']}"></div>
-      <div class="field"><label>Kering Saja</label><input type="number" id="price-ss-kering" value="${pricing.selfService['kering']}"></div>
-      <div class="field"><label>Cuci + Kering</label><input type="number" id="price-ss-cuci-kering" value="${pricing.selfService['cuci-kering']}"></div>
-      <button class="btn btn-primary" data-action="save-pricing">Simpan Harga</button>
-    </div>
-
-    <h3 class="section-title">Harga Cuci Satuan</h3>
-    <div class="card">
-      <p class="small muted">Daftar barang yang bisa dicuci satuan (jas, gaun, sprei, dll) beserta harga per item.</p>
-      <div class="tag-list" style="margin:14px 0;">
-        ${pricing.satuan.length===0 ? '<span class="small muted">Belum ada barang satuan.</span>' :
-          pricing.satuan.map(s=>`<span class="tag">${s.name} — ${Reports.formatRupiah(s.price)}<button data-action="delete-satuan" data-id="${s.id}">✕</button></span>`).join("")}
+      <p class="small" style="font-weight:700; margin:14px 0 6px;">Self-Service</p>
+      <div class="small">
+        <span class="tag" style="margin:2px;">Cuci Saja · ${Reports.formatRupiah(pricing.selfService['cuci'])}</span>
+        <span class="tag" style="margin:2px;">Kering Saja · ${Reports.formatRupiah(pricing.selfService['kering'])}</span>
+        <span class="tag" style="margin:2px;">Cuci+Kering · ${Reports.formatRupiah(pricing.selfService['cuci-kering'])}</span>
       </div>
-      <button class="btn btn-outline btn-block" data-action="manage-satuan">Kelola Barang Satuan</button>
+      <p class="small" style="font-weight:700; margin:14px 0 6px;">Cuci Satuan (${pricing.satuan.length} jenis barang)</p>
+      <button class="btn btn-primary btn-block" data-action="open-price-settings" style="margin-top:10px;">${ICONS.edit} Setting Harga</button>
     </div>
 
     <h3 class="section-title">Promo Kiloan</h3>
@@ -568,11 +570,20 @@ function runDashboardCountUps(){
 
 /* ---------------- Harga Layanan (Pricing) ---------------- */
 
+function genTierId(){ return "t" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
 const DEFAULT_PRICING = {
   kiloan: {
-    "cuci-kering-lipat": { rate: 7000, duration: 1, unit: "hari" },
-    "cuci-setrika": { rate: 8000, duration: 2, unit: "hari" },
-    "setrika-saja": { rate: 5000, duration: 3, unit: "jam" }
+    "cuci-kering-lipat": [
+      { id: genTierId(), duration: 3, unit: "hari", rate: 6000 },
+      { id: genTierId(), duration: 1, unit: "hari", rate: 8000 }
+    ],
+    "cuci-setrika": [
+      { id: genTierId(), duration: 2, unit: "hari", rate: 8000 }
+    ],
+    "setrika-saja": [
+      { id: genTierId(), duration: 1, unit: "hari", rate: 5000 }
+    ]
   },
   selfService: {
     "cuci": 10000,
@@ -612,13 +623,16 @@ const SELF_SERVICE_LABELS = {
   "cuci-kering": "Cuci + Kering"
 };
 
+function tierLabel(tier){
+  return `${tier.duration} ${tier.unit}`;
+}
+
 async function getPricing(){
   const saved = await DB.getSetting("pricing", null);
-  const kiloanDefault = DEFAULT_PRICING.kiloan;
-  const savedKiloan = saved?.kiloan || {};
   const kiloan = {};
-  for(const id of Object.keys(kiloanDefault)){
-    kiloan[id] = { ...kiloanDefault[id], ...(savedKiloan[id]||{}) };
+  for(const key of Object.keys(KILOAN_LABELS)){
+    const savedTiers = saved?.kiloan?.[key];
+    kiloan[key] = Array.isArray(savedTiers) && savedTiers.length > 0 ? savedTiers : DEFAULT_PRICING.kiloan[key];
   }
   if(!saved) return JSON.parse(JSON.stringify(DEFAULT_PRICING));
   return {
@@ -664,20 +678,95 @@ function formatCountdown(estimatedReadyAt){
     : { overdue: false, urgency, text: `Sisa ${label}` };
 }
 
-function openManageSatuanModal(){
-  const modal = openModal(`<h2>Kelola Barang Satuan</h2><div id="satuanList"></div>
-    <div class="field"><label>Nama Barang Baru</label><input type="text" id="newSatuanName" placeholder="Contoh: Karpet"></div>
-    <div class="field"><label>Harga (Rp)</label><input type="number" id="newSatuanPrice" placeholder="Contoh: 25000"></div>
-    <button class="btn btn-primary btn-block" data-action="add-satuan-item">+ Tambah Barang</button>
+function openPriceSettingsModal(){
+  const modal = openModal(`
+    <h2>Setting Harga</h2>
+
+    <h3 class="section-title" style="margin-top:4px;">Kiloan</h3>
+    <div id="kiloanPriceGroups"></div>
+
+    <h3 class="section-title">Self-Service</h3>
+    <div class="field"><label>Cuci Saja (Rp)</label><input type="number" id="ss-price-cuci"></div>
+    <div class="field"><label>Kering Saja (Rp)</label><input type="number" id="ss-price-kering"></div>
+    <div class="field"><label>Cuci + Kering (Rp)</label><input type="number" id="ss-price-cuci-kering"></div>
+    <button class="btn btn-primary btn-block" data-action="save-ss-price" style="margin-bottom:20px;">Simpan Harga Self-Service</button>
+
+    <h3 class="section-title">Cuci Satuan</h3>
+    <div id="satuanPriceList"></div>
+    <div class="field-row" style="display:flex; gap:8px; align-items:flex-end;">
+      <div class="field" style="flex:1; margin-bottom:0;"><label>Nama Barang</label><input type="text" id="newSatuanName" placeholder="Contoh: Karpet"></div>
+      <div class="field" style="width:110px; margin-bottom:0;"><label>Harga (Rp)</label><input type="number" id="newSatuanPrice" placeholder="25000"></div>
+      <button type="button" class="btn btn-outline" id="addSatuanItemBtn" style="margin-bottom:14px;">+</button>
+    </div>
+
+    <button class="btn btn-outline btn-block" data-action="close-price-settings" style="margin-top:10px;">Tutup</button>
   `);
 
-  async function refreshList(){
+  async function refreshKiloanGroups(){
     const pricing = await getPricing();
-    modal.querySelector("#satuanList").innerHTML = pricing.satuan.length === 0
+    const box = modal.querySelector("#kiloanPriceGroups");
+    box.innerHTML = Object.entries(KILOAN_LABELS).map(([key,label]) => {
+      const tiers = pricing.kiloan[key] || [];
+      return `
+        <div style="border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:12px;">
+          <p class="small" style="font-weight:700; margin-bottom:8px;">${label}</p>
+          <div class="kiloan-tier-recap" data-group="${key}">
+            ${tiers.length === 0 ? `<p class="small muted">Belum ada opsi harga.</p>` : tiers.map(t => `
+              <div class="row-between" style="padding:6px 0; border-bottom:1px dashed var(--line);">
+                <span class="small">${tierLabel(t)} — Rp${t.rate.toLocaleString('id-ID')}/kg</span>
+                <button class="tx-del" data-remove-tier="${key}:${t.id}">${ICONS.trash}</button>
+              </div>
+            `).join("")}
+          </div>
+          <div class="field-row" style="display:flex; gap:6px; margin-top:10px;">
+            <select class="tier-unit" data-group="${key}" style="width:80px; padding:8px; border-radius:8px; border:1.5px solid var(--line);">
+              <option value="jam">Jam</option>
+              <option value="hari">Hari</option>
+            </select>
+            <input type="number" class="tier-duration" data-group="${key}" placeholder="Durasi" style="width:70px; padding:8px; border-radius:8px; border:1.5px solid var(--line);">
+            <input type="number" class="tier-rate" data-group="${key}" placeholder="Rp/kg" style="flex:1; padding:8px; border-radius:8px; border:1.5px solid var(--line);">
+            <button type="button" class="btn btn-outline add-tier-btn" data-group="${key}">+</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    box.querySelectorAll("[data-remove-tier]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const [key, tierId] = btn.dataset.removeTier.split(":");
+        const pricing = await getPricing();
+        pricing.kiloan[key] = (pricing.kiloan[key]||[]).filter(t=>t.id!==tierId);
+        await setPricing(pricing);
+        toast("Opsi harga dihapus");
+        refreshKiloanGroups();
+      });
+    });
+    box.querySelectorAll(".add-tier-btn").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const key = btn.dataset.group;
+        const unit = box.querySelector(`.tier-unit[data-group="${key}"]`).value;
+        const duration = parseFloat(box.querySelector(`.tier-duration[data-group="${key}"]`).value);
+        const rate = parseFloat(box.querySelector(`.tier-rate[data-group="${key}"]`).value);
+        if(!duration || duration <= 0){ toast("Isi durasi yang valid", "warn"); return; }
+        if(isNaN(rate) || rate < 0){ toast("Isi harga yang valid", "warn"); return; }
+        const pricing = await getPricing();
+        if(!pricing.kiloan[key]) pricing.kiloan[key] = [];
+        pricing.kiloan[key].push({ id: genTierId(), duration, unit, rate });
+        await setPricing(pricing);
+        toast("Opsi harga ditambahkan");
+        refreshKiloanGroups();
+      });
+    });
+  }
+
+  async function refreshSatuanList(){
+    const pricing = await getPricing();
+    const box = modal.querySelector("#satuanPriceList");
+    box.innerHTML = pricing.satuan.length === 0
       ? `<p class="small muted">Belum ada barang.</p>`
       : pricing.satuan.map(s => `
         <div class="row-between" style="padding:8px 0; border-bottom:1px dashed var(--line);">
-          <span class="small">${s.name}</span>
+          <span class="small">${escapeHtml(s.name)}</span>
           <div style="display:flex; align-items:center; gap:8px;">
             <input type="number" class="satuan-price-input" data-id="${s.id}" value="${s.price}" style="width:100px; padding:6px 8px; border-radius:8px; border:1.5px solid var(--line);">
             <button class="tx-del" data-action="remove-satuan-item" data-id="${s.id}">${ICONS.trash}</button>
@@ -685,24 +774,25 @@ function openManageSatuanModal(){
         </div>
       `).join("");
 
-    modal.querySelectorAll(".satuan-price-input").forEach(inp=>{
+    box.querySelectorAll(".satuan-price-input").forEach(inp=>{
       inp.addEventListener("change", async ()=>{
         const pricing = await getPricing();
         const item = pricing.satuan.find(s=>s.id===inp.dataset.id);
         if(item){ item.price = parseFloat(inp.value) || 0; await setPricing(pricing); toast("Harga diperbarui"); }
       });
     });
-    modal.querySelectorAll("[data-action='remove-satuan-item']").forEach(btn=>{
+    box.querySelectorAll("[data-action='remove-satuan-item']").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
         const pricing = await getPricing();
         pricing.satuan = pricing.satuan.filter(s=>s.id!==btn.dataset.id);
         await setPricing(pricing);
-        refreshList();
+        toast("Barang dihapus");
+        refreshSatuanList();
       });
     });
   }
 
-  modal.querySelector("[data-action='add-satuan-item']").addEventListener("click", async ()=>{
+  modal.querySelector("#addSatuanItemBtn").addEventListener("click", async ()=>{
     const name = modal.querySelector("#newSatuanName").value.trim();
     const price = parseFloat(modal.querySelector("#newSatuanPrice").value);
     if(!name){ toast("Isi nama barang", "warn"); return; }
@@ -713,17 +803,38 @@ function openManageSatuanModal(){
     await setPricing(pricing);
     modal.querySelector("#newSatuanName").value = "";
     modal.querySelector("#newSatuanPrice").value = "";
-    refreshList();
+    toast("Barang ditambahkan");
+    refreshSatuanList();
   });
 
-  refreshList();
+  modal.querySelector("[data-action='save-ss-price']").addEventListener("click", async ()=>{
+    const pricing = await getPricing();
+    pricing.selfService = {
+      cuci: parseFloat(modal.querySelector("#ss-price-cuci").value) || 0,
+      kering: parseFloat(modal.querySelector("#ss-price-kering").value) || 0,
+      "cuci-kering": parseFloat(modal.querySelector("#ss-price-cuci-kering").value) || 0
+    };
+    await setPricing(pricing);
+    toast("Harga self-service disimpan");
+  });
+
+  modal.querySelector("[data-action='close-price-settings']").addEventListener("click", ()=>{
+    closeModal();
+    render();
+  });
+
+  async function init(){
+    const pricing = await getPricing();
+    modal.querySelector("#ss-price-cuci").value = pricing.selfService.cuci;
+    modal.querySelector("#ss-price-kering").value = pricing.selfService.kering;
+    modal.querySelector("#ss-price-cuci-kering").value = pricing.selfService["cuci-kering"];
+    refreshKiloanGroups();
+    refreshSatuanList();
+  }
+  init();
 }
 
 function computeTotal(pricing, serviceType, subType, weightKg){
-  if(serviceType === "kiloan"){
-    const rate = pricing.kiloan[subType]?.rate || 0;
-    return Math.round(rate * (weightKg || 0));
-  }
   return pricing.selfService[subType] || 0;
 }
 
@@ -1128,10 +1239,7 @@ function sendOrderStatusWA(o){
 async function openAddOrderModal(){
   const pricing = await getPricing();
   const kiloanLoyalty = await getKiloanLoyalty();
-  const kiloanOptions = Object.entries(KILOAN_LABELS).map(([id,label])=>{
-    const p = pricing.kiloan[id];
-    return `<option value="${id}">${label} (Rp${p.rate.toLocaleString('id-ID')}/kg · ${p.duration} ${p.unit})</option>`;
-  }).join("");
+  const kiloanJenisOptions = Object.entries(KILOAN_LABELS).map(([id,label])=>`<option value="${id}">${label}</option>`).join("");
   const selfServiceOptions = Object.entries(SELF_SERVICE_LABELS).map(([id,label])=>`<option value="${id}">${label} (Rp${pricing.selfService[id].toLocaleString('id-ID')})</option>`).join("");
   const satuanOptions = pricing.satuan.map(s=>`<option value="${s.id}">${s.name} (${Reports.formatRupiah(s.price)})</option>`).join("");
 
@@ -1144,8 +1252,9 @@ async function openAddOrderModal(){
     </div>
 
     <div id="kiloanFields">
+      <div class="field"><label>Jenis Layanan</label><select id="kiloanJenisPicker">${kiloanJenisOptions}</select></div>
       <div class="field-row" style="display:flex; gap:8px; align-items:flex-end;">
-        <div class="field" style="flex:1; margin-bottom:0;"><label>Jenis Layanan</label><select id="kiloanPicker">${kiloanOptions}</select></div>
+        <div class="field" style="flex:1; margin-bottom:0;"><label>Opsi Durasi & Harga</label><select id="kiloanTierPicker"></select></div>
         <div class="field" style="width:90px; margin-bottom:0;"><label>Berat (kg)</label><input type="number" step="0.1" id="kiloanWeight" placeholder="5"></div>
         <button type="button" class="btn btn-outline" id="addKiloanLine" style="margin-bottom:14px;">+</button>
       </div>
@@ -1153,7 +1262,7 @@ async function openAddOrderModal(){
     </div>
 
     <div id="satuanFields" style="display:none;">
-      ${pricing.satuan.length === 0 ? `<p class="small muted">Belum ada daftar barang satuan. Tambahkan dulu di Atur → Harga Cuci Satuan.</p>` : `
+      ${pricing.satuan.length === 0 ? `<p class="small muted">Belum ada daftar barang satuan. Tambahkan dulu di Atur → Setting Harga.</p>` : `
         <div class="field-row" style="display:flex; gap:8px; align-items:flex-end;">
           <div class="field" style="flex:1; margin-bottom:0;"><label>Barang</label><select id="satuanPicker">${satuanOptions}</select></div>
           <div class="field" style="width:80px; margin-bottom:0;"><label>Qty</label><input type="number" id="satuanQty" value="1" min="1"></div>
@@ -1196,10 +1305,20 @@ async function openAddOrderModal(){
   `);
 
   let serviceType = "kiloan";
-  let kiloanCart = []; // [{subType, subTypeLabel, weightKg, rate, subtotal}]
+  let kiloanCart = []; // [{subType, subTypeLabel, tierId, duration, unit, rate, weightKg, subtotal}]
   let satuanCart = []; // [{id, name, price, qty}]
   let photoUrls = [];
   let pendingKiloanPromo = null; // preview only — authoritative check happens again on save
+
+  function refreshKiloanTierOptions(){
+    const jenis = modal.querySelector("#kiloanJenisPicker").value;
+    const tiers = pricing.kiloan[jenis] || [];
+    const tierSelect = modal.querySelector("#kiloanTierPicker");
+    tierSelect.innerHTML = tiers.map(t=>`<option value="${t.id}">${tierLabel(t)} — Rp${t.rate.toLocaleString('id-ID')}/kg</option>`).join("")
+      || `<option value="">Belum ada opsi harga untuk jenis ini</option>`;
+  }
+  modal.querySelector("#kiloanJenisPicker").addEventListener("change", refreshKiloanTierOptions);
+  refreshKiloanTierOptions();
 
   function renderPhotoPreview(){
     const box = modal.querySelector("#ordPhotoPreview");
@@ -1252,7 +1371,7 @@ async function openAddOrderModal(){
     }
     box.innerHTML = kiloanCart.map((line,i) => `
       <div class="row-between" style="padding:6px 0; border-bottom:1px dashed var(--line);">
-        <span class="small">${line.subTypeLabel} — ${line.weightKg}kg</span>
+        <span class="small">${line.subTypeLabel} (${line.duration} ${line.unit}) — ${line.weightKg}kg</span>
         <div style="display:flex; align-items:center; gap:8px;">
           <span class="small num">${Reports.formatRupiah(line.subtotal)}</span>
           <button class="tx-del" data-remove-kiloan-line="${i}">${ICONS.trash}</button>
@@ -1370,12 +1489,18 @@ async function openAddOrderModal(){
 
   const addKiloanBtn = modal.querySelector("#addKiloanLine");
   addKiloanBtn.addEventListener("click", ()=>{
-    const subType = modal.querySelector("#kiloanPicker").value;
+    const subType = modal.querySelector("#kiloanJenisPicker").value;
+    const tierId = modal.querySelector("#kiloanTierPicker").value;
     const weightKg = parseFloat(modal.querySelector("#kiloanWeight").value);
     if(!weightKg || weightKg <= 0){ toast("Isi berat yang valid", "warn"); return; }
-    const cfg = pricing.kiloan[subType];
-    const subtotal = Math.round(cfg.rate * weightKg);
-    kiloanCart.push({ subType, subTypeLabel: KILOAN_LABELS[subType], weightKg, rate: cfg.rate, subtotal });
+    const tier = (pricing.kiloan[subType] || []).find(t=>t.id===tierId);
+    if(!tier){ toast("Pilih opsi durasi & harga dulu", "warn"); return; }
+    const subtotal = Math.round(tier.rate * weightKg);
+    kiloanCart.push({
+      subType, subTypeLabel: KILOAN_LABELS[subType], tierId,
+      duration: tier.duration, unit: tier.unit, rate: tier.rate,
+      weightKg, subtotal
+    });
     modal.querySelector("#kiloanWeight").value = "";
     renderKiloanCart();
     recalcTotal();
@@ -1417,16 +1542,11 @@ async function openAddOrderModal(){
       if(kiloanCart.length === 0){ toast("Tambahkan minimal 1 layanan kiloan", "warn"); return; }
       categoryId = "jasa-cuci";
       totalWeightKg = kiloanCart.reduce((s,l)=>s+l.weightKg,0);
-      const maxDurMs = Math.max(...kiloanCart.map(l=>{
-        const cfg = pricing.kiloan[l.subType];
-        return durationMs(cfg.duration, cfg.unit);
-      }));
-      estimatedReadyAt = Date.now() + maxDurMs;
       const durLine = kiloanCart.reduce((longest,l)=>{
-        const cfg = pricing.kiloan[l.subType];
-        const ms = durationMs(cfg.duration, cfg.unit);
-        return ms > longest.ms ? { ms, label:`${cfg.duration} ${cfg.unit}` } : longest;
+        const ms = durationMs(l.duration, l.unit);
+        return ms > longest.ms ? { ms, label:`${l.duration} ${l.unit}` } : longest;
       }, { ms:0, label:"" });
+      estimatedReadyAt = Date.now() + durLine.ms;
       durationLabel = durLine.label;
 
       if(customerPhone){
@@ -1475,6 +1595,7 @@ async function openAddOrderModal(){
     if(totalWeightKg) txRecord.weightKg = totalWeightKg;
     if(isFreeVisit) txRecord.isFreeVisit = true;
     if(discountAmount > 0){ txRecord.discountAmount = discountAmount; txRecord.discountReason = discountReason; }
+    if(estimatedReadyAt){ txRecord.estimatedReadyAt = estimatedReadyAt; txRecord.durationLabel = durationLabel; }
     if(photoUrls.length > 0) txRecord.hasPhotos = true;
 
     const txId = await DB.addTransaction(txRecord);
@@ -1730,6 +1851,8 @@ function buildReceiptText(t){
   const lines = [];
   lines.push(`*${state.businessName}*`);
   if(state.businessTagline) lines.push(state.businessTagline);
+  if(state.businessPhone) lines.push(`WA: ${state.businessPhone}`);
+  if(state.businessInstagram) lines.push(`IG: ${state.businessInstagram}`);
   lines.push("--------------------------------");
   lines.push(`Tgl        : ${fmtDate(t.date)}`);
   if(t.receiptNo) lines.push(`Struk No.  : ${String(t.receiptNo).padStart(6,'0')}`);
@@ -1741,6 +1864,7 @@ function buildReceiptText(t){
     lines.push(`  ${i.detail ? i.detail + "   " : ""}${Reports.formatRupiah(i.subtotal)}`);
   });
   if(t.isFreeVisit) lines.push(`🎁 GRATIS (Reward Member 10x Kunjungan)`);
+  if(t.estimatedReadyAt) lines.push(`⏱ Estimasi Selesai: ${fmtDateTime(t.estimatedReadyAt)}`);
   lines.push("--------------------------------");
   if(t.discountAmount > 0){
     lines.push(`Subtotal   : ${Reports.formatRupiah(subtotal)}`);
@@ -1838,6 +1962,8 @@ function buildEscPos(t, width){
   raw(GS,0x21,0x00);       // normal size
   raw(ESC,0x45,0);         // bold off
   if(state.businessTagline) text(state.businessTagline + "\n");
+  if(state.businessPhone) text(`WA: ${state.businessPhone}\n`);
+  if(state.businessInstagram) text(`IG: ${state.businessInstagram}\n`);
   text("-".repeat(width) + "\n");
 
   raw(ESC,0x61,0);         // left align
@@ -1855,6 +1981,10 @@ function buildEscPos(t, width){
     raw(ESC,0x61,1); raw(ESC,0x45,1);
     text("*** GRATIS REWARD MEMBER ***\n");
     raw(ESC,0x45,0); raw(ESC,0x61,0);
+  }
+  if(t.estimatedReadyAt){
+    raw(ESC,0x61,0);
+    text(`Estimasi Selesai:\n${fmtDateTime(t.estimatedReadyAt)}\n`);
   }
 
   text("-".repeat(width) + "\n");
@@ -1939,6 +2069,8 @@ function printReceiptSystemDialog(t){
     <div class="print-receipt">
       <div class="pr-biz">${state.businessName}</div>
       ${state.businessTagline ? `<div class="pr-tagline">${escapeHtml(state.businessTagline)}</div>` : ""}
+      ${state.businessPhone ? `<div class="pr-tagline">WA: ${escapeHtml(state.businessPhone)}</div>` : ""}
+      ${state.businessInstagram ? `<div class="pr-tagline">IG: ${escapeHtml(state.businessInstagram)}</div>` : ""}
       <div class="pr-divider"></div>
       <div class="pr-row"><span>Tgl</span><span>${fmtDate(t.date)}</span></div>
       ${t.receiptNo ? `<div class="pr-row"><span>Struk No.</span><span>${String(t.receiptNo).padStart(6,'0')}</span></div>` : ""}
@@ -1950,6 +2082,7 @@ function printReceiptSystemDialog(t){
         <div class="pr-row"><span class="pr-item-detail">${escapeHtml(i.detail)}</span><span>${Reports.formatRupiah(i.subtotal)}</span></div>
       `).join("")}
       ${t.isFreeVisit ? `<div class="pr-badge">GRATIS REWARD MEMBER</div>` : ""}
+      ${t.estimatedReadyAt ? `<div class="pr-row"><span>Estimasi Selesai</span><span>${fmtDateTime(t.estimatedReadyAt)}</span></div>` : ""}
       <div class="pr-divider"></div>
       ${t.discountAmount > 0 ? `
         <div class="pr-row"><span>Subtotal</span><span>${Reports.formatRupiah(subtotal)}</span></div>
@@ -1997,10 +2130,11 @@ function generateReceiptCanvas(t){
   }
 
   const scale = 2;
+  const contactLines = (state.businessPhone?1:0) + (state.businessInstagram?1:0);
   const estHeight = padding*2
-    + 30 + (state.businessTagline?16:0) + 14   // header + divider
+    + 30 + (state.businessTagline?16:0) + contactLines*15 + 14   // header + divider
     + infoRows.length*22 + 14                   // info block + divider
-    + items.reduce((s)=>s+40, 0) + (t.isFreeVisit?26:0) + 14 // items + divider
+    + items.reduce((s)=>s+40, 0) + (t.isFreeVisit?26:0) + (t.estimatedReadyAt?36:0) + 14 // items + divider
     + footRows.length*22
     + 34                                         // total row
     + payRows.length*22 + 14                     // pay rows + divider
@@ -2045,6 +2179,18 @@ function generateReceiptCanvas(t){
     ctx.fillText(state.businessTagline, width/2, y);
     y += 16;
   }
+  if(state.businessPhone){
+    ctx.fillStyle = "#5C6B70";
+    ctx.font = "400 11px -apple-system, sans-serif";
+    ctx.fillText(`WA: ${state.businessPhone}`, width/2, y);
+    y += 15;
+  }
+  if(state.businessInstagram){
+    ctx.fillStyle = "#5C6B70";
+    ctx.font = "400 11px -apple-system, sans-serif";
+    ctx.fillText(`IG: ${state.businessInstagram}`, width/2, y);
+    y += 15;
+  }
   y += 8;
   drawDivider(y); y += 22;
 
@@ -2066,6 +2212,16 @@ function generateReceiptCanvas(t){
     ctx.font = "700 13px -apple-system, sans-serif";
     ctx.fillText("GRATIS — Reward Member 10x Kunjungan", width/2, y+4);
     y += 26;
+  }
+  if(t.estimatedReadyAt){
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#3E7CB1";
+    ctx.font = "700 12px -apple-system, sans-serif";
+    ctx.fillText("Estimasi Selesai", padding, y);
+    y += 16;
+    ctx.font = "600 13px -apple-system, sans-serif";
+    ctx.fillText(fmtDateTime(t.estimatedReadyAt), padding, y);
+    y += 20;
   }
   drawDivider(y); y += 22;
 
@@ -2343,10 +2499,16 @@ function bindPageEvents(){
   if(saveBizBtn) saveBizBtn.addEventListener("click", async ()=>{
     const val = document.getElementById("bizNameInput").value.trim() || "Usaha Laundry Saya";
     const tagline = document.getElementById("bizTaglineInput").value.trim();
+    const phone = document.getElementById("bizPhoneInput").value.trim();
+    const instagram = document.getElementById("bizInstagramInput").value.trim();
     state.businessName = val;
     state.businessTagline = tagline;
+    state.businessPhone = phone;
+    state.businessInstagram = instagram;
     await DB.setSetting("businessName", val);
     await DB.setSetting("businessTagline", tagline);
+    await DB.setSetting("businessPhone", phone);
+    await DB.setSetting("businessInstagram", instagram);
     toast("Profil usaha disimpan");
     render();
   });
@@ -2363,27 +2525,8 @@ function bindPageEvents(){
     render();
   });
 
-  const savePricingBtn = document.querySelector("[data-action='save-pricing']");
-  if(savePricingBtn) savePricingBtn.addEventListener("click", async ()=>{
-    const num = (id)=> parseFloat(document.getElementById(id).value) || 0;
-    const str = (id)=> document.getElementById(id).value;
-    const current = await getPricing();
-    const kiloan = {};
-    for(const id of Object.keys(KILOAN_LABELS)){
-      kiloan[id] = { rate: num(`price-${id}`), duration: num(`dur-${id}`), unit: str(`unit-${id}`) };
-    }
-    await setPricing({
-      kiloan,
-      selfService: {
-        "cuci": num("price-ss-cuci"),
-        "kering": num("price-ss-kering"),
-        "cuci-kering": num("price-ss-cuci-kering")
-      },
-      satuan: current.satuan
-    });
-    toast("Harga layanan disimpan");
-    render();
-  });
+  const openPriceBtn = document.querySelector("[data-action='open-price-settings']");
+  if(openPriceBtn) openPriceBtn.addEventListener("click", openPriceSettingsModal);
 
   const klType = document.getElementById("kl-type");
   if(klType) klType.addEventListener("change", ()=>{
@@ -2409,19 +2552,6 @@ function bindPageEvents(){
     await setPrinterSettings({ widthChars: parseInt(document.getElementById("printer-width").value) });
     toast("Pengaturan printer disimpan");
     render();
-  });
-
-  const manageSatuanBtn = document.querySelector("[data-action='manage-satuan']");
-  if(manageSatuanBtn) manageSatuanBtn.addEventListener("click", openManageSatuanModal);
-
-  document.querySelectorAll("[data-action='delete-satuan']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      if(!confirm("Hapus barang ini dari daftar harga satuan?")) return;
-      const pricing = await getPricing();
-      pricing.satuan = pricing.satuan.filter(s=>s.id!==btn.dataset.id);
-      await setPricing(pricing);
-      render();
-    });
   });
 
   document.querySelectorAll("[data-action='add-cat']").forEach(btn=>{
@@ -2691,6 +2821,8 @@ async function startApp(){
   await DB.init();
   state.businessName = await DB.getSetting("businessName", "Usaha Laundry Saya");
   state.businessTagline = await DB.getSetting("businessTagline", "");
+  state.businessPhone = await DB.getSetting("businessPhone", "");
+  state.businessInstagram = await DB.getSetting("businessInstagram", "");
   state.categories = await DB.getCategories();
 
   if("serviceWorker" in navigator){
