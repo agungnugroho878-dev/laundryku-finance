@@ -136,7 +136,11 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
 
 > Catatan teknis: untuk pengiriman **struk gambar**, link pantau disertakan sebagai "keterangan/caption" lewat fitur share bawaan HP. Beberapa versi WhatsApp menampilkan caption ini otomatis di bawah gambar, sebagian lain mungkin tidak menampilkannya. Kalau linknya tidak muncul di WA, gunakan opsi **"Kirim sebagai Teks Saja"** sebagai cadangan — di situ link selalu ikut karena bagian dari teks pesan biasa.
 
-11. Update status pesanan di tab **Cucian**: **Belum Diproses → Sedang Diproses → Selesai**. Untuk pesanan kiloan yang belum selesai, muncul indikator **sisa waktu** (atau **terlambat**, ditandai merah) berdasarkan estimasi durasi yang di-set di Harga Layanan — membantu Anda dan pegawai mengatur prioritas kerja
+11. Tab **Cucian** sekarang punya 3 tab terpisah dengan jumlah pesanan di tiap tab: **Belum Diproses → Sedang Diproses → Selesai**. Update status dengan tombol "Tandai" di tiap kartu pesanan
+    - Untuk tab Belum Diproses & Sedang Diproses, ada **pengurutan**: deadline terdekat/terlama, atau baru/lama dibuat
+    - Ada **pencarian** di atas (cari berdasarkan No. Struk, nama pelanggan, atau nomor WA)
+    - Tiap pesanan kiloan yang belum selesai punya **indikator sisa waktu** berwarna (hijau = aman, kuning = mendekati deadline, merah = terlambat) berdasarkan estimasi durasi yang di-set di Harga Layanan
+    - Tampilan menyesuaikan ukuran layar: 1 kolom di HP, 2 kolom di tablet, 3 kolom di laptop/layar lebar
 12. **Notifikasi siap diambil**: begitu status ditandai **"Selesai"**, langsung muncul pop-up untuk kirim notifikasi WA ke pelanggan (1 tombol, pesan sudah siap dengan nada bersemangat + link pantau)
 13. Halaman pantau yang dibuka pelanggan **otomatis memperbarui status setiap 20 detik** — kalau dibiarkan terbuka, pelanggan langsung melihat perubahan status tanpa perlu refresh manual
 14. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)

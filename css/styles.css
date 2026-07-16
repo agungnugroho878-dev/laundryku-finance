@@ -122,6 +122,7 @@ a{ color:var(--suds-blue); }
 
 @media (min-width: 860px){
   .app-body{ max-width:1040px; margin:0 auto; width:100%; }
+  .app-body.wide{ max-width:1300px; }
   .sidebar{
     display:flex;
     flex-direction:column;
@@ -263,13 +264,90 @@ a{ color:var(--suds-blue); }
 .auth-card a{ color:var(--suds-blue-dark); font-weight:600; }
 
 /* ---------- Cucian (order tracking) ---------- */
+
+/* Search bar */
+.cucian-search{
+  display:flex; align-items:center; gap:10px;
+  background:var(--paper); border:1.5px solid var(--line); border-radius:12px;
+  padding:11px 14px; margin-bottom:14px;
+}
+.cucian-search svg{ width:18px; height:18px; color:var(--text-muted); flex-shrink:0; }
+.cucian-search input{
+  border:none; outline:none; font-size:14.5px; width:100%; background:none; color:var(--ink-navy);
+}
+.cucian-search input::placeholder{ color:var(--text-muted); }
+
+/* Status tabs with counts */
+.cucian-tabs{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;
+}
+.cucian-tab{
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+  border:1.5px solid var(--line); background:var(--paper); border-radius:12px;
+  padding:10px 6px; cursor:pointer; transition:transform .12s ease, border-color .15s ease, background .15s ease;
+  font-size:12px; font-weight:600; color:var(--text-muted);
+}
+.cucian-tab:active{ transform:scale(.97); }
+.cucian-tab-count{
+  font-family:var(--font-mono); font-size:17px; font-weight:700; color:var(--ink-navy);
+}
+.cucian-tab.active{ border-width:2px; }
+.cucian-tab.status-belum-diproses.active{ border-color:var(--suds-blue); background:#EAF2F9; color:var(--suds-blue-dark); }
+.cucian-tab.status-belum-diproses.active .cucian-tab-count{ color:var(--suds-blue-dark); }
+.cucian-tab.status-sedang-diproses.active{ border-color:var(--coin); background:var(--coin-bg); color:var(--coin); }
+.cucian-tab.status-sedang-diproses.active .cucian-tab-count{ color:var(--coin); }
+.cucian-tab.status-selesai.active{ border-color:var(--mint); background:var(--mint-bg); color:var(--mint); }
+.cucian-tab.status-selesai.active .cucian-tab-count{ color:var(--mint); }
+
+/* Sort row */
+.cucian-sort-row{
+  display:flex; align-items:center; gap:8px; margin-bottom:14px;
+}
+.cucian-sort-row svg{ width:16px; height:16px; color:var(--text-muted); flex-shrink:0; }
+.cucian-sort-row select{
+  border:1.5px solid var(--line); border-radius:10px; padding:8px 10px;
+  font-size:13px; background:var(--paper); color:var(--ink-navy); flex:1;
+}
+
+/* Responsive card grid: 1 col phone, 2 col tablet & up (matches the app's centered content column) */
+.cucian-grid{
+  display:grid; grid-template-columns:1fr; gap:12px;
+}
+@media (min-width:600px){
+  .cucian-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+}
+@media (min-width:1200px){
+  .app-main.wide{ max-width:1080px; }
+  .app-main.wide .cucian-grid{ grid-template-columns:repeat(3, minmax(0,1fr)); }
+}
+
+/* Order card */
 .order-card{
-  border-radius:12px; border:1px solid var(--line); border-left:4px solid var(--suds-blue);
-  padding:14px; margin-bottom:12px; animation:fadeInUp .3s ease both;
+  background:var(--paper); border-radius:14px; border:1px solid var(--line);
+  border-left:4px solid var(--suds-blue);
+  padding:16px; animation:fadeInUp .3s ease both;
+  box-shadow:var(--shadow-card);
 }
 .order-card.status-belum-diproses{ border-left-color:var(--suds-blue); }
 .order-card.status-sedang-diproses{ border-left-color:var(--coin); }
 .order-card.status-selesai{ border-left-color:var(--mint); opacity:.85; }
+
+.order-card-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.order-service-icon{
+  width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.order-service-icon svg{ width:17px; height:17px; }
+.order-service-icon.status-belum-diproses{ background:#EAF2F9; color:var(--suds-blue-dark); }
+.order-service-icon.status-sedang-diproses{ background:var(--coin-bg); color:var(--coin); }
+.order-service-icon.status-selesai{ background:var(--mint-bg); color:var(--mint); }
+
+.order-card-id{ display:flex; align-items:center; gap:8px; }
+.order-id-badge{
+  display:flex; align-items:center; gap:3px;
+  font-family:var(--font-mono); font-size:11.5px; font-weight:700; color:var(--text-muted);
+  background:var(--foam-white); border-radius:8px; padding:4px 8px;
+}
+.order-id-badge svg{ width:11px; height:11px; }
 
 .status-badge{
   font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; white-space:nowrap;
@@ -277,6 +355,21 @@ a{ color:var(--suds-blue); }
 .status-badge.status-belum-diproses{ background:#E4EEF6; color:var(--suds-blue-dark); }
 .status-badge.status-sedang-diproses{ background:var(--coin-bg); color:var(--coin); }
 .status-badge.status-selesai{ background:var(--mint-bg); color:var(--mint); }
+
+.order-card-customer{ margin-bottom:8px; }
+.order-customer-name{ font-weight:700; font-size:15px; color:var(--ink-navy); }
+.order-card-items{ font-size:13px; color:var(--ink-navy); margin-bottom:2px; }
+.order-card-total{ font-weight:700; color:var(--suds-blue-dark); }
+.order-card-meta{ display:flex; gap:6px; font-size:11.5px; color:var(--text-muted); margin-top:8px; flex-wrap:wrap; }
+
+.deadline-badge{
+  display:flex; align-items:center; gap:6px; width:fit-content;
+  font-size:12px; font-weight:700; border-radius:10px; padding:6px 10px; margin-top:8px;
+}
+.deadline-badge svg{ width:14px; height:14px; flex-shrink:0; }
+.deadline-badge.urgency-normal{ background:var(--mint-bg); color:var(--mint); }
+.deadline-badge.urgency-urgent{ background:var(--coin-bg); color:var(--coin); }
+.deadline-badge.urgency-overdue{ background:var(--rose-bg); color:var(--rose); }
 
 /* ---------- Cetak struk (jalur dialog print browser) ---------- */
 #receiptPrintArea{ display:none; }

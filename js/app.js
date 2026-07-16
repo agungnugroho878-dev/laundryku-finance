@@ -19,7 +19,13 @@ const ICONS = {
   clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>`,
   check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`,
   edit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>`,
-  camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`
+  camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`,
+  search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`,
+  sort: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10M11 9h7M11 13h4"/><path d="m3 17 3 3 3-3M6 18V4"/></svg>`,
+  droplet: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.7s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>`,
+  shirt: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 2 7l3 4 2-1.5V21h10V9.5L19 11l3-4-6-4-2 2h-4z"/></svg>`,
+  hash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h14M5 15h14M11 4 8 20M16 4l-3 16"/></svg>`,
+  alertTriangle: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>`
 };
 
 const state = {
@@ -34,7 +40,10 @@ const state = {
   txForm: { type: "in" },
   reportTab: "labarugi",
   labaRugiRange: { start: Reports.startOfMonth(), end: Reports.todayStr() },
-  neracaDate: Reports.todayStr()
+  neracaDate: Reports.todayStr(),
+  cucianFilter: "belum-diproses",
+  cucianSort: "deadline-asc",
+  cucianSearch: ""
 };
 
 function el(html){
@@ -96,6 +105,8 @@ async function render(){
   renderNav();
   document.getElementById("bizName").textContent = state.businessName;
   const main = document.getElementById("appMain");
+  main.classList.toggle("wide", state.page === "cucian");
+  document.getElementById("appBody")?.classList.toggle("wide", state.page === "cucian");
   main.innerHTML = `<div class="empty-state">Memuat...</div>`;
   if(state.page === "dashboard") main.innerHTML = await pageDashboard();
   if(state.page === "transaksi") main.innerHTML = await pageTransaksi();
@@ -105,6 +116,7 @@ async function render(){
   if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
   bindPageEvents();
   if(state.page === "dashboard") runDashboardCountUps();
+  if(state.page === "cucian"){ bindCucianControls(); renderCucianList(); }
 }
 
 /* ---------------- Dashboard ---------------- */
@@ -646,7 +658,10 @@ function formatCountdown(estimatedReadyAt){
   if(days > 0) label = `${days}h ${hours}j`;
   else if(hours > 0) label = `${hours}j ${minutes}m`;
   else label = `${minutes}m`;
-  return overdue ? { overdue: true, text: `Terlambat ${label}` } : { overdue: false, text: `Sisa ${label}` };
+  const urgency = overdue ? "overdue" : (diff < 2*3600*1000 ? "urgent" : "normal");
+  return overdue
+    ? { overdue: true, urgency, text: `Terlambat ${label}` }
+    : { overdue: false, urgency, text: `Sisa ${label}` };
 }
 
 function openManageSatuanModal(){
@@ -860,25 +875,87 @@ function nextOrderStatus(current){
 
 async function pageCucian(){
   const all = await DB.getOrders();
-  const filter = state.cucianFilter || "aktif";
-  const orders = filter === "semua" ? all
-    : filter === "riwayat" ? all.filter(o => o.status === "selesai")
-    : all.filter(o => o.status !== "selesai");
+  const filter = state.cucianFilter || "belum-diproses";
+  const counts = {
+    "belum-diproses": all.filter(o=>o.status==="belum-diproses").length,
+    "sedang-diproses": all.filter(o=>o.status==="sedang-diproses").length,
+    "selesai": all.filter(o=>o.status==="selesai").length
+  };
+  const isActiveTab = filter !== "selesai";
 
-  const tabBtn = (id,label) => `<button class="btn ${filter===id?'btn-primary':'btn-outline'}" data-cucian-tab="${id}">${label}</button>`;
+  const tabBtn = (id,label) => `
+    <button class="cucian-tab ${filter===id?'active':''} status-${id}" data-cucian-tab="${id}">
+      ${label}<span class="cucian-tab-count">${counts[id]}</span>
+    </button>`;
+
+  const sortOptions = isActiveTab ? `
+    <option value="deadline-asc" ${state.cucianSort==='deadline-asc'?'selected':''}>Deadline terdekat</option>
+    <option value="deadline-desc" ${state.cucianSort==='deadline-desc'?'selected':''}>Deadline terlama</option>
+    <option value="created-desc" ${state.cucianSort==='created-desc'?'selected':''}>Baru dibuat</option>
+    <option value="created-asc" ${state.cucianSort==='created-asc'?'selected':''}>Lama dibuat</option>
+  ` : `
+    <option value="created-desc" ${state.cucianSort==='created-desc'?'selected':''}>Baru selesai</option>
+    <option value="created-asc" ${state.cucianSort==='created-asc'?'selected':''}>Lama selesai</option>
+  `;
 
   return `
     <button class="btn btn-primary btn-block" data-action="add-order" style="margin-bottom:14px;">${ICONS.plus} Pesanan Cucian Baru</button>
-    <div class="btn-row no-print" style="margin-bottom:14px;">
-      ${tabBtn("aktif","Aktif")}
-      ${tabBtn("semua","Semua")}
-      ${tabBtn("riwayat","Selesai")}
+
+    <div class="cucian-search">
+      ${ICONS.search}
+      <input type="text" id="cucianSearchInput" placeholder="Cari ID, nama, atau no. WA..." value="${escapeHtml(state.cucianSearch)}">
     </div>
-    <div class="card">
-      <div class="card-title">${filter === "aktif" ? "Pesanan Aktif" : filter === "riwayat" ? "Riwayat Selesai" : "Semua Pesanan"} (${orders.length})</div>
-      ${orders.length === 0 ? emptyState("Belum ada pesanan cucian di sini.") : orders.map(orderCardHtml).join("")}
+
+    <div class="cucian-tabs">
+      ${tabBtn("belum-diproses","Belum Diproses")}
+      ${tabBtn("sedang-diproses","Sedang Diproses")}
+      ${tabBtn("selesai","Selesai")}
+    </div>
+
+    <div class="cucian-sort-row">
+      ${ICONS.sort}
+      <select id="cucianSortSelect">${sortOptions}</select>
+    </div>
+
+    <div id="cucianListContainer"></div>
+  `;
+}
+
+function filterAndSortOrders(orders, status, search, sort){
+  let list = orders.filter(o => o.status === status);
+  if(search){
+    const q = search.trim().toLowerCase();
+    list = list.filter(o =>
+      String(o.receiptNo||"").toLowerCase().includes(q) ||
+      (o.customerName||"").toLowerCase().includes(q) ||
+      (o.customerPhone||"").toLowerCase().includes(q)
+    );
+  }
+  const sorters = {
+    "deadline-asc": (a,b) => (a.estimatedReadyAt ?? Infinity) - (b.estimatedReadyAt ?? Infinity),
+    "deadline-desc": (a,b) => (b.estimatedReadyAt ?? -Infinity) - (a.estimatedReadyAt ?? -Infinity),
+    "created-desc": (a,b) => (b.createdAt||0) - (a.createdAt||0),
+    "created-asc": (a,b) => (a.createdAt||0) - (b.createdAt||0)
+  };
+  return list.slice().sort(sorters[sort] || sorters["created-desc"]);
+}
+
+async function renderCucianList(){
+  const container = document.getElementById("cucianListContainer");
+  if(!container) return;
+  const all = await DB.getOrders();
+  const list = filterAndSortOrders(all, state.cucianFilter, state.cucianSearch, state.cucianSort);
+  container.innerHTML = `
+    <div class="cucian-grid">
+      ${list.length === 0 ? emptyState("Tidak ada pesanan yang cocok di sini.") : list.map(orderCardHtml).join("")}
     </div>
   `;
+  bindCucianCardEvents();
+}
+
+function serviceIconFor(o){
+  if(o.serviceType === "satuan") return ICONS.shirt;
+  return ICONS.droplet;
 }
 
 function orderCardHtml(o){
@@ -889,20 +966,32 @@ function orderCardHtml(o){
   const itemLines = o.kiloanItems?.length ? o.kiloanItems.map(l=>`${l.subTypeLabel} ${l.weightKg}kg`).join(", ")
     : o.satuanItems?.length ? o.satuanItems.map(l=>`${l.qty}x ${l.name}`).join(", ")
     : o.subTypeLabel || "";
+
   return `
     <div class="order-card status-${o.status}">
-      <div class="row-between">
-        <div>
-          <div style="font-weight:700;">${o.customerName || "Tanpa nama"} ${o.receiptNo ? `<span class="small muted">#${o.receiptNo}</span>` : ""}</div>
-          <div class="small muted">${o.customerPhone || ""}${o.weightKg ? ` · ${o.weightKg} kg total` : ""}</div>
+      <div class="order-card-top">
+        <div class="order-service-icon status-${o.status}">${serviceIconFor(o)}</div>
+        <div class="order-card-id">
+          <span class="order-id-badge">${ICONS.hash}${o.receiptNo ? String(o.receiptNo).padStart(6,'0') : '------'}</span>
+          <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
         </div>
-        <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
       </div>
-      ${itemLines ? `<div class="small" style="margin-top:8px;">${itemLines}${typeof o.total === 'number' ? ` · <span class="num">${Reports.formatRupiah(o.total)}</span>` : ""}</div>` : ""}
-      ${o.discountAmount ? `<div class="small" style="color:var(--coin); margin-top:2px;">🎁 ${o.discountReason || 'Diskon promo'}</div>` : ""}
+
+      <div class="order-card-customer">
+        <div class="order-customer-name">${escapeHtml(o.customerName || "Tanpa nama")}</div>
+        <div class="small muted">${o.customerPhone || "—"}${o.weightKg ? ` · ${o.weightKg} kg total` : ""}</div>
+      </div>
+
+      ${itemLines ? `<div class="order-card-items">${escapeHtml(itemLines)}${typeof o.total === 'number' ? ` <span class="num order-card-total">${Reports.formatRupiah(o.total)}</span>` : ""}</div>` : ""}
+      ${o.discountAmount ? `<div class="small" style="color:var(--coin); margin-top:2px;">🎁 ${escapeHtml(o.discountReason || 'Diskon promo')}</div>` : ""}
       ${o.note ? `<div class="small muted" style="margin-top:4px;">${escapeHtml(o.note)}</div>` : ""}
-      <div class="small muted" style="margin-top:8px;">Diterima ${dateLabel}${o.durationLabel ? ` · estimasi ${o.durationLabel}` : ""}</div>
-      ${countdown ? `<div class="small" style="margin-top:4px; font-weight:700; color:${countdown.overdue?'var(--rose)':'var(--suds-blue-dark)'}">${countdown.overdue?'⚠ ':'⏱ '}${countdown.text}</div>` : ""}
+
+      <div class="order-card-meta">
+        <span>Diterima ${dateLabel}</span>
+        ${o.durationLabel ? `<span>· estimasi ${o.durationLabel}</span>` : ""}
+      </div>
+      ${countdown ? `<div class="deadline-badge urgency-${countdown.urgency}">${countdown.overdue?ICONS.alertTriangle:ICONS.clock}${countdown.text}</div>` : ""}
+
       <div class="btn-row" style="margin-top:12px;">
         ${next ? `<button class="btn btn-primary btn-block" data-action="advance-order" data-id="${o.id}" data-next="${next}">Tandai: ${STATUS_LABEL[next]}</button>` : ""}
         ${o.customerPhone ? `<button class="btn btn-outline" data-action="wa-order" data-id="${o.id}">${ICONS.chat}</button>` : ""}
@@ -911,6 +1000,76 @@ function orderCardHtml(o){
       </div>
     </div>
   `;
+}
+
+let _cucianSearchDebounce = null;
+
+function bindCucianControls(){
+  const searchInput = document.getElementById("cucianSearchInput");
+  if(searchInput) searchInput.addEventListener("input", ()=>{
+    clearTimeout(_cucianSearchDebounce);
+    _cucianSearchDebounce = setTimeout(()=>{
+      state.cucianSearch = searchInput.value;
+      renderCucianList();
+    }, 250);
+  });
+
+  const sortSelect = document.getElementById("cucianSortSelect");
+  if(sortSelect) sortSelect.addEventListener("change", ()=>{
+    state.cucianSort = sortSelect.value;
+    renderCucianList();
+  });
+
+  document.querySelectorAll("[data-cucian-tab]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      state.cucianFilter = btn.dataset.cucianTab;
+      state.cucianSort = state.cucianFilter === "selesai" ? "created-desc" : "deadline-asc";
+      render();
+    });
+  });
+}
+
+function bindCucianCardEvents(){
+  document.querySelectorAll("[data-action='advance-order']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      await DB.updateOrderStatus(btn.dataset.id, btn.dataset.next);
+      toast(`Status diubah: ${STATUS_LABEL[btn.dataset.next]}`);
+      if(btn.dataset.next === "selesai"){
+        const orders = await DB.getOrders();
+        const o = orders.find(x => x.id === btn.dataset.id);
+        if(o) offerPickupNotify(o);
+      } else {
+        renderCucianList();
+      }
+    });
+  });
+  document.querySelectorAll("[data-action='wa-order']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const orders = await DB.getOrders();
+      const o = orders.find(x => x.id === btn.dataset.id);
+      if(o) sendOrderStatusWA(o);
+    });
+  });
+  document.querySelectorAll("[data-action='send-tracking']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const orders = await DB.getOrders();
+      const o = orders.find(x => x.id === btn.dataset.id);
+      if(!o) return;
+      const url = trackingUrl(o.id);
+      const msg = `Halo${o.customerName ? " "+o.customerName : ""}, pantau status cucianmu (termasuk foto barang) di link ini:\n${url}`;
+      const phone = normalizePhone(o.customerPhone);
+      const waUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      window.open(waUrl, "_blank");
+    });
+  });
+  document.querySelectorAll("[data-action='delete-order']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      if(!confirm("Hapus pesanan ini?")) return;
+      await DB.deleteOrder(btn.dataset.id);
+      toast("Pesanan dihapus");
+      renderCucianList();
+    });
+  });
 }
 
 function buildOrderStatusText(o){
@@ -2164,49 +2323,6 @@ function bindPageEvents(){
   });
   const addOrderBtn = document.querySelector("[data-action='add-order']");
   if(addOrderBtn) addOrderBtn.addEventListener("click", openAddOrderModal);
-  document.querySelectorAll("[data-cucian-tab]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{ state.cucianFilter = btn.dataset.cucianTab; render(); });
-  });
-  document.querySelectorAll("[data-action='advance-order']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      await DB.updateOrderStatus(btn.dataset.id, btn.dataset.next);
-      toast(`Status diubah: ${STATUS_LABEL[btn.dataset.next]}`);
-      if(btn.dataset.next === "selesai"){
-        const orders = await DB.getOrders();
-        const o = orders.find(x => x.id === btn.dataset.id);
-        if(o) offerPickupNotify(o);
-      } else {
-        render();
-      }
-    });
-  });
-  document.querySelectorAll("[data-action='wa-order']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const orders = await DB.getOrders();
-      const o = orders.find(x => x.id === btn.dataset.id);
-      if(o) sendOrderStatusWA(o);
-    });
-  });
-  document.querySelectorAll("[data-action='send-tracking']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const orders = await DB.getOrders();
-      const o = orders.find(x => x.id === btn.dataset.id);
-      if(!o) return;
-      const url = trackingUrl(o.id);
-      const msg = `Halo${o.customerName ? " "+o.customerName : ""}, pantau status cucianmu (termasuk foto barang) di link ini:\n${url}`;
-      const phone = normalizePhone(o.customerPhone);
-      const waUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-      window.open(waUrl, "_blank");
-    });
-  });
-  document.querySelectorAll("[data-action='delete-order']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      if(!confirm("Hapus pesanan ini?")) return;
-      await DB.deleteOrder(btn.dataset.id);
-      toast("Pesanan dihapus");
-      render();
-    });
-  });
   document.querySelectorAll("[data-report-tab]").forEach(btn=>{
     btn.addEventListener("click", ()=>{ state.reportTab = btn.dataset.reportTab; render(); });
   });
@@ -2587,6 +2703,20 @@ async function startApp(){
 auth.onAuthStateChanged(async (user) => {
   if(user){
     const profile = await loadUserProfile(user);
+    if(!profile.businessId){
+      document.getElementById("app").style.display = "none";
+      const root = document.getElementById("authRoot") || document.body.appendChild(Object.assign(document.createElement("div"), {id:"authRoot"}));
+      root.style.display = "block";
+      root.innerHTML = authShellHtml(`
+        <div class="auth-error" style="margin-bottom:14px;">
+          Akun ini belum terhubung ke usaha manapun (kemungkinan akun lama sebelum update sistem multi-usaha).
+          Buka <b>/migrate.html</b>, login pakai akun ini, dan jalankan migrasi satu kali — setelah itu login ulang di sini.
+        </div>
+        <button class="btn btn-outline btn-block" data-action="logout-stuck">Keluar</button>
+      `);
+      root.querySelector("[data-action='logout-stuck']").addEventListener("click", ()=> auth.signOut());
+      return;
+    }
     state.user = user;
     state.role = profile.role || "pegawai";
     state.userName = profile.name || user.email;
