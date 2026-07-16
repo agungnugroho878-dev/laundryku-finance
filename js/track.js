@@ -49,28 +49,22 @@ async function loadOrder(){
   }
 
   try{
-    const bizName = await getSetting("businessName", "LaundryKu");
-    const tagline = await getSetting("businessTagline", "");
-    document.getElementById("bizName").textContent = bizName;
-    document.getElementById("bizTagline").textContent = tagline;
-
     const doc = await fs.collection("orders").doc(id).get();
     if(!doc.exists){
       content.innerHTML = `<div class="card center muted">Pesanan tidak ditemukan. Mungkin link sudah kedaluwarsa.</div>`;
       return;
     }
     const o = doc.data();
+
+    const settingsDoc = await fs.collection("businessSettings").doc(o.businessId).get();
+    const settings = settingsDoc.exists ? settingsDoc.data() : {};
+    document.getElementById("bizName").textContent = settings.businessName || "LaundryKu";
+    document.getElementById("bizTagline").textContent = settings.businessTagline || "";
+
     renderOrder(o, content);
   }catch(err){
     content.innerHTML = `<div class="card center muted">Gagal memuat data. Cek koneksi internet dan coba lagi.</div>`;
   }
-}
-
-async function getSetting(key, fallback){
-  try{
-    const doc = await fs.collection("settings").doc(key).get();
-    return doc.exists ? doc.data().value : fallback;
-  }catch(e){ return fallback; }
 }
 
 function renderOrder(o, content){
@@ -116,7 +110,7 @@ function renderOrder(o, content){
       </div>
     ` : ""}
 
-    <p class="center muted" style="margin-top:20px;">Halaman ini otomatis diperbarui — refresh untuk lihat status terbaru.</p>
+    <p class="center muted" style="margin-top:20px;">Halaman ini otomatis memperbarui status setiap 20 detik.</p>
   `;
 
   content.querySelectorAll(".photos img").forEach(img=>{
@@ -132,3 +126,4 @@ document.getElementById("lightbox").addEventListener("click", ()=>{
 });
 
 loadOrder();
+setInterval(loadOrder, 20000);

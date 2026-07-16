@@ -1,12 +1,24 @@
 # LaundryKu Finance
 
-Aplikasi laporan keuangan untuk UMKM laundry — kini **online** (Firebase), sehingga data yang sama bisa diakses dari HP, tablet, maupun laptop, oleh Owner dan Pegawai sekaligus, secara real-time.
+Aplikasi laporan keuangan untuk UMKM laundry — kini **online** (Firebase) dan **multi-usaha**: satu instalasi aplikasi ini bisa dipakai banyak laundry berbeda sekaligus, masing-masing dengan data yang sepenuhnya terpisah (transaksi, member, harga, pengaturan — semua terisolasi per usaha).
+
+---
+
+## ⚠️ PENTING — kalau Anda sudah pakai versi sebelumnya (data WashSpace sudah ada)
+
+Update ini mengubah struktur data secara mendasar (dari 1-usaha jadi multi-usaha). **Wajib migrasi dulu**, kalau tidak, data WashSpace yang sudah ada akan terlihat kosong setelah update ini.
+
+1. Upload semua file (termasuk `migrate.html` yang baru) ke GitHub seperti biasa, tunggu Vercel selesai deploy
+2. Update Security Rules dulu (lihat rules terbaru di bagian bawah) — **Publish**
+3. Buka `https://domain-anda.vercel.app/migrate.html`
+4. Login pakai akun **Owner** yang sudah ada, isi nama usaha (misal "WashSpace"), klik **Jalankan Migrasi**
+5. Tunggu sampai muncul "SELESAI!" di log
+6. Buka aplikasi utama, logout lalu login lagi — data lama (transaksi, member, dll) akan muncul kembali, sekarang sudah terlabel sebagai usaha "WashSpace" yang terisolasi dari usaha lain
+7. Setelah berhasil, boleh hapus file `migrate.html` dari repo (opsional, tapi lebih aman — supaya tidak ada yang menjalankannya lagi secara tidak sengaja)
 
 ---
 
 ## 0. Setup Firebase (WAJIB dilakukan sebelum aplikasi bisa dipakai)
-
-Kalau Anda belum menyelesaikan semua langkah ini di Firebase Console (console.firebase.google.com, project **laundryku-finance**), aplikasi tidak akan bisa login/menyimpan data:
 
 1. **Authentication** → Sign-in method → aktifkan **Email/Password**
 2. **Firestore Database** → Create database (kalau belum) → mode **production**
@@ -17,52 +29,65 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function isSignedIn() { return request.auth != null; }
-    function isOwner() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
+    function myBusinessId() { return myProfile().businessId; }
+    function isOwner() { return isSignedIn() && myProfile().role == 'owner'; }
+    function sameBusiness(bizId) { return isSignedIn() && myBusinessId() == bizId; }
 
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == uid && request.resource.data.role == 'pegawai';
-      allow update, delete: if isOwner();
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
+    }
+
+    match /businesses/{bizId} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn();
+      allow update, delete: if isOwner() && sameBusiness(bizId);
+    }
+
+    match /businessSettings/{bizId} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if sameBusiness(bizId);
     }
 
     match /transactions/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isOwner();
+      allow read: if sameBusiness(resource.data.businessId);
+      allow create: if isSignedIn() && sameBusiness(request.resource.data.businessId);
+      allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
     }
 
     match /categories/{id} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /settings/{id} {
-      allow get: if isSignedIn() || id in ['businessName', 'businessTagline'];
-      allow list: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read: if sameBusiness(resource.data.businessId);
+      allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
+      allow delete: if isSignedIn() && sameBusiness(resource.data.businessId);
     }
 
     match /members/{id} {
-      allow read, write: if isSignedIn();
+      allow read: if sameBusiness(resource.data.businessId);
+      allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
+      allow delete: if isSignedIn() && sameBusiness(resource.data.businessId);
     }
 
     match /orders/{id} {
       allow get: if true;
-      allow list: if isSignedIn();
-      allow create, update: if isSignedIn();
-      allow delete: if isOwner();
+      allow list: if sameBusiness(resource.data.businessId);
+      allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
+      allow delete: if isOwner() && sameBusiness(resource.data.businessId);
     }
   }
 }
 ```
 
-4. **Daftar akun Owner pertama**: buka aplikasi → klik "Daftar" → isi nama, email, password → daftar (akun baru otomatis jadi role **pegawai** dulu)
-5. **Naikkan jadi Owner**: buka Firestore Database → koleksi **`users`** → cari dokumen dengan email Anda → klik field `role` → ubah nilainya dari `pegawai` jadi `owner` → Save
-6. Logout dari aplikasi lalu login lagi — sekarang akses Owner (Laporan, Pengaturan, hapus transaksi, dll) sudah aktif
+> Catatan keamanan: `businessSettings` (nama usaha, harga, promo) sengaja bisa dibaca publik (`allow get: if true`) supaya halaman pantau pelanggan (`track.html`) bisa menampilkan nama usaha tanpa login. Konsekuensinya: siapa pun yang tahu Business ID sebuah usaha (dari kode undangan atau link pantau) bisa melihat daftar harganya. Ini risiko rendah (harga laundry umumnya memang informasi terbuka), tapi kalau ke depan Anda mau data harga/promo benar-benar privat, kabari saya untuk dipisah lagi.
 
-Untuk akun pegawai selanjutnya: mereka tinggal buka aplikasi → **Daftar** sendiri → otomatis dapat role Pegawai (akses terbatas: catat transaksi, lihat member, tidak bisa lihat Laporan keuangan atau ubah Pengaturan).
+4. **Daftar akun Owner pertama**: buka aplikasi → klik "Daftar" → pilih **"Buat Usaha Baru"** → isi nama usaha, nama Anda, email, password → daftar. Akun ini otomatis jadi **Owner** untuk usaha baru tersebut (tidak perlu naik level manual lagi seperti versi sebelumnya)
+
+Untuk pegawai: Owner buka **Atur → Pegawai**, salin **Kode Undangan Usaha**, bagikan ke pegawai. Pegawai buka aplikasi → **Daftar** → pilih **"Gabung sebagai Pegawai"** → masukkan kode itu → otomatis bergabung ke usaha yang sama (bukan usaha lain).
 
 ---
 
@@ -80,6 +105,8 @@ Untuk akun pegawai selanjutnya: mereka tinggal buka aplikasi → **Daftar** send
    Ganti dengan Cloud name dan nama preset Anda → **Commit changes**
 
 Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
+
+> Catatan untuk model jual-ke-banyak-usaha: karena Cloudinary di sini masih 1 akun bersama untuk semua usaha yang pakai aplikasi ini, kuota 25 credit/bulan akan terbagi ke semua usaha. Kalau sudah ada beberapa usaha aktif, pantau pemakaian di dashboard Cloudinary dan siapkan upgrade paket berbayar kalau perlu.
 
 ---
 
@@ -99,9 +126,20 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
    - Kalau nomor WA pelanggan diisi: kiloan otomatis terakumulasi ke saldo kg member (promo otomatis diterapkan kalau target tercapai), self-service kunjungan ke-10 otomatis gratis
 8. Setiap pesanan otomatis dapat **nomor struk urut** — total pesanan otomatis terhitung dari harga & berat/jenis layanan (bisa diubah manual), langsung tercatat sebagai pendapatan
 9. Setelah pesanan tersimpan, muncul pilihan **kirim atau cetak struk**: kirim gambar/teks via WhatsApp, cetak lewat **printer thermal Bluetooth**, atau cetak lewat **dialog print/PDF biasa** — semua format strukturnya sama persis (nama usaha, tagline, tanggal, no. struk, pelanggan, rincian tiap item, subtotal, diskon, total, bayar, kembalian)
-10. **Foto barang (opsional)**: saat isi pesanan, bisa ambil/unggah foto tiap pakaian yang dicuci. Kalau ada foto, akan muncul tombol **"Kirim Link Pantau Cucian"** — pelanggan buka link itu (tanpa perlu login/install apa pun) untuk lihat status pesanan real-time dan foto barangnya
-10. Update status pesanan di tab **Cucian**: **Belum Diproses → Sedang Diproses → Selesai**. Untuk pesanan kiloan yang belum selesai, muncul indikator **sisa waktu** (atau **terlambat**, ditandai merah) berdasarkan estimasi durasi yang di-set di Harga Layanan — membantu Anda dan pegawai mengatur prioritas kerja
-11. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
+10. **Foto barang (opsional)**: saat isi pesanan, ada 2 cara ambil foto:
+    - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup
+    - **"Galeri/File"** — cara lama, buka galeri atau file manager biasa
+
+    Kalau pesanan punya nomor pelacakan, link pantau otomatis **ikut terkirim bersama struk** (baik lewat teks maupun gambar) — tidak perlu kirim terpisah. Pelanggan buka link itu (tanpa perlu login/install apa pun) untuk lihat status pesanan real-time dan foto barangnya
+
+    > Catatan: fitur "Kamera (pilih perangkat)" butuh izin akses kamera dari browser (akan muncul pop-up izin saat pertama kali dipakai). Nama kamera eksternal baru muncul jelas (misal "USB Webcam") setelah izin diberikan — sebelum itu mungkin cuma tertulis "Kamera 1", "Kamera 2".
+
+> Catatan teknis: untuk pengiriman **struk gambar**, link pantau disertakan sebagai "keterangan/caption" lewat fitur share bawaan HP. Beberapa versi WhatsApp menampilkan caption ini otomatis di bawah gambar, sebagian lain mungkin tidak menampilkannya. Kalau linknya tidak muncul di WA, gunakan opsi **"Kirim sebagai Teks Saja"** sebagai cadangan — di situ link selalu ikut karena bagian dari teks pesan biasa.
+
+11. Update status pesanan di tab **Cucian**: **Belum Diproses → Sedang Diproses → Selesai**. Untuk pesanan kiloan yang belum selesai, muncul indikator **sisa waktu** (atau **terlambat**, ditandai merah) berdasarkan estimasi durasi yang di-set di Harga Layanan — membantu Anda dan pegawai mengatur prioritas kerja
+12. **Notifikasi siap diambil**: begitu status ditandai **"Selesai"**, langsung muncul pop-up untuk kirim notifikasi WA ke pelanggan (1 tombol, pesan sudah siap dengan nada bersemangat + link pantau)
+13. Halaman pantau yang dibuka pelanggan **otomatis memperbarui status setiap 20 detik** — kalau dibiarkan terbuka, pelanggan langsung melihat perubahan status tanpa perlu refresh manual
+14. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
 
 ### Catatan soal indikator waktu di tab Cucian
 Indikator "sisa waktu"/"terlambat" dihitung saat halaman Cucian dibuka/di-refresh (bukan berjalan otomatis tiap detik seperti jam) — cukup akurat untuk penggunaan sehari-hari, cukup buka ulang tab Cucian sesekali untuk lihat update terbaru.

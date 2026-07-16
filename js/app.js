@@ -18,7 +18,8 @@ const ICONS = {
   star: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.9 6.3L22 9.3l-5 5 1.2 7.2L12 18l-6.2 3.5L7 14.3l-5-5 7.1-1z"/></svg>`,
   clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>`,
   check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`,
-  edit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>`
+  edit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>`,
+  camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`
 };
 
 const state = {
@@ -29,6 +30,7 @@ const state = {
   role: null,
   user: null,
   userName: "",
+  businessId: null,
   txForm: { type: "in" },
   reportTab: "labarugi",
   labaRugiRange: { start: Reports.startOfMonth(), end: Reports.todayStr() },
@@ -479,8 +481,13 @@ async function pagePengaturan(){
     </div>
 
     <h3 class="section-title">Pegawai</h3>
-    <div class="card small muted">
-      Untuk menambah akun pegawai: minta pegawai mendaftar sendiri lewat halaman "Daftar" di layar login (otomatis dapat akses terbatas). Anda tidak perlu melakukan apa pun setelah itu — akun baru otomatis muncul dengan role Pegawai.
+    <div class="card">
+      <p class="small muted">Bagikan kode ini ke pegawai — mereka masukkan kode ini saat mendaftar (pilih "Gabung sebagai Pegawai") supaya otomatis bergabung ke usaha ini, bukan usaha lain.</p>
+      <div class="field">
+        <label>Kode Undangan Usaha</label>
+        <input type="text" id="inviteCodeField" value="${state.businessId || ''}" readonly style="font-family:var(--font-mono); font-size:12px;">
+      </div>
+      <button class="btn btn-outline" data-action="copy-invite-code">Salin Kode</button>
     </div>
 
     <h3 class="section-title">Data</h3>
@@ -719,6 +726,119 @@ async function uploadPhotoToCloudinary(file){
   return data.secure_url;
 }
 
+/** Opens a live camera preview with an explicit device picker (built-in or
+ *  external/USB webcam). Calls onPhotoUploaded(url) each time a photo is
+ *  captured & uploaded. Caller is responsible for re-rendering thumbnails.
+ *  Built as its own standalone overlay (not via openModal/closeModal) so it
+ *  can sit on top of another open modal (e.g. the order form) without
+ *  destroying it. */
+function openCameraCaptureModal(onPhotoUploaded){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    toast("Browser ini tidak mendukung akses kamera langsung. Gunakan opsi Galeri/File.", "warn");
+    return;
+  }
+
+  const overlay = el(`
+    <div class="camera-overlay" style="z-index:70;">
+      <div class="modal-sheet">
+        <h2>Ambil Foto</h2>
+        <div class="field">
+          <label>Pilih Kamera</label>
+          <select id="cameraDeviceSelect"><option value="">Memuat daftar kamera...</option></select>
+        </div>
+        <div style="background:#000; border-radius:10px; overflow:hidden; margin-bottom:14px; position:relative;">
+          <video id="cameraPreview" autoplay playsinline style="width:100%; display:block; max-height:320px; object-fit:contain;"></video>
+        </div>
+        <div id="cameraError" class="auth-error"></div>
+        <button type="button" class="btn btn-primary btn-block" id="captureBtn" style="margin-bottom:10px;">${ICONS.plus} Jepret & Simpan Foto</button>
+        <div id="capturedCount" class="small muted" style="text-align:center; margin-bottom:10px;">Belum ada foto diambil.</div>
+        <button type="button" class="btn btn-outline btn-block" id="closeCameraBtn">Selesai</button>
+      </div>
+    </div>
+  `);
+  document.body.appendChild(overlay);
+
+  let capturedCount = 0;
+  let localStream = null;
+  const video = overlay.querySelector("#cameraPreview");
+  const errBox = overlay.querySelector("#cameraError");
+  const select = overlay.querySelector("#cameraDeviceSelect");
+
+  function stopStream(){
+    if(localStream){
+      localStream.getTracks().forEach(t => t.stop());
+      localStream = null;
+    }
+  }
+
+  function closeCameraOverlay(){
+    stopStream();
+    overlay.remove();
+  }
+
+  async function startStream(deviceId){
+    stopStream();
+    errBox.textContent = "";
+    try{
+      const constraints = { video: deviceId ? { deviceId: { exact: deviceId } } : true, audio: false };
+      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = localStream;
+    }catch(err){
+      errBox.textContent = "Tidak bisa membuka kamera ini. Coba pilih kamera lain.";
+    }
+  }
+
+  async function populateDeviceList(){
+    try{
+      // Request permission once first so device labels (e.g. "USB Webcam") show up.
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter(d => d.kind === "videoinput");
+      select.innerHTML = cameras.map((d,i) => `<option value="${d.deviceId}">${d.label || "Kamera " + (i+1)}</option>`).join("");
+      if(cameras.length === 0){
+        errBox.textContent = "Tidak ada kamera terdeteksi.";
+        tempStream.getTracks().forEach(t=>t.stop());
+        return;
+      }
+      localStream = tempStream;
+      video.srcObject = tempStream;
+      // If a specific device was already chosen in the dropdown, switch to it.
+      if(select.value) await startStream(select.value);
+    }catch(err){
+      errBox.textContent = "Izin kamera ditolak atau tidak tersedia. Gunakan opsi Galeri/File sebagai gantinya.";
+    }
+  }
+
+  select.addEventListener("change", ()=> startStream(select.value));
+
+  overlay.querySelector("#captureBtn").addEventListener("click", async ()=>{
+    if(!video.videoWidth){ toast("Kamera belum siap, tunggu sebentar", "warn"); return; }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    const btn = overlay.querySelector("#captureBtn");
+    btn.disabled = true;
+    btn.textContent = "Mengunggah...";
+    try{
+      const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.9));
+      const file = new File([blob], `foto-${Date.now()}.jpg`, { type: "image/jpeg" });
+      const url = await uploadPhotoToCloudinary(file);
+      onPhotoUploaded(url);
+      capturedCount++;
+      overlay.querySelector("#capturedCount").textContent = `${capturedCount} foto sudah diambil.`;
+    }catch(err){
+      toast("Gagal unggah foto — cek koneksi internet", "warn");
+    }
+    btn.disabled = false;
+    btn.innerHTML = `${ICONS.plus} Jepret & Simpan Foto`;
+  });
+
+  overlay.querySelector("#closeCameraBtn").addEventListener("click", closeCameraOverlay);
+
+  populateDeviceList();
+}
+
 function trackingUrl(orderId){
   const base = location.href.replace(/index\.html.*$/, "").replace(/\/?$/, "/");
   return `${base}track.html?id=${orderId}`;
@@ -795,15 +915,48 @@ function orderCardHtml(o){
 
 function buildOrderStatusText(o){
   const lines = [];
+  const isReady = o.status === "selesai";
   lines.push(`*${state.businessName}*`);
-  lines.push(`Halo${o.customerName ? " " + o.customerName : ""}, update status cucianmu:`);
+  if(isReady){
+    lines.push(`Halo${o.customerName ? " " + o.customerName : ""}! 🎉`);
+    lines.push(`Cucianmu *sudah selesai dan siap diambil* ya!`);
+  } else {
+    lines.push(`Halo${o.customerName ? " " + o.customerName : ""}, update status cucianmu:`);
+  }
   lines.push("");
   lines.push(`📦 *${STATUS_LABEL[o.status]}*`);
+  if(o.receiptNo) lines.push(`Struk No.: ${String(o.receiptNo).padStart(6,'0')}`);
   if(o.weightKg) lines.push(`Berat: ${o.weightKg} kg`);
   if(o.note) lines.push(`Catatan: ${o.note}`);
+  if(o.id) lines.push(`\nPantau/lihat foto: ${trackingUrl(o.id)}`);
   lines.push("");
-  lines.push(o.status === "selesai" ? "Cucian sudah siap diambil ya! 🙏" : "Terima kasih sudah mencuci di tempat kami 🙏");
+  lines.push(isReady ? "Ditunggu kedatangannya ya, terima kasih! 🙏" : "Terima kasih sudah mencuci di tempat kami 🙏");
   return lines.join("\n");
+}
+
+function offerPickupNotify(o){
+  if(!o.customerPhone){
+    render();
+    return;
+  }
+  const modal = openModal(`
+    <div style="text-align:center; padding:6px 0 4px;">
+      <div style="font-size:36px; margin-bottom:8px;">🎉</div>
+      <h2>Cucian Siap Diambil!</h2>
+      <p class="small muted" style="margin:6px 0 18px;">Kirim notifikasi ke ${escapeHtml(o.customerName||"pelanggan")} sekarang?</p>
+    </div>
+    <button class="btn btn-primary btn-block" data-action="notify-yes" style="background:#25A366; margin-bottom:10px;">${ICONS.chat} Kirim Notifikasi via WA</button>
+    <button class="btn btn-outline btn-block" data-action="notify-skip">Lewati</button>
+  `);
+  modal.querySelector("[data-action='notify-yes']").addEventListener("click", ()=>{
+    sendOrderStatusWA(o);
+    closeModal();
+    render();
+  });
+  modal.querySelector("[data-action='notify-skip']").addEventListener("click", ()=>{
+    closeModal();
+    render();
+  });
 }
 
 function sendOrderStatusWA(o){
@@ -872,8 +1025,11 @@ async function openAddOrderModal(){
 
     <div class="field">
       <label>Foto Pakaian (opsional)</label>
-      <input type="file" id="ordPhotoInput" accept="image/*" capture="environment" multiple style="display:none;">
-      <button type="button" class="btn btn-outline btn-block" id="ordPhotoBtn">${ICONS.chat} Ambil / Unggah Foto</button>
+      <input type="file" id="ordPhotoInput" accept="image/*" multiple style="display:none;">
+      <div class="btn-row">
+        <button type="button" class="btn btn-outline btn-block" id="ordCameraBtn">${ICONS.camera} Kamera (pilih perangkat)</button>
+        <button type="button" class="btn btn-outline btn-block" id="ordPhotoBtn">${ICONS.chat} Galeri / File</button>
+      </div>
       <div id="ordPhotoPreview" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;"></div>
     </div>
 
@@ -902,6 +1058,12 @@ async function openAddOrderModal(){
     });
   }
 
+  modal.querySelector("#ordCameraBtn").addEventListener("click", ()=>{
+    openCameraCaptureModal((url)=>{
+      photoUrls.push(url);
+      renderPhotoPreview();
+    });
+  });
   modal.querySelector("#ordPhotoBtn").addEventListener("click", ()=> modal.querySelector("#ordPhotoInput").click());
   modal.querySelector("#ordPhotoInput").addEventListener("change", async (e)=>{
     const files = Array.from(e.target.files || []);
@@ -1139,11 +1301,13 @@ async function openAddOrderModal(){
 
     const receiptNo = await DB.getNextReceiptNumber();
     const changeAmount = amountPaid - total;
+    const orderRef = fs.collection("orders").doc();
+    const orderId = orderRef.id;
 
     const txRecord = {
       type: "in", categoryId, categoryName,
       account: cat?.account, amount: total, date: Reports.todayStr(),
-      note, customerName, serviceType, receiptNo, amountPaid, changeAmount
+      note, customerName, serviceType, receiptNo, amountPaid, changeAmount, orderId
     };
     if(serviceType === "kiloan") txRecord.kiloanItems = kiloanCart;
     if(serviceType === "satuan") txRecord.satuanItems = satuanCart;
@@ -1152,6 +1316,7 @@ async function openAddOrderModal(){
     if(totalWeightKg) txRecord.weightKg = totalWeightKg;
     if(isFreeVisit) txRecord.isFreeVisit = true;
     if(discountAmount > 0){ txRecord.discountAmount = discountAmount; txRecord.discountReason = discountReason; }
+    if(photoUrls.length > 0) txRecord.hasPhotos = true;
 
     const txId = await DB.addTransaction(txRecord);
 
@@ -1166,7 +1331,7 @@ async function openAddOrderModal(){
     if(photoUrls.length > 0) orderPayload.photos = photoUrls;
     orderPayload.transactionId = txId;
 
-    const orderId = await DB.addOrder(orderPayload);
+    await DB.addOrder(orderPayload, orderId);
 
     closeModal();
     toast("Pesanan & pendapatan tersimpan");
@@ -1430,6 +1595,11 @@ function buildReceiptText(t){
   }
   if(t.note) lines.push(`Catatan: ${t.note}`);
   lines.push("--------------------------------");
+  if(t.orderId){
+    lines.push(`📦 Pantau status & foto cucianmu:`);
+    lines.push(trackingUrl(t.orderId));
+    lines.push("--------------------------------");
+  }
   lines.push("Terima kasih sudah mencuci di tempat kami 🙏");
   return lines.join("\n");
 }
@@ -1778,10 +1948,13 @@ async function shareReceiptImage(t){
   const safeName = (t.customerName || "pelanggan").replace(/[^a-z0-9]+/gi, "-");
   const fileName = `struk-${safeName}-${t.date}.png`;
   const file = new File([blob], fileName, { type: "image/png" });
+  const shareText = t.orderId
+    ? `Struk pembayaran\n\n📦 Pantau status & foto cucianmu:\n${trackingUrl(t.orderId)}`
+    : "Struk pembayaran";
 
   if(navigator.canShare && navigator.canShare({ files: [file] })){
     try{
-      await navigator.share({ files: [file], title: state.businessName, text: "Struk pembayaran" });
+      await navigator.share({ files: [file], title: state.businessName, text: shareText });
       return true;
     }catch(err){
       return false; // user closed the share sheet — not an error
@@ -1889,11 +2062,10 @@ function offerSendReceipt(t){
         <svg viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:26px;height:26px;"><path d="M20 6L9 17l-5-5"/></svg>
       </div>
       <h2>Transaksi Tersimpan</h2>
-      <p class="small muted" style="margin:6px 0 18px;">Kirim atau cetak struknya sekarang?</p>
+      <p class="small muted" style="margin:6px 0 18px;">Kirim atau cetak struknya sekarang?${t.hasPhotos ? " Link pantau foto ikut terkirim otomatis." : ""}</p>
     </div>
-    <button class="btn btn-primary btn-block" data-action="send-wa-image" style="background:#25A366; margin-bottom:10px;">${ICONS.chat} Kirim Struk (Gambar) via WA</button>
+    <button class="btn btn-primary btn-block" data-action="send-wa-image" style="background:#25A366; margin-bottom:10px;">${ICONS.chat} Kirim Struk${t.hasPhotos ? " + Link Pantau" : ""} (Gambar) via WA</button>
     <button class="btn btn-outline btn-block" data-action="send-wa-text" style="margin-bottom:10px;">Kirim sebagai Teks Saja</button>
-    ${t.hasPhotos ? `<button class="btn btn-outline btn-block" data-action="send-tracking-link" style="margin-bottom:10px;">${ICONS.star} Kirim Link Pantau Cucian</button>` : ""}
     <button class="btn btn-outline btn-block" data-action="print-bluetooth" style="margin-bottom:10px;">${ICONS.printer} Cetak (Printer Bluetooth)</button>
     <button class="btn btn-outline btn-block" data-action="print-dialog" style="margin-bottom:10px;">${ICONS.printer} Cetak (Dialog Print/PDF)</button>
     <button class="btn btn-outline btn-block" data-action="skip-wa">Lewati</button>
@@ -1907,14 +2079,6 @@ function offerSendReceipt(t){
     sendReceiptWA(t);
     closeModal();
     render();
-  });
-  const trackBtn = modal.querySelector("[data-action='send-tracking-link']");
-  if(trackBtn) trackBtn.addEventListener("click", ()=>{
-    const url = trackingUrl(t.orderId);
-    const msg = `Halo${t.customerName ? " "+t.customerName : ""}, pantau status cucianmu (termasuk foto barang) di link ini:\n${url}`;
-    const phone = normalizePhone(t.customerPhone);
-    const waUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-    window.open(waUrl, "_blank");
   });
   modal.querySelector("[data-action='print-bluetooth']").addEventListener("click", async ()=>{
     await printReceiptBluetooth(t);
@@ -2007,7 +2171,13 @@ function bindPageEvents(){
     btn.addEventListener("click", async ()=>{
       await DB.updateOrderStatus(btn.dataset.id, btn.dataset.next);
       toast(`Status diubah: ${STATUS_LABEL[btn.dataset.next]}`);
-      render();
+      if(btn.dataset.next === "selesai"){
+        const orders = await DB.getOrders();
+        const o = orders.find(x => x.id === btn.dataset.id);
+        if(o) offerPickupNotify(o);
+      } else {
+        render();
+      }
     });
   });
   document.querySelectorAll("[data-action='wa-order']").forEach(btn=>{
@@ -2158,6 +2328,12 @@ function bindPageEvents(){
   if(wipeBtn) wipeBtn.addEventListener("click", wipeData);
   const logoutBtn = document.querySelector("[data-action='logout']");
   if(logoutBtn) logoutBtn.addEventListener("click", ()=> auth.signOut());
+  const copyInviteBtn = document.querySelector("[data-action='copy-invite-code']");
+  if(copyInviteBtn) copyInviteBtn.addEventListener("click", ()=>{
+    const field = document.getElementById("inviteCodeField");
+    field.select();
+    navigator.clipboard?.writeText(field.value).then(()=> toast("Kode disalin"));
+  });
 }
 
 /* ---------------- Export / Import / Backup ---------------- */
@@ -2222,15 +2398,17 @@ function importJson(){
 }
 
 async function wipeData(){
-  if(!confirm("Semua transaksi, member, kategori tambahan, dan saldo awal akan dihapus permanen dari server. Lanjutkan?")) return;
+  if(!confirm("Semua transaksi, member, kategori tambahan, dan saldo awal usaha ini akan dihapus permanen dari server. Lanjutkan?")) return;
   if(!confirm("Yakin? Tindakan ini tidak bisa dibatalkan dan berlaku untuk semua perangkat.")) return;
-  const collections = ["transactions", "members", "categories", "settings"];
-  for(const name of collections){
-    const snap = await fs.collection(name).get();
+  const bizId = DB.getBusinessId();
+  const scopedCollections = ["transactions", "members", "categories", "orders"];
+  for(const name of scopedCollections){
+    const snap = await fs.collection(name).where("businessId","==",bizId).get();
     const batch = fs.batch();
     snap.docs.forEach(d => batch.delete(d.ref));
     await batch.commit();
   }
+  await fs.collection("businessSettings").doc(bizId).delete();
   location.reload();
 }
 
@@ -2265,15 +2443,22 @@ function loginFormHtml(){
 
 function registerFormHtml(){
   return authShellHtml(`
-    <div class="field"><label>Nama</label><input type="text" id="authName" placeholder="Nama Anda"></div>
+    <div class="seg" id="regTypeSeg" style="margin-bottom:16px;">
+      <button type="button" class="active in" data-regtype="owner">Buat Usaha Baru</button>
+      <button type="button" data-regtype="pegawai">Gabung sebagai Pegawai</button>
+    </div>
+    <div id="ownerFields">
+      <div class="field"><label>Nama Usaha</label><input type="text" id="authBizName" placeholder="Contoh: WashSpace Laundry"></div>
+    </div>
+    <div id="pegawaiFields" style="display:none;">
+      <div class="field"><label>Kode Undangan Usaha</label><input type="text" id="authInviteCode" placeholder="Minta ke pemilik usaha"></div>
+    </div>
+    <div class="field"><label>Nama Anda</label><input type="text" id="authName" placeholder="Nama Anda"></div>
     <div class="field"><label>Email</label><input type="email" id="authEmail" placeholder="nama@email.com"></div>
     <div class="field"><label>Password</label><input type="password" id="authPassword" placeholder="Minimal 6 karakter"></div>
     <div id="authError" class="auth-error"></div>
     <button class="btn btn-primary btn-block" data-action="do-register">Daftar</button>
     <p class="small muted" style="text-align:center; margin-top:16px;">
-      Akun baru otomatis dapat akses <b>Pegawai</b>. Untuk akun Owner pertama, hubungi pemilik usaha.
-    </p>
-    <p class="small muted" style="text-align:center; margin-top:6px;">
       Sudah punya akun? <a href="#" data-action="show-login">Masuk</a>
     </p>
   `);
@@ -2316,19 +2501,49 @@ function wireAuthForm(mode, root){
     }
   });
 
+  let regType = "owner";
+  root.querySelectorAll("#regTypeSeg button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      regType = btn.dataset.regtype;
+      root.querySelectorAll("#regTypeSeg button").forEach(b=>b.classList.remove("active","in"));
+      btn.classList.add("active","in");
+      root.querySelector("#ownerFields").style.display = regType === "owner" ? "block" : "none";
+      root.querySelector("#pegawaiFields").style.display = regType === "pegawai" ? "block" : "none";
+    });
+  });
+
   root.querySelector("[data-action='do-register']")?.addEventListener("click", async ()=>{
     const name = root.querySelector("#authName").value.trim();
     const email = root.querySelector("#authEmail").value.trim();
     const password = root.querySelector("#authPassword").value;
     if(!name || !email || !password){ setErr("Lengkapi semua kolom."); return; }
     if(password.length < 6){ setErr("Password minimal 6 karakter."); return; }
-    try{
-      const cred = await auth.createUserWithEmailAndPassword(email, password);
-      await fs.collection("users").doc(cred.user.uid).set({
-        name, email, role: "pegawai", createdAt: Date.now()
-      });
-    }catch(err){
-      setErr(authErrorMessage(err));
+
+    if(regType === "owner"){
+      const bizName = root.querySelector("#authBizName").value.trim();
+      if(!bizName){ setErr("Isi nama usaha."); return; }
+      try{
+        const cred = await auth.createUserWithEmailAndPassword(email, password);
+        const businessId = await DB.createBusiness(bizName, cred.user.uid);
+        await fs.collection("users").doc(cred.user.uid).set({
+          name, email, role: "owner", businessId, createdAt: Date.now()
+        });
+      }catch(err){
+        setErr(authErrorMessage(err));
+      }
+    } else {
+      const code = root.querySelector("#authInviteCode").value.trim();
+      if(!code){ setErr("Isi kode undangan dari pemilik usaha."); return; }
+      try{
+        const biz = await DB.getBusinessById(code);
+        if(!biz){ setErr("Kode undangan tidak ditemukan. Cek lagi dengan pemilik usaha."); return; }
+        const cred = await auth.createUserWithEmailAndPassword(email, password);
+        await fs.collection("users").doc(cred.user.uid).set({
+          name, email, role: "pegawai", businessId: code, createdAt: Date.now()
+        });
+      }catch(err){
+        setErr(authErrorMessage(err));
+      }
     }
   });
 }
@@ -2350,7 +2565,8 @@ function authErrorMessage(err){
 async function loadUserProfile(user){
   const doc = await fs.collection("users").doc(user.uid).get();
   if(doc.exists) return doc.data();
-  const rec = { name: user.email.split("@")[0], email: user.email, role: "pegawai", createdAt: Date.now() };
+  const businessId = await DB.createBusiness("Usaha Laundry Saya", user.uid);
+  const rec = { name: user.email.split("@")[0], email: user.email, role: "owner", businessId, createdAt: Date.now() };
   await fs.collection("users").doc(user.uid).set(rec);
   return rec;
 }
@@ -2374,11 +2590,14 @@ auth.onAuthStateChanged(async (user) => {
     state.user = user;
     state.role = profile.role || "pegawai";
     state.userName = profile.name || user.email;
+    state.businessId = profile.businessId;
+    DB.setBusinessContext(profile.businessId);
     hideAuthScreen();
     await startApp();
   } else {
     state.user = null;
     state.role = null;
+    state.businessId = null;
     showAuthScreen("login");
   }
 });
