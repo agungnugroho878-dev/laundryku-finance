@@ -70,16 +70,25 @@ Untuk akun pegawai selanjutnya: mereka tinggal buka aplikasi → **Daftar** send
 4. **Owner**: buka menu **Atur → Promo Kiloan** untuk mengaktifkan promo akumulasi berat cucian — tentukan target kg, dan bentuk promonya (potongan harga Rp, atau gratis sejumlah kg)
 5. **Owner**: buka menu **Atur → Saldo Awal Pembukuan** dan isi saldo kas/aset/utang saat ini (boleh dikosongkan/0 kalau baru mulai dari nol)
 6. **Member bisa ditambah manual** di tab **Member → "+ Tambah Member"** (No. HP jadi ID unik member, plus nama & alamat), atau otomatis muncul saat nomor WA diisi di transaksi cucian
-7. Untuk pendapatan cucian (Kiloan, Satuan, maupun Self-Service), gunakan menu **Cucian → "+ Pesanan Cucian Baru"**. Kalau nomor WA pelanggan diisi:
-   - **Kiloan**: berat otomatis terakumulasi ke saldo kg member; kalau sudah mencapai target promo, diskon otomatis diterapkan ke total (dan tercatat di struk)
-   - **Self-Service**: kunjungan ke-10 otomatis gratis
-8. Total pesanan otomatis terhitung dari harga & berat/jenis layanan (bisa diubah manual kalau perlu), dan langsung tercatat sebagai pendapatan — tidak perlu input dua kali di menu Transaksi
-9. Setelah pesanan tersimpan, muncul pilihan **kirim struk (gambar) via WhatsApp** — ketuk sekali, pilih WhatsApp dari menu bagikan HP
+7. Untuk pendapatan cucian (Kiloan, Satuan, maupun Self-Service), gunakan menu **Cucian → "+ Pesanan Cucian Baru"**:
+   - **Kiloan**: sekarang seperti keranjang — bisa tambah beberapa jenis layanan sekaligus dalam 1 pesanan (misal 3kg Cuci Setrika + 2kg Setrika Saja), masing-masing dengan berat sendiri
+   - **Satuan**: pilih barang + jumlah, bisa banyak jenis barang
+   - **Self-Service**: pilih 1 jenis
+   - Isi **Bayar** (uang yang diterima dari pelanggan) — **Kembalian** otomatis terhitung
+   - Kalau nomor WA pelanggan diisi: kiloan otomatis terakumulasi ke saldo kg member (promo otomatis diterapkan kalau target tercapai), self-service kunjungan ke-10 otomatis gratis
+8. Setiap pesanan otomatis dapat **nomor struk urut** — total pesanan otomatis terhitung dari harga & berat/jenis layanan (bisa diubah manual), langsung tercatat sebagai pendapatan
+9. Setelah pesanan tersimpan, muncul pilihan **kirim atau cetak struk**: kirim gambar/teks via WhatsApp, cetak lewat **printer thermal Bluetooth**, atau cetak lewat **dialog print/PDF biasa** — semua format strukturnya sama persis (nama usaha, tagline, tanggal, no. struk, pelanggan, rincian tiap item, subtotal, diskon, total, bayar, kembalian)
 10. Update status pesanan di tab **Cucian**: **Belum Diproses → Sedang Diproses → Selesai**. Untuk pesanan kiloan yang belum selesai, muncul indikator **sisa waktu** (atau **terlambat**, ditandai merah) berdasarkan estimasi durasi yang di-set di Harga Layanan — membantu Anda dan pegawai mengatur prioritas kerja
 11. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
 
 ### Catatan soal indikator waktu di tab Cucian
 Indikator "sisa waktu"/"terlambat" dihitung saat halaman Cucian dibuka/di-refresh (bukan berjalan otomatis tiap detik seperti jam) — cukup akurat untuk penggunaan sehari-hari, cukup buka ulang tab Cucian sesekali untuk lihat update terbaru.
+
+### Cetak struk via printer thermal Bluetooth
+- Atur lebar kertas dulu di **Atur → Pengaturan Printer** (58mm atau 80mm, sesuaikan dengan printer Anda)
+- Saat cetak, browser akan minta pilih perangkat Bluetooth — pilih printer Anda (pastikan printer sudah menyala dan dalam jangkauan; tidak perlu di-pairing manual dulu lewat Settings HP, cukup dari sini)
+- **Batasan penting**: fitur cetak Bluetooth ini **hanya berjalan di Chrome (Android atau Desktop)** — Safari/iPhone **tidak didukung sama sekali** (ini keterbatasan dari Apple, browser lain seperti Chrome/Firefox di iPhone juga terpengaruh karena semuanya memakai mesin Safari di iOS). Untuk perangkat iPhone, gunakan opsi **"Cetak (Dialog Print/PDF)"** sebagai gantinya
+- Tidak semua model printer Bluetooth kompatibel — fitur ini memakai protokol umum yang dipakai kebanyakan printer thermal generik/OEM (merek seperti GOOJPRT, MUNBYN, EPPOS, dan sejenisnya biasanya kompatibel). Kalau printer Anda tidak terdeteksi/tidak mau connect, gunakan jalur "Dialog Print/PDF" sebagai alternatif
 
 ### Catatan soal kirim struk/gambar ke WhatsApp
 WhatsApp tidak menyediakan cara untuk melampirkan gambar secara otomatis dari sebuah link (beda dengan teks yang bisa auto-terisi). Jadi struk digambar sebagai file PNG, lalu sistem memakai fitur **share bawaan HP** (Web Share API) — pegawai tinggal 1x ketuk "Bagikan", pilih WhatsApp, gambar otomatis terlampir, tinggal pilih kontak pelanggan. Di beberapa browser desktop yang tidak mendukung fitur share gambar, sistem otomatis mengunduh gambarnya untuk dilampirkan manual.

@@ -278,6 +278,31 @@ a{ color:var(--suds-blue); }
 .status-badge.status-sedang-diproses{ background:var(--coin-bg); color:var(--coin); }
 .status-badge.status-selesai{ background:var(--mint-bg); color:var(--mint); }
 
+/* ---------- Cetak struk (jalur dialog print browser) ---------- */
+#receiptPrintArea{ display:none; }
+body.printing-receipt > *:not(#receiptPrintArea){ display:none !important; }
+body.printing-receipt #receiptPrintArea{
+  display:block;
+  width:100%;
+  font-family: "Courier New", monospace;
+  color:#000;
+  padding:6mm;
+}
+.print-receipt{ width:100%; }
+.print-receipt .pr-biz{ text-align:center; font-weight:700; font-size:15px; text-transform:uppercase; }
+.print-receipt .pr-tagline{ text-align:center; font-size:10px; margin-top:2px; }
+.print-receipt .pr-date{ text-align:center; font-size:11px; margin-bottom:6px; }
+.print-receipt .pr-divider{ border-top:1px dashed #000; margin:6px 0; }
+.print-receipt .pr-row{ display:flex; justify-content:space-between; font-size:12px; padding:2px 0; gap:8px; }
+.print-receipt .pr-item-desc{ font-size:12px; font-weight:700; margin-top:4px; }
+.print-receipt .pr-item-detail{ font-size:11px; }
+.print-receipt .pr-badge{ text-align:center; font-weight:700; font-size:12px; margin:6px 0; }
+.print-receipt .pr-total{ display:flex; justify-content:space-between; font-weight:700; font-size:15px; padding:4px 0; }
+.print-receipt .pr-thanks{ text-align:center; font-size:11px; margin-top:10px; }
+@media print{
+  @page{ size:58mm auto; margin:0; }
+}
+
 /* ---------- Buttons ---------- */
 .btn{
   display:inline-flex; align-items:center; justify-content:center; gap:6px;

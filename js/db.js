@@ -167,5 +167,16 @@ const DB = {
   async deleteOrder(id){
     await fs.collection("orders").doc(id).delete();
     return true;
+  },
+
+  async getNextReceiptNumber(){
+    return fs.runTransaction(async (tx) => {
+      const ref = fs.collection("settings").doc("receiptCounter");
+      const doc = await tx.get(ref);
+      const current = doc.exists ? (doc.data().value || 0) : 0;
+      const next = current + 1;
+      tx.set(ref, { value: next });
+      return next;
+    });
   }
 };

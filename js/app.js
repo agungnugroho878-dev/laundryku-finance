@@ -24,6 +24,7 @@ const ICONS = {
 const state = {
   page: "dashboard",
   businessName: "Usaha Laundry Saya",
+  businessTagline: "",
   categories: [],
   role: null,
   user: null,
@@ -207,6 +208,7 @@ function txItemHtml(t, cats, showDelete=false){
       </div>
       <div class="tx-amt ${t.type} num">${t.type==='in'?'+':'-'}${Reports.formatRupiah(t.amount)}</div>
       ${canSendReceipt ? `<button class="tx-del" data-action="send-receipt" data-id="${t.id}" title="Kirim struk via WA">${ICONS.chat}</button>` : ""}
+      ${canSendReceipt ? `<button class="tx-del" data-action="print-receipt" data-id="${t.id}" title="Cetak struk">${ICONS.printer}</button>` : ""}
       ${showDelete ? `<button class="tx-del" data-action="delete-tx" data-id="${t.id}">${ICONS.trash}</button>` : ""}
     </div>
   `;
@@ -331,6 +333,7 @@ async function pagePengaturan(){
   const opening = isOwner ? await Reports.getOpeningBalances() : null;
   const pricing = isOwner ? await getPricing() : null;
   const kiloanLoyalty = isOwner ? await getKiloanLoyalty() : null;
+  const printerSettings = isOwner ? await getPrinterSettings() : null;
   const customCats = state.categories.filter(c=>!c.system);
 
   const accountCard = `
@@ -365,7 +368,11 @@ async function pagePengaturan(){
         <label>Nama Usaha</label>
         <input type="text" id="bizNameInput" value="${escapeHtml(state.businessName)}">
       </div>
-      <button class="btn btn-primary" data-action="save-biz-name">Simpan Nama</button>
+      <div class="field">
+        <label>Tagline (opsional, muncul di struk)</label>
+        <input type="text" id="bizTaglineInput" placeholder="Contoh: Membersihkan dengan Sempurna, Harga Terjangkau" value="${escapeHtml(state.businessTagline||'')}">
+      </div>
+      <button class="btn btn-primary" data-action="save-biz-name">Simpan Profil</button>
     </div>
 
     <h3 class="section-title">Harga Layanan</h3>
@@ -429,6 +436,20 @@ async function pagePengaturan(){
         <label>Jumlah Kg Gratis</label><input type="number" id="kl-freekg" value="${kiloanLoyalty.freeKg}">
       </div>
       <button class="btn btn-primary" data-action="save-kiloan-loyalty">Simpan Promo Kiloan</button>
+    </div>
+
+    <h3 class="section-title">Pengaturan Printer</h3>
+    <div class="card">
+      <p class="small muted">Untuk cetak struk lewat printer thermal Bluetooth. Sesuaikan lebar kertas supaya teks tidak terpotong.</p>
+      <div class="field">
+        <label>Lebar Kertas</label>
+        <select id="printer-width">
+          <option value="32" ${printerSettings.widthChars===32?'selected':''}>58mm (32 karakter)</option>
+          <option value="48" ${printerSettings.widthChars===48?'selected':''}>80mm (48 karakter)</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" data-action="save-printer-settings">Simpan Pengaturan Printer</button>
+      <p class="small muted" style="margin-top:10px;">Cetak via Bluetooth hanya didukung browser Chrome di Android/Desktop (tidak didukung Safari/iPhone). Untuk iPhone, gunakan opsi "Dialog Print/PDF" saat cetak struk.</p>
     </div>
 
     <h3 class="section-title">Saldo Awal Pembukuan</h3>
@@ -726,16 +747,19 @@ function orderCardHtml(o){
   const next = nextOrderStatus(o.status);
   const showCountdown = o.estimatedReadyAt && o.status !== "selesai";
   const countdown = showCountdown ? formatCountdown(o.estimatedReadyAt) : null;
+  const itemLines = o.kiloanItems?.length ? o.kiloanItems.map(l=>`${l.subTypeLabel} ${l.weightKg}kg`).join(", ")
+    : o.satuanItems?.length ? o.satuanItems.map(l=>`${l.qty}x ${l.name}`).join(", ")
+    : o.subTypeLabel || "";
   return `
     <div class="order-card status-${o.status}">
       <div class="row-between">
         <div>
-          <div style="font-weight:700;">${o.customerName || "Tanpa nama"}</div>
-          <div class="small muted">${o.customerPhone || ""}${o.weightKg ? ` · ${o.weightKg} kg` : ""}</div>
+          <div style="font-weight:700;">${o.customerName || "Tanpa nama"} ${o.receiptNo ? `<span class="small muted">#${o.receiptNo}</span>` : ""}</div>
+          <div class="small muted">${o.customerPhone || ""}${o.weightKg ? ` · ${o.weightKg} kg total` : ""}</div>
         </div>
         <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
       </div>
-      ${o.subTypeLabel ? `<div class="small" style="margin-top:8px;">${o.subTypeLabel}${typeof o.total === 'number' ? ` · <span class="num">${Reports.formatRupiah(o.total)}</span>` : ""}</div>` : ""}
+      ${itemLines ? `<div class="small" style="margin-top:8px;">${itemLines}${typeof o.total === 'number' ? ` · <span class="num">${Reports.formatRupiah(o.total)}</span>` : ""}</div>` : ""}
       ${o.discountAmount ? `<div class="small" style="color:var(--coin); margin-top:2px;">🎁 ${o.discountReason || 'Diskon promo'}</div>` : ""}
       ${o.note ? `<div class="small muted" style="margin-top:4px;">${escapeHtml(o.note)}</div>` : ""}
       <div class="small muted" style="margin-top:8px;">Diterima ${dateLabel}${o.durationLabel ? ` · estimasi ${o.durationLabel}` : ""}</div>
@@ -788,8 +812,12 @@ async function openAddOrderModal(){
     </div>
 
     <div id="kiloanFields">
-      <div class="field"><label>Jenis Layanan</label><select id="ordSubTypeKiloan">${kiloanOptions}</select></div>
-      <div class="field"><label>Berat (kg)</label><input type="number" step="0.1" id="ordWeight" placeholder="Contoh: 5"></div>
+      <div class="field-row" style="display:flex; gap:8px; align-items:flex-end;">
+        <div class="field" style="flex:1; margin-bottom:0;"><label>Jenis Layanan</label><select id="kiloanPicker">${kiloanOptions}</select></div>
+        <div class="field" style="width:90px; margin-bottom:0;"><label>Berat (kg)</label><input type="number" step="0.1" id="kiloanWeight" placeholder="5"></div>
+        <button type="button" class="btn btn-outline" id="addKiloanLine" style="margin-bottom:14px;">+</button>
+      </div>
+      <div id="kiloanCart" style="margin:10px 0;"></div>
     </div>
 
     <div id="satuanFields" style="display:none;">
@@ -807,21 +835,52 @@ async function openAddOrderModal(){
       <div class="field"><label>Jenis Layanan</label><select id="ordSubTypeSelf">${selfServiceOptions}</select></div>
     </div>
 
+    <div id="loyaltyLookup"></div>
+
     <div class="field">
       <label>Total (Rp) <span class="small muted">— otomatis, bisa diubah manual</span></label>
       <input type="number" class="amount-input" id="ordTotal" value="0">
     </div>
+    <div class="field-row" style="display:flex; gap:10px;">
+      <div class="field" style="flex:1;"><label>Bayar (Rp)</label><input type="number" id="ordBayar" placeholder="Samakan dengan Total jika pas"></div>
+      <div class="field" style="flex:1;"><label>Kembalian</label><input type="text" id="ordKembalian" value="Rp0" disabled style="background:var(--foam-white);"></div>
+    </div>
 
     <div class="field"><label>Nama Pelanggan</label><input type="text" id="ordCustName" placeholder="Contoh: Budi"></div>
     <div class="field"><label>No. WhatsApp Pelanggan (opsional)</label><input type="tel" inputmode="numeric" id="ordCustPhone" placeholder="08xxxxxxxxxx"></div>
-    <div id="loyaltyLookup"></div>
     <div class="field"><label>Catatan (opsional)</label><textarea id="ordNote" placeholder="Contoh: Jangan pakai pewangi"></textarea></div>
     <button class="btn btn-primary btn-block" data-action="save-order">Simpan & Catat Pendapatan</button>
   `);
 
   let serviceType = "kiloan";
+  let kiloanCart = []; // [{subType, subTypeLabel, weightKg, rate, subtotal}]
   let satuanCart = []; // [{id, name, price, qty}]
   let pendingKiloanPromo = null; // preview only — authoritative check happens again on save
+
+  function renderKiloanCart(){
+    const box = modal.querySelector("#kiloanCart");
+    if(kiloanCart.length === 0){
+      box.innerHTML = `<p class="small muted">Belum ada layanan ditambahkan.</p>`;
+      return;
+    }
+    box.innerHTML = kiloanCart.map((line,i) => `
+      <div class="row-between" style="padding:6px 0; border-bottom:1px dashed var(--line);">
+        <span class="small">${line.subTypeLabel} — ${line.weightKg}kg</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="small num">${Reports.formatRupiah(line.subtotal)}</span>
+          <button class="tx-del" data-remove-kiloan-line="${i}">${ICONS.trash}</button>
+        </div>
+      </div>
+    `).join("");
+    box.querySelectorAll("[data-remove-kiloan-line]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        kiloanCart.splice(parseInt(btn.dataset.removeKiloanLine), 1);
+        renderKiloanCart();
+        recalcTotal();
+        refreshLoyaltyPreview();
+      });
+    });
+  }
 
   function renderSatuanCart(){
     const box = modal.querySelector("#satuanCart");
@@ -848,27 +907,38 @@ async function openAddOrderModal(){
     });
   }
 
-  function computeDiscountRp(promo, rate){
+  function computeDiscountRp(promo, avgRate){
     if(!promo || !promo.applied) return 0;
-    return promo.promoType === "discount" ? promo.discountAmount : Math.round(promo.freeKg * rate);
+    return promo.promoType === "discount" ? promo.discountAmount : Math.round(promo.freeKg * avgRate);
+  }
+
+  function recalcKembalian(){
+    const total = parseFloat(modal.querySelector("#ordTotal").value) || 0;
+    const bayar = parseFloat(modal.querySelector("#ordBayar").value);
+    const kembalianField = modal.querySelector("#ordKembalian");
+    if(isNaN(bayar)){ kembalianField.value = "Rp0"; return; }
+    const change = bayar - total;
+    kembalianField.value = Reports.formatRupiah(change);
+    kembalianField.style.color = change < 0 ? "var(--rose)" : "";
   }
 
   function recalcTotal(){
+    let total = 0;
     if(serviceType === "satuan"){
-      const total = satuanCart.reduce((sum,l) => sum + l.price*l.qty, 0);
-      modal.querySelector("#ordTotal").value = total;
-      return;
+      total = satuanCart.reduce((sum,l) => sum + l.price*l.qty, 0);
+    } else if(serviceType === "kiloan"){
+      total = kiloanCart.reduce((sum,l) => sum + l.subtotal, 0);
+      if(pendingKiloanPromo){
+        const totalWeight = kiloanCart.reduce((s,l)=>s+l.weightKg,0) || 1;
+        const avgRate = total / totalWeight;
+        total = Math.max(0, total - computeDiscountRp(pendingKiloanPromo, avgRate));
+      }
+    } else {
+      const subType = modal.querySelector("#ordSubTypeSelf").value;
+      total = computeTotal(pricing, "self-service", subType, 0);
     }
-    const weight = parseFloat(modal.querySelector("#ordWeight")?.value) || 0;
-    const subType = serviceType === "kiloan"
-      ? modal.querySelector("#ordSubTypeKiloan").value
-      : modal.querySelector("#ordSubTypeSelf").value;
-    let total = computeTotal(pricing, serviceType, subType, weight);
-    if(serviceType === "kiloan" && pendingKiloanPromo){
-      const rate = pricing.kiloan[subType]?.rate || 0;
-      total = Math.max(0, total - computeDiscountRp(pendingKiloanPromo, rate));
-    }
-    modal.querySelector("#ordTotal").value = total;
+    modal.querySelector("#ordTotal").value = Math.round(total);
+    recalcKembalian();
   }
 
   async function refreshLoyaltyPreview(){
@@ -879,12 +949,12 @@ async function openAddOrderModal(){
       if(phone.length < 8){ box.innerHTML = ""; return; }
       const status = await getMemberStatus(phone);
       box.innerHTML = loyaltyNoteHtml(status);
-      if(status.visits >= LOYALTY_TARGET) modal.querySelector("#ordTotal").value = 0;
+      if(status.visits >= LOYALTY_TARGET){ modal.querySelector("#ordTotal").value = 0; recalcKembalian(); }
     } else if(serviceType === "kiloan"){
       if(phone.length < 8){ box.innerHTML = ""; pendingKiloanPromo = null; recalcTotal(); return; }
       const status = await getMemberStatus(phone);
-      const weight = parseFloat(modal.querySelector("#ordWeight").value) || 0;
-      const projected = (status.kiloanBalance || 0) + weight;
+      const cartWeight = kiloanCart.reduce((s,l)=>s+l.weightKg,0);
+      const projected = (status.kiloanBalance || 0) + cartWeight;
       box.innerHTML = kiloanLoyaltyNoteHtml({ kiloanBalance: projected }, kiloanLoyalty);
       pendingKiloanPromo = (kiloanLoyalty.enabled && projected >= kiloanLoyalty.thresholdKg)
         ? { applied:true, promoType:kiloanLoyalty.promoType, discountAmount:kiloanLoyalty.discountAmount, freeKg:kiloanLoyalty.freeKg, thresholdKg:kiloanLoyalty.thresholdKg }
@@ -907,10 +977,23 @@ async function openAddOrderModal(){
       refreshLoyaltyPreview();
     });
   });
-  modal.querySelector("#ordSubTypeKiloan").addEventListener("change", ()=>{ recalcTotal(); refreshLoyaltyPreview(); });
   modal.querySelector("#ordSubTypeSelf").addEventListener("change", recalcTotal);
-  modal.querySelector("#ordWeight").addEventListener("input", ()=>{ recalcTotal(); refreshLoyaltyPreview(); });
+  modal.querySelector("#ordBayar").addEventListener("input", recalcKembalian);
   modal.querySelector("#ordCustPhone").addEventListener("input", refreshLoyaltyPreview);
+
+  const addKiloanBtn = modal.querySelector("#addKiloanLine");
+  addKiloanBtn.addEventListener("click", ()=>{
+    const subType = modal.querySelector("#kiloanPicker").value;
+    const weightKg = parseFloat(modal.querySelector("#kiloanWeight").value);
+    if(!weightKg || weightKg <= 0){ toast("Isi berat yang valid", "warn"); return; }
+    const cfg = pricing.kiloan[subType];
+    const subtotal = Math.round(cfg.rate * weightKg);
+    kiloanCart.push({ subType, subTypeLabel: KILOAN_LABELS[subType], weightKg, rate: cfg.rate, subtotal });
+    modal.querySelector("#kiloanWeight").value = "";
+    renderKiloanCart();
+    recalcTotal();
+    refreshLoyaltyPreview();
+  });
 
   const addSatuanBtn = modal.querySelector("#addSatuanLine");
   if(addSatuanBtn) addSatuanBtn.addEventListener("click", ()=>{
@@ -924,6 +1007,7 @@ async function openAddOrderModal(){
     renderSatuanCart();
     recalcTotal();
   });
+  renderKiloanCart();
   renderSatuanCart();
   recalcTotal();
 
@@ -932,29 +1016,38 @@ async function openAddOrderModal(){
     const customerPhone = modal.querySelector("#ordCustPhone").value.trim();
     const userNote = modal.querySelector("#ordNote").value.trim();
     let total = parseFloat(modal.querySelector("#ordTotal").value);
+    const bayarRaw = modal.querySelector("#ordBayar").value;
+    const amountPaid = bayarRaw === "" ? total : parseFloat(bayarRaw);
 
     if(!customerName){ toast("Isi nama pelanggan", "warn"); return; }
     if(isNaN(total) || total < 0){ toast("Total tidak valid", "warn"); return; }
 
-    let weightKg = null, subType = null, subTypeLabel = null, categoryId, categoryName, note = userNote;
+    let categoryId, categoryName, note = userNote;
     let discountAmount = 0, discountReason = null, estimatedReadyAt = null, durationLabel = null;
+    let totalWeightKg = null;
 
     if(serviceType === "kiloan"){
-      weightKg = parseFloat(modal.querySelector("#ordWeight").value) || null;
-      if(!weightKg){ toast("Isi berat cucian", "warn"); return; }
-      subType = modal.querySelector("#ordSubTypeKiloan").value;
-      subTypeLabel = KILOAN_LABELS[subType];
+      if(kiloanCart.length === 0){ toast("Tambahkan minimal 1 layanan kiloan", "warn"); return; }
       categoryId = "jasa-cuci";
-
-      const durCfg = pricing.kiloan[subType];
-      estimatedReadyAt = Date.now() + durationMs(durCfg.duration, durCfg.unit);
-      durationLabel = `${durCfg.duration} ${durCfg.unit}`;
+      totalWeightKg = kiloanCart.reduce((s,l)=>s+l.weightKg,0);
+      const maxDurMs = Math.max(...kiloanCart.map(l=>{
+        const cfg = pricing.kiloan[l.subType];
+        return durationMs(cfg.duration, cfg.unit);
+      }));
+      estimatedReadyAt = Date.now() + maxDurMs;
+      const durLine = kiloanCart.reduce((longest,l)=>{
+        const cfg = pricing.kiloan[l.subType];
+        const ms = durationMs(cfg.duration, cfg.unit);
+        return ms > longest.ms ? { ms, label:`${cfg.duration} ${cfg.unit}` } : longest;
+      }, { ms:0, label:"" });
+      durationLabel = durLine.label;
 
       if(customerPhone){
-        const { promo } = await recordKiloanAccumulation(customerPhone, customerName, weightKg, kiloanLoyalty);
+        const { promo } = await recordKiloanAccumulation(customerPhone, customerName, totalWeightKg, kiloanLoyalty);
         if(promo.applied){
-          const baseTotal = computeTotal(pricing, "kiloan", subType, weightKg);
-          discountAmount = Math.min(computeDiscountRp(promo, durCfg.rate), baseTotal);
+          const baseTotal = kiloanCart.reduce((s,l)=>s+l.subtotal,0);
+          const avgRate = baseTotal / (totalWeightKg || 1);
+          discountAmount = Math.min(computeDiscountRp(promo, avgRate), baseTotal);
           discountReason = promo.promoType === "discount"
             ? `Promo Member (akumulasi ${promo.thresholdKg}kg): Potongan ${Reports.formatRupiah(promo.discountAmount)}`
             : `Promo Member (akumulasi ${promo.thresholdKg}kg): Gratis ${promo.freeKg}kg`;
@@ -963,16 +1056,14 @@ async function openAddOrderModal(){
     } else if(serviceType === "satuan"){
       if(satuanCart.length === 0){ toast("Tambahkan minimal 1 barang", "warn"); return; }
       categoryId = "cuci-satuan";
-      const itemsSummary = satuanCart.map(l=>`${l.qty}x ${l.name}`).join(", ");
-      note = userNote ? `${itemsSummary} — ${userNote}` : itemsSummary;
     } else {
-      subType = modal.querySelector("#ordSubTypeSelf").value;
-      subTypeLabel = SELF_SERVICE_LABELS[subType];
+      const subType = modal.querySelector("#ordSubTypeSelf").value;
       categoryId = "self-service";
+      var selfSubType = subType, selfSubTypeLabel = SELF_SERVICE_LABELS[subType];
     }
 
     const cat = state.categories.find(c=>c.id===categoryId);
-    categoryName = serviceType === "satuan" ? (cat?.name || "") : `${cat?.name || ""} — ${subTypeLabel}`;
+    categoryName = cat?.name || "";
 
     let isFreeVisit = false;
     if(serviceType === "self-service" && customerPhone){
@@ -980,27 +1071,30 @@ async function openAddOrderModal(){
       isFreeVisit = visitResult.isFree;
     }
 
+    const receiptNo = await DB.getNextReceiptNumber();
+    const changeAmount = amountPaid - total;
+
     const txRecord = {
       type: "in", categoryId, categoryName,
       account: cat?.account, amount: total, date: Reports.todayStr(),
-      note, customerName, serviceType
+      note, customerName, serviceType, receiptNo, amountPaid, changeAmount
     };
-    if(subType) txRecord.subType = subType;
-    if(subTypeLabel) txRecord.subTypeLabel = subTypeLabel;
+    if(serviceType === "kiloan") txRecord.kiloanItems = kiloanCart;
+    if(serviceType === "satuan") txRecord.satuanItems = satuanCart;
+    if(serviceType === "self-service"){ txRecord.subType = selfSubType; txRecord.subTypeLabel = selfSubTypeLabel; }
     if(customerPhone) txRecord.customerPhone = customerPhone;
-    if(weightKg) txRecord.weightKg = weightKg;
+    if(totalWeightKg) txRecord.weightKg = totalWeightKg;
     if(isFreeVisit) txRecord.isFreeVisit = true;
     if(discountAmount > 0){ txRecord.discountAmount = discountAmount; txRecord.discountReason = discountReason; }
-    if(serviceType === "satuan") txRecord.satuanItems = satuanCart;
 
     const txId = await DB.addTransaction(txRecord);
 
-    const orderPayload = { customerName, note, serviceType, total };
-    if(subType) orderPayload.subType = subType;
-    if(subTypeLabel) orderPayload.subTypeLabel = subTypeLabel;
-    if(customerPhone) orderPayload.customerPhone = customerPhone;
-    if(weightKg) orderPayload.weightKg = weightKg;
+    const orderPayload = { customerName, note, serviceType, total, receiptNo, amountPaid, changeAmount };
+    if(serviceType === "kiloan") orderPayload.kiloanItems = kiloanCart;
     if(serviceType === "satuan") orderPayload.satuanItems = satuanCart;
+    if(serviceType === "self-service"){ orderPayload.subType = selfSubType; orderPayload.subTypeLabel = selfSubTypeLabel; }
+    if(customerPhone) orderPayload.customerPhone = customerPhone;
+    if(totalWeightKg) orderPayload.weightKg = totalWeightKg;
     if(estimatedReadyAt){ orderPayload.estimatedReadyAt = estimatedReadyAt; orderPayload.durationLabel = durationLabel; }
     if(discountAmount > 0){ orderPayload.discountAmount = discountAmount; orderPayload.discountReason = discountReason; }
     orderPayload.transactionId = txId;
@@ -1215,23 +1309,59 @@ function normalizePhone(raw){
   return digits;
 }
 
+/** Normalizes any transaction into a flat list of {desc, detail, subtotal} lines
+ *  so every receipt format (text/image/print) renders the same structure. */
+function buildReceiptItems(t){
+  if(t.kiloanItems?.length){
+    return t.kiloanItems.map(l => ({
+      desc: l.subTypeLabel,
+      detail: `${l.weightKg} kg x ${Reports.formatRupiah(l.rate)}`,
+      subtotal: l.subtotal
+    }));
+  }
+  if(t.satuanItems?.length){
+    return t.satuanItems.map(l => ({
+      desc: l.name,
+      detail: `${l.qty} x ${Reports.formatRupiah(l.price)}`,
+      subtotal: l.price * l.qty
+    }));
+  }
+  if(t.subTypeLabel || t.categoryName){
+    return [{ desc: t.subTypeLabel || t.categoryName, detail: "", subtotal: t.amount + (t.discountAmount||0) }];
+  }
+  return [];
+}
+
 function buildReceiptText(t){
+  const items = buildReceiptItems(t);
+  const subtotal = items.reduce((s,i)=>s+i.subtotal, 0) || t.amount + (t.discountAmount||0);
   const lines = [];
   lines.push(`*${state.businessName}*`);
-  lines.push(fmtDate(t.date));
-  lines.push("");
-  if(t.categoryName) lines.push(`Layanan: ${t.categoryName}`);
-  if(t.customerName) lines.push(`Pelanggan: ${t.customerName}`);
-  if(t.weightKg) lines.push(`Berat: ${t.weightKg} kg`);
+  if(state.businessTagline) lines.push(state.businessTagline);
+  lines.push("--------------------------------");
+  lines.push(`Tgl        : ${fmtDate(t.date)}`);
+  if(t.receiptNo) lines.push(`Struk No.  : ${String(t.receiptNo).padStart(6,'0')}`);
+  if(t.customerName) lines.push(`Pelanggan  : ${t.customerName}`);
+  if(t.customerPhone) lines.push(`No. Telp   : ${t.customerPhone}`);
+  lines.push("--------------------------------");
+  items.forEach(i=>{
+    lines.push(i.desc);
+    lines.push(`  ${i.detail ? i.detail + "   " : ""}${Reports.formatRupiah(i.subtotal)}`);
+  });
   if(t.isFreeVisit) lines.push(`🎁 GRATIS (Reward Member 10x Kunjungan)`);
+  lines.push("--------------------------------");
   if(t.discountAmount > 0){
-    lines.push(`Subtotal: ${Reports.formatRupiah(t.amount + t.discountAmount)}`);
-    lines.push(`🎁 Diskon: -${Reports.formatRupiah(t.discountAmount)}`);
+    lines.push(`Subtotal   : ${Reports.formatRupiah(subtotal)}`);
+    lines.push(`Diskon     : -${Reports.formatRupiah(t.discountAmount)}`);
     if(t.discountReason) lines.push(`(${t.discountReason})`);
   }
-  lines.push(`Jumlah: ${Reports.formatRupiah(t.amount)}`);
+  lines.push(`Total      : ${Reports.formatRupiah(t.amount)}`);
+  if(typeof t.amountPaid === "number"){
+    lines.push(`Bayar      : ${Reports.formatRupiah(t.amountPaid)}`);
+    lines.push(`Kembalian  : ${Reports.formatRupiah(t.changeAmount||0)}`);
+  }
   if(t.note) lines.push(`Catatan: ${t.note}`);
-  lines.push("");
+  lines.push("--------------------------------");
   lines.push("Terima kasih sudah mencuci di tempat kami 🙏");
   return lines.join("\n");
 }
@@ -1263,18 +1393,222 @@ function wrapCanvasText(ctx, text, cx, y, maxWidth, lineHeight){
   return lines.length * lineHeight;
 }
 
+/* ---------------- Cetak Struk — Printer Thermal Bluetooth (ESC/POS) ---------------- */
+
+// Common "transparent UART" BLE service used by many generic ESC/POS
+// thermal printers (GOOJPRT, MUNBYN, and similar white-label models).
+const BLE_PRINTER_SERVICE = "49535343-fe7d-4ae5-8fa9-9fafd205e455";
+const BLE_PRINTER_WRITE_CHAR = "49535343-8841-43f4-a8d4-ecbe34729bb3";
+
+let cachedPrinterDevice = null;
+let cachedPrinterChar = null;
+
+async function getPrinterSettings(){
+  const saved = await DB.getSetting("printerSettings", null);
+  return { widthChars: 32, ...(saved||{}) }; // 32 chars ≈ 58mm paper, 48 ≈ 80mm
+}
+
+async function setPrinterSettings(v){
+  await DB.setSetting("printerSettings", v);
+}
+
+function stripForPrinter(str){
+  // Thermal printers can't render emoji/unicode reliably — keep it plain ASCII.
+  return (str||"").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").trim();
+}
+
+function padRow(label, value, width){
+  label = stripForPrinter(label); value = stripForPrinter(value);
+  const space = width - label.length - value.length;
+  if(space < 1) return label + " " + value;
+  return label + " ".repeat(space) + value;
+}
+
+function buildEscPos(t, width){
+  const ESC = 0x1B, GS = 0x1D;
+  const enc = new TextEncoder();
+  const chunks = [];
+  const raw = (...bytes) => chunks.push(new Uint8Array(bytes));
+  const text = (str) => chunks.push(enc.encode(stripForPrinter(str)));
+  const items = buildReceiptItems(t);
+  const subtotal = items.reduce((s,i)=>s+i.subtotal, 0);
+
+  raw(ESC,0x40);           // init
+  raw(ESC,0x61,1);         // center
+  raw(ESC,0x45,1);         // bold on
+  raw(GS,0x21,0x11);       // double width+height
+  text(state.businessName + "\n");
+  raw(GS,0x21,0x00);       // normal size
+  raw(ESC,0x45,0);         // bold off
+  if(state.businessTagline) text(state.businessTagline + "\n");
+  text("-".repeat(width) + "\n");
+
+  raw(ESC,0x61,0);         // left align
+  text(padRow("Tgl", fmtDate(t.date), width) + "\n");
+  if(t.receiptNo) text(padRow("Struk No.", String(t.receiptNo).padStart(6,'0'), width) + "\n");
+  if(t.customerName) text(padRow("Pelanggan", t.customerName, width) + "\n");
+  if(t.customerPhone) text(padRow("No. Telp", t.customerPhone, width) + "\n");
+  text("-".repeat(width) + "\n");
+
+  items.forEach(i=>{
+    text(i.desc + "\n");
+    text(padRow(i.detail ? "  "+i.detail : "", Reports.formatRupiah(i.subtotal), width) + "\n");
+  });
+  if(t.isFreeVisit){
+    raw(ESC,0x61,1); raw(ESC,0x45,1);
+    text("*** GRATIS REWARD MEMBER ***\n");
+    raw(ESC,0x45,0); raw(ESC,0x61,0);
+  }
+
+  text("-".repeat(width) + "\n");
+  if(t.discountAmount > 0){
+    text(padRow("Subtotal", Reports.formatRupiah(subtotal), width) + "\n");
+    text(padRow("Diskon", `-${Reports.formatRupiah(t.discountAmount)}`, width) + "\n");
+  }
+
+  raw(ESC,0x45,1);
+  raw(GS,0x21,0x01); // taller total
+  text(padRow("TOTAL", Reports.formatRupiah(t.amount), width) + "\n");
+  raw(GS,0x21,0x00);
+  raw(ESC,0x45,0);
+
+  if(typeof t.amountPaid === "number"){
+    text(padRow("Bayar", Reports.formatRupiah(t.amountPaid), width) + "\n");
+    text(padRow("Kembalian", Reports.formatRupiah(t.changeAmount||0), width) + "\n");
+  }
+
+  text("-".repeat(width) + "\n");
+  raw(ESC,0x61,1);
+  text("Terima kasih sudah\nmencuci di tempat kami\n");
+  text("\n\n\n");
+  raw(GS,0x56,1); // partial cut (ignored harmlessly if no cutter)
+
+  const total = chunks.reduce((s,c)=>s+c.length,0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for(const c of chunks){ out.set(c, offset); offset += c.length; }
+  return out;
+}
+
+async function connectPrinter(){
+  if(cachedPrinterDevice?.gatt?.connected && cachedPrinterChar) return cachedPrinterChar;
+  if(!navigator.bluetooth){
+    throw new Error("NO_BLUETOOTH");
+  }
+  const device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: [BLE_PRINTER_SERVICE]
+  });
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(BLE_PRINTER_SERVICE);
+  const characteristic = await service.getCharacteristic(BLE_PRINTER_WRITE_CHAR);
+  cachedPrinterDevice = device;
+  cachedPrinterChar = characteristic;
+  return characteristic;
+}
+
+async function printReceiptBluetooth(t){
+  try{
+    const settings = await getPrinterSettings();
+    const data = buildEscPos(t, settings.widthChars);
+    const characteristic = await connectPrinter();
+    const chunkSize = 100;
+    for(let i=0; i<data.length; i+=chunkSize){
+      const slice = data.slice(i, i+chunkSize);
+      await characteristic.writeValueWithoutResponse(slice);
+      await new Promise(r => setTimeout(r, 25));
+    }
+    toast("Struk terkirim ke printer");
+  }catch(err){
+    if(err.message === "NO_BLUETOOTH"){
+      toast("Browser ini tidak mendukung Bluetooth print. Coba Chrome di Android, atau pakai Cetak PDF/Sistem.", "warn");
+    } else if(err.name === "NotFoundError"){
+      // user cancelled the device picker — no need to alarm
+    } else {
+      toast("Gagal cetak — pastikan printer menyala & dalam jangkauan", "warn");
+    }
+  }
+}
+
+/* ---------------- Cetak Struk — jalur cadangan (dialog print browser) ---------------- */
+
+function printReceiptSystemDialog(t){
+  const items = buildReceiptItems(t);
+  const subtotal = items.reduce((s,i)=>s+i.subtotal, 0);
+
+  const area = document.createElement("div");
+  area.id = "receiptPrintArea";
+  area.innerHTML = `
+    <div class="print-receipt">
+      <div class="pr-biz">${state.businessName}</div>
+      ${state.businessTagline ? `<div class="pr-tagline">${escapeHtml(state.businessTagline)}</div>` : ""}
+      <div class="pr-divider"></div>
+      <div class="pr-row"><span>Tgl</span><span>${fmtDate(t.date)}</span></div>
+      ${t.receiptNo ? `<div class="pr-row"><span>Struk No.</span><span>${String(t.receiptNo).padStart(6,'0')}</span></div>` : ""}
+      ${t.customerName ? `<div class="pr-row"><span>Pelanggan</span><span>${escapeHtml(t.customerName)}</span></div>` : ""}
+      ${t.customerPhone ? `<div class="pr-row"><span>No. Telp</span><span>${escapeHtml(t.customerPhone)}</span></div>` : ""}
+      <div class="pr-divider"></div>
+      ${items.map(i=>`
+        <div class="pr-item-desc">${escapeHtml(i.desc)}</div>
+        <div class="pr-row"><span class="pr-item-detail">${escapeHtml(i.detail)}</span><span>${Reports.formatRupiah(i.subtotal)}</span></div>
+      `).join("")}
+      ${t.isFreeVisit ? `<div class="pr-badge">GRATIS REWARD MEMBER</div>` : ""}
+      <div class="pr-divider"></div>
+      ${t.discountAmount > 0 ? `
+        <div class="pr-row"><span>Subtotal</span><span>${Reports.formatRupiah(subtotal)}</span></div>
+        <div class="pr-row"><span>Diskon</span><span>-${Reports.formatRupiah(t.discountAmount)}</span></div>
+      ` : ""}
+      <div class="pr-total"><span>TOTAL</span><span>${Reports.formatRupiah(t.amount)}</span></div>
+      ${typeof t.amountPaid === "number" ? `
+        <div class="pr-row"><span>Bayar</span><span>${Reports.formatRupiah(t.amountPaid)}</span></div>
+        <div class="pr-row"><span>Kembalian</span><span>${Reports.formatRupiah(t.changeAmount||0)}</span></div>
+      ` : ""}
+      <div class="pr-divider"></div>
+      <div class="pr-thanks">Terima kasih sudah mencuci<br>di tempat kami</div>
+    </div>
+  `;
+  document.body.appendChild(area);
+  document.body.classList.add("printing-receipt");
+  window.print();
+  setTimeout(()=>{
+    document.body.classList.remove("printing-receipt");
+    area.remove();
+  }, 500);
+}
+
 function generateReceiptCanvas(t){
   const width = 480;
   const padding = 32;
-  const rows = [];
-  if(t.categoryName) rows.push(["Layanan", t.categoryName]);
-  if(t.customerName) rows.push(["Pelanggan", t.customerName]);
-  if(t.weightKg) rows.push(["Berat", `${t.weightKg} kg`]);
-  if(t.note) rows.push(["Catatan", t.note]);
+  const items = buildReceiptItems(t);
+  const subtotal = items.reduce((s,i)=>s+i.subtotal, 0);
+
+  const infoRows = [];
+  infoRows.push(["Tgl", fmtDate(t.date)]);
+  if(t.receiptNo) infoRows.push(["Struk No.", String(t.receiptNo).padStart(6,'0')]);
+  if(t.customerName) infoRows.push(["Pelanggan", t.customerName]);
+  if(t.customerPhone) infoRows.push(["No. Telp", t.customerPhone]);
+
+  const footRows = [];
+  if(t.discountAmount > 0){
+    footRows.push(["Subtotal", Reports.formatRupiah(subtotal), false]);
+    footRows.push(["Diskon", `-${Reports.formatRupiah(t.discountAmount)}`, true]);
+  }
+  const payRows = [];
+  if(typeof t.amountPaid === "number"){
+    payRows.push(["Bayar", Reports.formatRupiah(t.amountPaid)]);
+    payRows.push(["Kembalian", Reports.formatRupiah(t.changeAmount||0)]);
+  }
 
   const scale = 2;
-  const discountRows = t.discountAmount > 0 ? 2 : 0;
-  const estHeight = padding*2 + 34 + 22 + 18 + rows.length*24 + (t.isFreeVisit?30:0) + discountRows*24 + 18 + 40 + 18 + 40;
+  const estHeight = padding*2
+    + 30 + (state.businessTagline?16:0) + 14   // header + divider
+    + infoRows.length*22 + 14                   // info block + divider
+    + items.reduce((s)=>s+40, 0) + (t.isFreeVisit?26:0) + 14 // items + divider
+    + footRows.length*22
+    + 34                                         // total row
+    + payRows.length*22 + 14                     // pay rows + divider
+    + 40;                                        // thanks
+
   const canvas = document.createElement("canvas");
   canvas.width = width*scale; canvas.height = estHeight*scale;
   const ctx = canvas.getContext("2d");
@@ -1291,72 +1625,74 @@ function generateReceiptCanvas(t){
     ctx.beginPath(); ctx.moveTo(padding,y); ctx.lineTo(width-padding,y); ctx.stroke();
     ctx.setLineDash([]);
   };
+  const drawRow = (label, value, y, opts={}) => {
+    ctx.textAlign = "left";
+    ctx.fillStyle = opts.color || "#5C6B70";
+    ctx.font = `${opts.bold?600:400} 13px -apple-system, sans-serif`;
+    ctx.fillText(label, padding, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = opts.valueColor || "#16232E";
+    ctx.font = `${opts.bold?700:600} 13px -apple-system, sans-serif`;
+    ctx.fillText(value, width-padding, y);
+  };
 
-  let y = padding + 14;
+  let y = padding + 12;
   ctx.textAlign = "center";
   ctx.fillStyle = "#16232E";
   ctx.font = "700 22px Georgia, serif";
   ctx.fillText(state.businessName, width/2, y);
-  y += 26;
-  ctx.fillStyle = "#5C6B70";
-  ctx.font = "400 13px -apple-system, sans-serif";
-  ctx.fillText(fmtDate(t.date), width/2, y);
-  y += 18;
+  y += 24;
+  if(state.businessTagline){
+    ctx.fillStyle = "#5C6B70";
+    ctx.font = "400 11px -apple-system, sans-serif";
+    ctx.fillText(state.businessTagline, width/2, y);
+    y += 16;
+  }
+  y += 8;
   drawDivider(y); y += 22;
 
-  ctx.textAlign = "left";
-  for(const [label, value] of rows){
-    ctx.fillStyle = "#5C6B70";
-    ctx.font = "400 13px -apple-system, sans-serif";
-    ctx.fillText(label, padding, y);
-    ctx.textAlign = "right";
+  for(const [label,value] of infoRows){ drawRow(label, value, y); y += 22; }
+  drawDivider(y); y += 22;
+
+  for(const item of items){
+    ctx.textAlign = "left";
     ctx.fillStyle = "#16232E";
     ctx.font = "600 13px -apple-system, sans-serif";
-    ctx.fillText(value, width-padding, y);
-    ctx.textAlign = "left";
-    y += 24;
+    ctx.fillText(item.desc, padding, y);
+    y += 18;
+    drawRow(item.detail, Reports.formatRupiah(item.subtotal), y);
+    y += 22;
   }
-
   if(t.isFreeVisit){
     ctx.textAlign = "center";
     ctx.fillStyle = "#C98A3B";
-    ctx.font = "700 14px -apple-system, sans-serif";
-    ctx.fillText("🎁 GRATIS — Reward Member 10x Kunjungan", width/2, y+4);
-    y += 30;
-    ctx.textAlign = "left";
+    ctx.font = "700 13px -apple-system, sans-serif";
+    ctx.fillText("GRATIS — Reward Member 10x Kunjungan", width/2, y+4);
+    y += 26;
+  }
+  drawDivider(y); y += 22;
+
+  for(const [label,value,isDiscount] of footRows){
+    drawRow(label, value, y, isDiscount ? { color:"#C98A3B", valueColor:"#C98A3B" } : {});
+    y += 22;
   }
 
-  if(t.discountAmount > 0){
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#5C6B70";
-    ctx.font = "400 13px -apple-system, sans-serif";
-    ctx.fillText("Subtotal", padding, y);
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#16232E";
-    ctx.font = "600 13px -apple-system, sans-serif";
-    ctx.fillText(Reports.formatRupiah(t.amount + t.discountAmount), width-padding, y);
-    y += 24;
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#C98A3B";
-    ctx.font = "600 13px -apple-system, sans-serif";
-    ctx.fillText("🎁 Diskon Promo", padding, y);
-    ctx.textAlign = "right";
-    ctx.fillText(`-${Reports.formatRupiah(t.discountAmount)}`, width-padding, y);
-    y += 24;
-    ctx.textAlign = "left";
-  }
-
-  drawDivider(y); y += 26;
+  ctx.textAlign = "left";
   ctx.fillStyle = "#16232E";
   ctx.font = "700 16px -apple-system, sans-serif";
-  ctx.fillText("Total", padding, y);
+  ctx.fillText("TOTAL", padding, y+2);
   ctx.textAlign = "right";
   ctx.font = "700 20px 'Courier New', monospace";
-  ctx.fillText(Reports.formatRupiah(t.amount), width-padding, y);
-  y += 22;
-  ctx.textAlign = "center";
+  ctx.fillText(Reports.formatRupiah(t.amount), width-padding, y+2);
+  y += 32;
+
+  if(payRows.length){
+    for(const [label,value] of payRows){ drawRow(label, value, y); y += 22; }
+    y += 2;
+  }
   drawDivider(y); y += 24;
 
+  ctx.textAlign = "center";
   ctx.fillStyle = "#5C6B70";
   ctx.font = "italic 13px -apple-system, sans-serif";
   wrapCanvasText(ctx, "Terima kasih sudah mencuci di tempat kami 🙏", width/2, y, width-padding*2, 18);
@@ -1463,6 +1799,21 @@ function openAddTxModal(defaultType){
   });
 }
 
+function openPrintChoiceModal(t){
+  const modal = openModal(`
+    <h2>Cetak Struk</h2>
+    <button class="btn btn-outline btn-block" data-action="print-bluetooth" style="margin-bottom:10px;">${ICONS.printer} Printer Bluetooth</button>
+    <button class="btn btn-outline btn-block" data-action="print-dialog">${ICONS.printer} Dialog Print / PDF</button>
+  `);
+  modal.querySelector("[data-action='print-bluetooth']").addEventListener("click", async ()=>{
+    await printReceiptBluetooth(t);
+  });
+  modal.querySelector("[data-action='print-dialog']").addEventListener("click", ()=>{
+    closeModal();
+    printReceiptSystemDialog(t);
+  });
+}
+
 function offerSendReceipt(t){
   const modal = openModal(`
     <div style="text-align:center; padding:6px 0 4px;">
@@ -1470,10 +1821,12 @@ function offerSendReceipt(t){
         <svg viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:26px;height:26px;"><path d="M20 6L9 17l-5-5"/></svg>
       </div>
       <h2>Transaksi Tersimpan</h2>
-      <p class="small muted" style="margin:6px 0 18px;">Kirim struknya ke pelanggan sekarang?</p>
+      <p class="small muted" style="margin:6px 0 18px;">Kirim atau cetak struknya sekarang?</p>
     </div>
     <button class="btn btn-primary btn-block" data-action="send-wa-image" style="background:#25A366; margin-bottom:10px;">${ICONS.chat} Kirim Struk (Gambar) via WA</button>
     <button class="btn btn-outline btn-block" data-action="send-wa-text" style="margin-bottom:10px;">Kirim sebagai Teks Saja</button>
+    <button class="btn btn-outline btn-block" data-action="print-bluetooth" style="margin-bottom:10px;">${ICONS.printer} Cetak (Printer Bluetooth)</button>
+    <button class="btn btn-outline btn-block" data-action="print-dialog" style="margin-bottom:10px;">${ICONS.printer} Cetak (Dialog Print/PDF)</button>
     <button class="btn btn-outline btn-block" data-action="skip-wa">Lewati</button>
   `);
   modal.querySelector("[data-action='send-wa-image']").addEventListener("click", async ()=>{
@@ -1485,6 +1838,12 @@ function offerSendReceipt(t){
     sendReceiptWA(t);
     closeModal();
     render();
+  });
+  modal.querySelector("[data-action='print-bluetooth']").addEventListener("click", async ()=>{
+    await printReceiptBluetooth(t);
+  });
+  modal.querySelector("[data-action='print-dialog']").addEventListener("click", ()=>{
+    printReceiptSystemDialog(t);
   });
   modal.querySelector("[data-action='skip-wa']").addEventListener("click", ()=>{
     closeModal();
@@ -1540,6 +1899,13 @@ function bindPageEvents(){
       const txs = await DB.getTransactions();
       const t = txs.find(x => x.id === btn.dataset.id);
       if(t) await shareReceiptImage(t);
+    });
+  });
+  document.querySelectorAll("[data-action='print-receipt']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const txs = await DB.getTransactions();
+      const t = txs.find(x => x.id === btn.dataset.id);
+      if(t) openPrintChoiceModal(t);
     });
   });
   document.querySelectorAll("[data-action='wa-member']").forEach(btn=>{
@@ -1601,9 +1967,12 @@ function bindPageEvents(){
   const saveBizBtn = document.querySelector("[data-action='save-biz-name']");
   if(saveBizBtn) saveBizBtn.addEventListener("click", async ()=>{
     const val = document.getElementById("bizNameInput").value.trim() || "Usaha Laundry Saya";
+    const tagline = document.getElementById("bizTaglineInput").value.trim();
     state.businessName = val;
+    state.businessTagline = tagline;
     await DB.setSetting("businessName", val);
-    toast("Nama usaha disimpan");
+    await DB.setSetting("businessTagline", tagline);
+    toast("Profil usaha disimpan");
     render();
   });
 
@@ -1657,6 +2026,13 @@ function bindPageEvents(){
       freeKg: parseFloat(document.getElementById("kl-freekg").value) || 0
     });
     toast("Promo kiloan disimpan");
+    render();
+  });
+
+  const savePrinterBtn = document.querySelector("[data-action='save-printer-settings']");
+  if(savePrinterBtn) savePrinterBtn.addEventListener("click", async ()=>{
+    await setPrinterSettings({ widthChars: parseInt(document.getElementById("printer-width").value) });
+    toast("Pengaturan printer disimpan");
     render();
   });
 
@@ -1893,6 +2269,7 @@ async function loadUserProfile(user){
 async function startApp(){
   await DB.init();
   state.businessName = await DB.getSetting("businessName", "Usaha Laundry Saya");
+  state.businessTagline = await DB.getSetting("businessTagline", "");
   state.categories = await DB.getCategories();
 
   if("serviceWorker" in navigator){
