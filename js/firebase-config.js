@@ -22,3 +22,9 @@ const fs = firebase.firestore();
 fs.enablePersistence({ synchronizeTabs: true }).catch((err) => {
   console.warn("Firestore offline persistence not available:", err.code);
 });
+
+// --- Cloudinary (photo storage for laundry item photos) ---
+// TODO: replace with your own Cloud name + unsigned upload preset
+// from cloudinary.com → Settings → Upload → Upload presets.
+const CLOUDINARY_CLOUD_NAME = "jvcpln9q";
+const CLOUDINARY_UPLOAD_PRESET = "laundryku_photos";

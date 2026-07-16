@@ -705,6 +705,25 @@ function computeTotal(pricing, serviceType, subType, weightKg){
   return pricing.selfService[subType] || 0;
 }
 
+/* ---------------- Foto Pakaian (Cloudinary) ---------------- */
+
+async function uploadPhotoToCloudinary(file){
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+    method: "POST", body: form
+  });
+  if(!res.ok) throw new Error("Upload gagal");
+  const data = await res.json();
+  return data.secure_url;
+}
+
+function trackingUrl(orderId){
+  const base = location.href.replace(/index\.html.*$/, "").replace(/\/?$/, "/");
+  return `${base}track.html?id=${orderId}`;
+}
+
 /* ---------------- Cucian (Order Tracking) ---------------- */
 
 const ORDER_FLOW = ["belum-diproses", "sedang-diproses", "selesai"];
@@ -767,6 +786,7 @@ function orderCardHtml(o){
       <div class="btn-row" style="margin-top:12px;">
         ${next ? `<button class="btn btn-primary btn-block" data-action="advance-order" data-id="${o.id}" data-next="${next}">Tandai: ${STATUS_LABEL[next]}</button>` : ""}
         ${o.customerPhone ? `<button class="btn btn-outline" data-action="wa-order" data-id="${o.id}">${ICONS.chat}</button>` : ""}
+        ${o.photos?.length ? `<button class="btn btn-outline" data-action="send-tracking" data-id="${o.id}" title="Kirim link pantau">${ICONS.star}</button>` : ""}
         ${state.role === "owner" ? `<button class="btn btn-outline" data-action="delete-order" data-id="${o.id}">${ICONS.trash}</button>` : ""}
       </div>
     </div>
@@ -849,13 +869,59 @@ async function openAddOrderModal(){
     <div class="field"><label>Nama Pelanggan</label><input type="text" id="ordCustName" placeholder="Contoh: Budi"></div>
     <div class="field"><label>No. WhatsApp Pelanggan (opsional)</label><input type="tel" inputmode="numeric" id="ordCustPhone" placeholder="08xxxxxxxxxx"></div>
     <div class="field"><label>Catatan (opsional)</label><textarea id="ordNote" placeholder="Contoh: Jangan pakai pewangi"></textarea></div>
+
+    <div class="field">
+      <label>Foto Pakaian (opsional)</label>
+      <input type="file" id="ordPhotoInput" accept="image/*" capture="environment" multiple style="display:none;">
+      <button type="button" class="btn btn-outline btn-block" id="ordPhotoBtn">${ICONS.chat} Ambil / Unggah Foto</button>
+      <div id="ordPhotoPreview" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;"></div>
+    </div>
+
     <button class="btn btn-primary btn-block" data-action="save-order">Simpan & Catat Pendapatan</button>
   `);
 
   let serviceType = "kiloan";
   let kiloanCart = []; // [{subType, subTypeLabel, weightKg, rate, subtotal}]
   let satuanCart = []; // [{id, name, price, qty}]
+  let photoUrls = [];
   let pendingKiloanPromo = null; // preview only — authoritative check happens again on save
+
+  function renderPhotoPreview(){
+    const box = modal.querySelector("#ordPhotoPreview");
+    box.innerHTML = photoUrls.map((url,i) => `
+      <div style="position:relative; width:64px; height:64px;">
+        <img src="${url}" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid var(--line);">
+        <button type="button" data-remove-photo="${i}" style="position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; background:var(--rose); color:#fff; border:none; font-size:12px; line-height:1; cursor:pointer;">✕</button>
+      </div>
+    `).join("");
+    box.querySelectorAll("[data-remove-photo]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        photoUrls.splice(parseInt(btn.dataset.removePhoto), 1);
+        renderPhotoPreview();
+      });
+    });
+  }
+
+  modal.querySelector("#ordPhotoBtn").addEventListener("click", ()=> modal.querySelector("#ordPhotoInput").click());
+  modal.querySelector("#ordPhotoInput").addEventListener("change", async (e)=>{
+    const files = Array.from(e.target.files || []);
+    if(files.length === 0) return;
+    const btn = modal.querySelector("#ordPhotoBtn");
+    btn.textContent = "Mengunggah...";
+    btn.disabled = true;
+    try{
+      for(const file of files){
+        const url = await uploadPhotoToCloudinary(file);
+        photoUrls.push(url);
+        renderPhotoPreview();
+      }
+    }catch(err){
+      toast("Gagal unggah foto — cek koneksi internet", "warn");
+    }
+    btn.innerHTML = `${ICONS.chat} Ambil / Unggah Foto`;
+    btn.disabled = false;
+    e.target.value = "";
+  });
 
   function renderKiloanCart(){
     const box = modal.querySelector("#kiloanCart");
@@ -1097,13 +1163,15 @@ async function openAddOrderModal(){
     if(totalWeightKg) orderPayload.weightKg = totalWeightKg;
     if(estimatedReadyAt){ orderPayload.estimatedReadyAt = estimatedReadyAt; orderPayload.durationLabel = durationLabel; }
     if(discountAmount > 0){ orderPayload.discountAmount = discountAmount; orderPayload.discountReason = discountReason; }
+    if(photoUrls.length > 0) orderPayload.photos = photoUrls;
     orderPayload.transactionId = txId;
 
-    await DB.addOrder(orderPayload);
+    const orderId = await DB.addOrder(orderPayload);
+
     closeModal();
     toast("Pesanan & pendapatan tersimpan");
 
-    offerSendReceipt({ ...txRecord, id: txId });
+    offerSendReceipt({ ...txRecord, id: txId, orderId, hasPhotos: photoUrls.length > 0 });
   });
 }
 
@@ -1825,6 +1893,7 @@ function offerSendReceipt(t){
     </div>
     <button class="btn btn-primary btn-block" data-action="send-wa-image" style="background:#25A366; margin-bottom:10px;">${ICONS.chat} Kirim Struk (Gambar) via WA</button>
     <button class="btn btn-outline btn-block" data-action="send-wa-text" style="margin-bottom:10px;">Kirim sebagai Teks Saja</button>
+    ${t.hasPhotos ? `<button class="btn btn-outline btn-block" data-action="send-tracking-link" style="margin-bottom:10px;">${ICONS.star} Kirim Link Pantau Cucian</button>` : ""}
     <button class="btn btn-outline btn-block" data-action="print-bluetooth" style="margin-bottom:10px;">${ICONS.printer} Cetak (Printer Bluetooth)</button>
     <button class="btn btn-outline btn-block" data-action="print-dialog" style="margin-bottom:10px;">${ICONS.printer} Cetak (Dialog Print/PDF)</button>
     <button class="btn btn-outline btn-block" data-action="skip-wa">Lewati</button>
@@ -1838,6 +1907,14 @@ function offerSendReceipt(t){
     sendReceiptWA(t);
     closeModal();
     render();
+  });
+  const trackBtn = modal.querySelector("[data-action='send-tracking-link']");
+  if(trackBtn) trackBtn.addEventListener("click", ()=>{
+    const url = trackingUrl(t.orderId);
+    const msg = `Halo${t.customerName ? " "+t.customerName : ""}, pantau status cucianmu (termasuk foto barang) di link ini:\n${url}`;
+    const phone = normalizePhone(t.customerPhone);
+    const waUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, "_blank");
   });
   modal.querySelector("[data-action='print-bluetooth']").addEventListener("click", async ()=>{
     await printReceiptBluetooth(t);
@@ -1938,6 +2015,18 @@ function bindPageEvents(){
       const orders = await DB.getOrders();
       const o = orders.find(x => x.id === btn.dataset.id);
       if(o) sendOrderStatusWA(o);
+    });
+  });
+  document.querySelectorAll("[data-action='send-tracking']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const orders = await DB.getOrders();
+      const o = orders.find(x => x.id === btn.dataset.id);
+      if(!o) return;
+      const url = trackingUrl(o.id);
+      const msg = `Halo${o.customerName ? " "+o.customerName : ""}, pantau status cucianmu (termasuk foto barang) di link ini:\n${url}`;
+      const phone = normalizePhone(o.customerPhone);
+      const waUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      window.open(waUrl, "_blank");
     });
   });
   document.querySelectorAll("[data-action='delete-order']").forEach(btn=>{

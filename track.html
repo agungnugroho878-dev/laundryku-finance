@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Pantau Cucian</title>
+<meta name="theme-color" content="#16232E">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh;
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background:#F3F7F6; color:#16232E;
+  }
+  .header{ background:#16232E; color:#F3F7F6; padding:20px; text-align:center; }
+  .header .biz{ font-family:Georgia, serif; font-size:19px; font-weight:700; }
+  .header .tagline{ font-size:12px; color:#9FB6BF; margin-top:2px; }
+  .wrap{ max-width:480px; margin:0 auto; padding:16px; }
+  .card{ background:#fff; border-radius:14px; box-shadow:0 1px 2px rgba(22,35,46,.06), 0 6px 16px rgba(22,35,46,.06); padding:18px; margin-bottom:14px; }
+  .status-track{ display:flex; align-items:center; justify-content:space-between; margin:8px 0 4px; }
+  .status-step{ flex:1; text-align:center; position:relative; }
+  .status-dot{ width:28px; height:28px; border-radius:50%; background:#DDE5E3; color:#5C6B70; display:flex; align-items:center; justify-content:center; margin:0 auto 6px; font-size:13px; font-weight:700; }
+  .status-step.done .status-dot{ background:#4E9C82; color:#fff; }
+  .status-step.current .status-dot{ background:#3E7CB1; color:#fff; }
+  .status-label{ font-size:10.5px; color:#5C6B70; }
+  .status-step.done .status-label, .status-step.current .status-label{ color:#16232E; font-weight:600; }
+  .status-line{ position:absolute; top:14px; left:-50%; width:100%; height:2px; background:#DDE5E3; z-index:-1; }
+  .status-step.done .status-line{ background:#4E9C82; }
+  .status-step:first-child .status-line{ display:none; }
+  .countdown{ text-align:center; font-size:13px; font-weight:700; margin-top:10px; }
+  .item-row{ display:flex; justify-content:space-between; font-size:13.5px; padding:6px 0; border-bottom:1px dashed #DDE5E3; }
+  .item-row:last-child{ border-bottom:none; }
+  .total-row{ display:flex; justify-content:space-between; font-weight:700; font-size:15px; margin-top:8px; padding-top:8px; border-top:1.5px solid #16232E; }
+  .photos{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
+  .photos img{ width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; cursor:pointer; }
+  .muted{ color:#5C6B70; font-size:12.5px; }
+  .center{ text-align:center; }
+  .lightbox{ position:fixed; inset:0; background:rgba(0,0,0,.85); display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }
+  .lightbox.open{ display:flex; }
+  .lightbox img{ max-width:100%; max-height:100%; border-radius:8px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="biz" id="bizName">Memuat...</div>
+    <div class="tagline" id="bizTagline"></div>
+  </div>
+  <div class="wrap" id="content">
+    <div class="card center muted">Memuat data pesanan...</div>
+  </div>
+  <div class="lightbox" id="lightbox"><img id="lightboxImg" src=""></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/track.js"></script>
+</body>
+</html>

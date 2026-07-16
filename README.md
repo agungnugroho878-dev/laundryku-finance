@@ -39,7 +39,9 @@ service cloud.firestore {
     }
 
     match /settings/{id} {
-      allow read, write: if isSignedIn();
+      allow get: if isSignedIn() || id in ['businessName', 'businessTagline'];
+      allow list: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
     match /members/{id} {
@@ -47,7 +49,9 @@ service cloud.firestore {
     }
 
     match /orders/{id} {
-      allow read, create, update: if isSignedIn();
+      allow get: if true;
+      allow list: if isSignedIn();
+      allow create, update: if isSignedIn();
       allow delete: if isOwner();
     }
   }
@@ -59,6 +63,23 @@ service cloud.firestore {
 6. Logout dari aplikasi lalu login lagi — sekarang akses Owner (Laporan, Pengaturan, hapus transaksi, dll) sudah aktif
 
 Untuk akun pegawai selanjutnya: mereka tinggal buka aplikasi → **Daftar** sendiri → otomatis dapat role Pegawai (akses terbatas: catat transaksi, lihat member, tidak bisa lihat Laporan keuangan atau ubah Pengaturan).
+
+---
+
+## 0b. Setup Cloudinary (untuk fitur foto pakaian)
+
+1. Daftar gratis di **cloudinary.com** (bisa pakai akun Google, tidak perlu kartu kredit)
+2. Di dashboard, catat **Cloud name** Anda (terlihat di halaman utama, contoh: `dxyz1234a`)
+3. **Settings (ikon gear) → Upload** → scroll ke **Upload presets** → **Add upload preset**
+4. Set **Signing Mode** ke **Unsigned** → beri nama bebas (misal `laundryku_photos`) → **Save**
+5. Buka file `js/firebase-config.js` di repo GitHub Anda → cari baris ini di paling bawah:
+   ```js
+   const CLOUDINARY_CLOUD_NAME = "REPLACE_WITH_CLOUD_NAME";
+   const CLOUDINARY_UPLOAD_PRESET = "REPLACE_WITH_UPLOAD_PRESET";
+   ```
+   Ganti dengan Cloud name dan nama preset Anda → **Commit changes**
+
+Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
 
 ---
 
@@ -78,6 +99,7 @@ Untuk akun pegawai selanjutnya: mereka tinggal buka aplikasi → **Daftar** send
    - Kalau nomor WA pelanggan diisi: kiloan otomatis terakumulasi ke saldo kg member (promo otomatis diterapkan kalau target tercapai), self-service kunjungan ke-10 otomatis gratis
 8. Setiap pesanan otomatis dapat **nomor struk urut** — total pesanan otomatis terhitung dari harga & berat/jenis layanan (bisa diubah manual), langsung tercatat sebagai pendapatan
 9. Setelah pesanan tersimpan, muncul pilihan **kirim atau cetak struk**: kirim gambar/teks via WhatsApp, cetak lewat **printer thermal Bluetooth**, atau cetak lewat **dialog print/PDF biasa** — semua format strukturnya sama persis (nama usaha, tagline, tanggal, no. struk, pelanggan, rincian tiap item, subtotal, diskon, total, bayar, kembalian)
+10. **Foto barang (opsional)**: saat isi pesanan, bisa ambil/unggah foto tiap pakaian yang dicuci. Kalau ada foto, akan muncul tombol **"Kirim Link Pantau Cucian"** — pelanggan buka link itu (tanpa perlu login/install apa pun) untuk lihat status pesanan real-time dan foto barangnya
 10. Update status pesanan di tab **Cucian**: **Belum Diproses → Sedang Diproses → Selesai**. Untuk pesanan kiloan yang belum selesai, muncul indikator **sisa waktu** (atau **terlambat**, ditandai merah) berdasarkan estimasi durasi yang di-set di Harga Layanan — membantu Anda dan pegawai mengatur prioritas kerja
 11. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
 
