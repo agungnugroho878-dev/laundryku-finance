@@ -45,7 +45,8 @@ const state = {
   neracaDate: Reports.todayStr(),
   cucianFilter: "belum-diproses",
   cucianSort: "deadline-asc",
-  cucianSearch: ""
+  cucianSearch: "",
+  dashboardPeriod: "month"
 };
 
 function el(html){
@@ -117,11 +118,83 @@ async function render(){
   if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
   if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
   bindPageEvents();
-  if(state.page === "dashboard") runDashboardCountUps();
+  if(state.page === "dashboard"){
+    runDashboardCountUps();
+    document.querySelectorAll("[data-period]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        state.dashboardPeriod = btn.dataset.period;
+        render();
+      });
+    });
+  }
   if(state.page === "cucian"){ bindCucianControls(); renderCucianList(); }
 }
 
 /* ---------------- Dashboard ---------------- */
+
+/* ---------------- Analisis Pendapatan per Layanan ---------------- */
+
+const SERVICE_TYPE_META = {
+  "kiloan": { label: "Kiloan", color: "var(--suds-blue)", bg: "#EAF2F9", text: "var(--suds-blue-dark)" },
+  "satuan": { label: "Satuan", color: "var(--coin)", bg: "var(--coin-bg)", text: "var(--coin)" },
+  "self-service": { label: "Self-Service", color: "var(--mint)", bg: "var(--mint-bg)", text: "var(--mint)" }
+};
+
+const PERIOD_LABELS = {
+  "today": "Hari Ini",
+  "week": "7 Hari",
+  "month": "Bulan Ini",
+  "year": "Tahun Ini"
+};
+
+function getPeriodRange(period){
+  const today = Reports.todayStr();
+  if(period === "today") return { start: today, end: today };
+  if(period === "week"){
+    const d = new Date(); d.setDate(d.getDate()-6);
+    return { start: d.toISOString().slice(0,10), end: today };
+  }
+  if(period === "year"){
+    return { start: `${new Date().getFullYear()}-01-01`, end: today };
+  }
+  return { start: Reports.startOfMonth(), end: today }; // "month" default
+}
+
+async function computeServiceBreakdown(start, end){
+  const txs = await DB.getTransactionsInRange(start, end);
+  const breakdown = {
+    "kiloan": { total: 0, count: 0 },
+    "satuan": { total: 0, count: 0 },
+    "self-service": { total: 0, count: 0 }
+  };
+  for(const t of txs){
+    if(t.type === "in" && t.serviceType && breakdown[t.serviceType]){
+      breakdown[t.serviceType].total += t.amount;
+      breakdown[t.serviceType].count += 1;
+    }
+  }
+  const omzetTotal = breakdown.kiloan.total + breakdown.satuan.total + breakdown["self-service"].total;
+  const omzetCount = breakdown.kiloan.count + breakdown.satuan.count + breakdown["self-service"].count;
+  return { breakdown, omzetTotal, omzetCount };
+}
+
+async function getServiceTrend(n = 6){
+  const all = await DB.getTransactions();
+  const now = new Date();
+  const buckets = [];
+  for(let i = n-1; i >= 0; i--){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = d.toISOString().slice(0,7);
+    buckets.push({ key, label: d.toLocaleDateString("id-ID",{month:"short"}), kiloan:0, satuan:0, "self-service":0 });
+  }
+  const byKey = Object.fromEntries(buckets.map(b=>[b.key,b]));
+  for(const t of all){
+    const key = t.date.slice(0,7);
+    if(!byKey[key] || t.type !== "in" || !t.serviceType) continue;
+    if(byKey[key][t.serviceType] !== undefined) byKey[key][t.serviceType] += t.amount;
+  }
+  return buckets;
+}
 
 async function pageDashboard(){
   const neraca = await Reports.neraca(Reports.todayStr());
@@ -131,6 +204,12 @@ async function pageDashboard(){
   const maxAbs = Math.max(1, ...months.map(m => Math.max(m.pendapatan, m.beban)));
   const txs = (await DB.getTransactions()).slice(0,5);
   const cats = Object.fromEntries(state.categories.map(c=>[c.id,c]));
+
+  const period = state.dashboardPeriod || "month";
+  const periodRange = getPeriodRange(period);
+  const { breakdown, omzetTotal, omzetCount } = await computeServiceBreakdown(periodRange.start, periodRange.end);
+  const trend = await getServiceTrend(6);
+  const trendMax = Math.max(1, ...trend.map(m => m.kiloan + m.satuan + m["self-service"]));
 
   return `
     <div class="hero-balance">
@@ -157,6 +236,52 @@ async function pageDashboard(){
       <div class="card stat-card expense">
         <div class="card-title">Pengeluaran Bulan Ini</div>
         <div class="amount num" data-countup="${lr.totalBeban}">Rp0</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:10px;">Analisis Pendapatan Layanan</div>
+      <div class="period-pills">
+        ${Object.entries(PERIOD_LABELS).map(([id,label])=>`
+          <button class="period-pill ${period===id?'active':''}" data-period="${id}">${label}</button>
+        `).join("")}
+      </div>
+
+      <div class="service-stat-grid">
+        ${Object.entries(SERVICE_TYPE_META).map(([key,meta])=>`
+          <div class="service-stat-tile" style="background:${meta.bg};">
+            <div class="service-stat-label" style="color:${meta.text};">${meta.label}</div>
+            <div class="service-stat-amount num" style="color:${meta.text};">${Reports.formatRupiah(breakdown[key].total)}</div>
+            <div class="service-stat-count">${breakdown[key].count} transaksi</div>
+          </div>
+        `).join("")}
+        <div class="service-stat-tile total">
+          <div class="service-stat-label">Total Omzet</div>
+          <div class="service-stat-amount num">${Reports.formatRupiah(omzetTotal)}</div>
+          <div class="service-stat-count">${omzetCount} transaksi</div>
+        </div>
+      </div>
+
+      <div class="card-title" style="margin:18px 0 8px;">Tren 6 Bulan Terakhir</div>
+      <div class="trend-legend">
+        ${Object.values(SERVICE_TYPE_META).map(m=>`<span class="trend-legend-item"><span class="trend-dot" style="background:${m.color};"></span>${m.label}</span>`).join("")}
+      </div>
+      <div class="trend-chart">
+        ${trend.map(m=>{
+          const kH = Math.round((m.kiloan/trendMax)*90);
+          const sH = Math.round((m.satuan/trendMax)*90);
+          const ssH = Math.round((m["self-service"]/trendMax)*90);
+          return `
+            <div class="trend-col">
+              <div class="trend-bars">
+                <div class="trend-bar" style="height:${kH}px; background:var(--suds-blue);" title="Kiloan: ${Reports.formatRupiah(m.kiloan)}"></div>
+                <div class="trend-bar" style="height:${sH}px; background:var(--coin);" title="Satuan: ${Reports.formatRupiah(m.satuan)}"></div>
+                <div class="trend-bar" style="height:${ssH}px; background:var(--mint);" title="Self-Service: ${Reports.formatRupiah(m["self-service"])}"></div>
+              </div>
+              <div class="lbl">${m.label}</div>
+            </div>
+          `;
+        }).join("")}
       </div>
     </div>
 

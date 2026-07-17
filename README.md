@@ -146,7 +146,8 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
     - Tampilan menyesuaikan ukuran layar: 1 kolom di HP, 2 kolom di tablet, 3 kolom di laptop/layar lebar
 12. **Notifikasi siap diambil**: begitu status ditandai **"Selesai"**, langsung muncul pop-up untuk kirim notifikasi WA ke pelanggan (1 tombol, pesan sudah siap dengan nada bersemangat + link pantau)
 13. Halaman pantau yang dibuka pelanggan **otomatis memperbarui status setiap 20 detik** — kalau dibiarkan terbuka, pelanggan langsung melihat perubahan status tanpa perlu refresh manual
-14. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
+14. **Beranda** sekarang punya kartu **"Analisis Pendapatan Layanan"** — filter waktu (Hari Ini/7 Hari/Bulan Ini/Tahun Ini), rincian omzet & jumlah transaksi per jenis (Kiloan/Satuan/Self-Service) plus Total Omzet, dan grafik tren 6 bulan terakhir untuk melihat jenis layanan mana yang tumbuh paling baik
+15. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
 
 ### Catatan soal indikator waktu di tab Cucian
 Indikator "sisa waktu"/"terlambat" dihitung saat halaman Cucian dibuka/di-refresh (bukan berjalan otomatis tiap detik seperti jam) — cukup akurat untuk penggunaan sehari-hari, cukup buka ulang tab Cucian sesekali untuk lihat update terbaru.
