@@ -382,6 +382,7 @@ body.printing-receipt #receiptPrintArea{
   padding:6mm;
 }
 .print-receipt{ width:100%; }
+.print-receipt .pr-logo{ display:block; width:48px; height:48px; object-fit:cover; margin:0 auto 6px; border-radius:6px; }
 .print-receipt .pr-biz{ text-align:center; font-weight:700; font-size:15px; text-transform:uppercase; }
 .print-receipt .pr-tagline{ text-align:center; font-size:10px; margin-top:2px; }
 .print-receipt .pr-date{ text-align:center; font-size:11px; margin-bottom:6px; }

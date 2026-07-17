@@ -34,6 +34,8 @@ const state = {
   businessTagline: "",
   businessPhone: "",
   businessInstagram: "",
+  businessAddress: "",
+  businessLogo: "",
   categories: [],
   role: null,
   user: null,
@@ -482,6 +484,7 @@ async function pagePengaturan(){
   const pricing = isOwner ? await getPricing() : null;
   const kiloanLoyalty = isOwner ? await getKiloanLoyalty() : null;
   const printerSettings = isOwner ? await getPrinterSettings() : null;
+  const staff = isOwner ? await DB.getBusinessStaff() : null;
   const customCats = state.categories.filter(c=>!c.system);
 
   const accountCard = `
@@ -527,6 +530,19 @@ async function pagePengaturan(){
       <div class="field">
         <label>Instagram Usaha (opsional, muncul di struk)</label>
         <input type="text" id="bizInstagramInput" placeholder="@namausaha" value="${escapeHtml(state.businessInstagram||'')}">
+      </div>
+      <div class="field">
+        <label>Alamat Usaha (opsional, muncul di struk)</label>
+        <textarea id="bizAddressInput" placeholder="Contoh: Jl. Melati No. 10, Denpasar">${escapeHtml(state.businessAddress||'')}</textarea>
+      </div>
+      <div class="field">
+        <label>Logo Usaha (opsional, muncul di struk gambar & cetak)</label>
+        <input type="file" id="bizLogoInput" accept="image/*" style="display:none;">
+        <button type="button" class="btn btn-outline btn-block" id="bizLogoBtn">${ICONS.camera} ${state.businessLogo ? 'Ganti Logo' : 'Unggah Logo'}</button>
+        <div id="bizLogoPreviewWrap" style="margin-top:10px; ${state.businessLogo?'':'display:none;'}">
+          <img id="bizLogoPreview" src="${state.businessLogo||''}" style="width:64px; height:64px; object-fit:cover; border-radius:10px; border:1px solid var(--line);">
+          <button type="button" class="btn btn-ghost" id="bizLogoRemoveBtn" style="color:var(--rose);">Hapus Logo</button>
+        </div>
       </div>
       <button class="btn btn-primary" data-action="save-biz-name">Simpan Profil</button>
     </div>
@@ -627,6 +643,25 @@ async function pagePengaturan(){
         <input type="text" id="inviteCodeField" value="${state.businessId || ''}" readonly style="font-family:var(--font-mono); font-size:12px;">
       </div>
       <button class="btn btn-outline" data-action="copy-invite-code">Salin Kode</button>
+    </div>
+
+    <h3 class="section-title">Anggota Tim (${staff.length})</h3>
+    <div class="card">
+      <p class="small muted">Bisa lebih dari 1 Owner untuk usaha yang sama — misalnya Anda dan pasangan, masing-masing pakai email sendiri, akses penuh berdua. Naikkan akun Pegawai jadi Owner di sini.</p>
+      <div style="margin-top:10px;">
+        ${staff.map(s => `
+          <div class="row-between" style="padding:10px 0; border-bottom:1px dashed var(--line);">
+            <div>
+              <div class="small" style="font-weight:700;">${escapeHtml(s.name || s.email)}${s.uid === state.user?.uid ? ' <span class="muted">(Anda)</span>' : ''}</div>
+              <div class="small muted">${escapeHtml(s.email || '')}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="status-badge ${s.role==='owner' ? 'status-selesai' : 'status-belum-diproses'}">${s.role === 'owner' ? 'Owner' : 'Pegawai'}</span>
+              ${s.uid !== state.user?.uid ? `<button class="btn btn-outline" data-action="toggle-role" data-uid="${s.uid}" data-role="${s.role}">${s.role === 'owner' ? 'Turunkan' : 'Jadikan Owner'}</button>` : ''}
+            </div>
+          </div>
+        `).join("")}
+      </div>
     </div>
 
     <h3 class="section-title">Data</h3>
@@ -754,12 +789,12 @@ function tierLabel(tier){
 
 async function getPricing(){
   const saved = await DB.getSetting("pricing", null);
+  if(!saved) return JSON.parse(JSON.stringify(DEFAULT_PRICING));
   const kiloan = {};
   for(const key of Object.keys(KILOAN_LABELS)){
     const savedTiers = saved?.kiloan?.[key];
-    kiloan[key] = Array.isArray(savedTiers) && savedTiers.length > 0 ? savedTiers : DEFAULT_PRICING.kiloan[key];
+    kiloan[key] = Array.isArray(savedTiers) ? savedTiers : DEFAULT_PRICING.kiloan[key];
   }
-  if(!saved) return JSON.parse(JSON.stringify(DEFAULT_PRICING));
   return {
     kiloan,
     selfService: { ...DEFAULT_PRICING.selfService, ...(saved.selfService||{}) },
@@ -839,7 +874,10 @@ function openPriceSettingsModal(){
             ${tiers.length === 0 ? `<p class="small muted">Belum ada opsi harga.</p>` : tiers.map(t => `
               <div class="row-between" style="padding:6px 0; border-bottom:1px dashed var(--line);">
                 <span class="small">${tierLabel(t)} — Rp${t.rate.toLocaleString('id-ID')}/kg</span>
-                <button class="tx-del" data-remove-tier="${key}:${t.id}">${ICONS.trash}</button>
+                <div style="display:flex; gap:4px;">
+                  <button class="tx-del" data-edit-tier="${key}:${t.id}" title="Edit">${ICONS.edit}</button>
+                  <button class="tx-del" data-remove-tier="${key}:${t.id}" title="Hapus">${ICONS.trash}</button>
+                </div>
               </div>
             `).join("")}
           </div>
@@ -850,12 +888,28 @@ function openPriceSettingsModal(){
             </select>
             <input type="number" class="tier-duration" data-group="${key}" placeholder="Durasi" style="width:70px; padding:8px; border-radius:8px; border:1.5px solid var(--line);">
             <input type="number" class="tier-rate" data-group="${key}" placeholder="Rp/kg" style="flex:1; padding:8px; border-radius:8px; border:1.5px solid var(--line);">
-            <button type="button" class="btn btn-outline add-tier-btn" data-group="${key}">+</button>
+            <button type="button" class="btn btn-outline add-tier-btn" data-group="${key}" data-editing-id="">+</button>
           </div>
         </div>
       `;
     }).join("");
 
+    box.querySelectorAll("[data-edit-tier]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const [key, tierId] = btn.dataset.editTier.split(":");
+        getPricing().then(pricing=>{
+          const tier = (pricing.kiloan[key]||[]).find(t=>t.id===tierId);
+          if(!tier) return;
+          box.querySelector(`.tier-unit[data-group="${key}"]`).value = tier.unit;
+          box.querySelector(`.tier-duration[data-group="${key}"]`).value = tier.duration;
+          box.querySelector(`.tier-rate[data-group="${key}"]`).value = tier.rate;
+          const addBtn = box.querySelector(`.add-tier-btn[data-group="${key}"]`);
+          addBtn.dataset.editingId = tierId;
+          addBtn.textContent = "✓ Update";
+          toast("Ubah nilainya lalu klik Update");
+        });
+      });
+    });
     box.querySelectorAll("[data-remove-tier]").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
         const [key, tierId] = btn.dataset.removeTier.split(":");
@@ -869,6 +923,7 @@ function openPriceSettingsModal(){
     box.querySelectorAll(".add-tier-btn").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
         const key = btn.dataset.group;
+        const editingId = btn.dataset.editingId;
         const unit = box.querySelector(`.tier-unit[data-group="${key}"]`).value;
         const duration = parseFloat(box.querySelector(`.tier-duration[data-group="${key}"]`).value);
         const rate = parseFloat(box.querySelector(`.tier-rate[data-group="${key}"]`).value);
@@ -876,9 +931,16 @@ function openPriceSettingsModal(){
         if(isNaN(rate) || rate < 0){ toast("Isi harga yang valid", "warn"); return; }
         const pricing = await getPricing();
         if(!pricing.kiloan[key]) pricing.kiloan[key] = [];
-        pricing.kiloan[key].push({ id: genTierId(), duration, unit, rate });
-        await setPricing(pricing);
-        toast("Opsi harga ditambahkan");
+        if(editingId){
+          const tier = pricing.kiloan[key].find(t=>t.id===editingId);
+          if(tier){ tier.duration = duration; tier.unit = unit; tier.rate = rate; }
+          await setPricing(pricing);
+          toast("Opsi harga diperbarui");
+        } else {
+          pricing.kiloan[key].push({ id: genTierId(), duration, unit, rate });
+          await setPricing(pricing);
+          toast("Opsi harga ditambahkan");
+        }
         refreshKiloanGroups();
       });
     });
@@ -1208,7 +1270,7 @@ function orderCardHtml(o){
       <div class="order-card-top">
         <div class="order-service-icon status-${o.status}">${serviceIconFor(o)}</div>
         <div class="order-card-id">
-          <span class="order-id-badge">${ICONS.hash}${o.receiptNo ? String(o.receiptNo).padStart(6,'0') : '------'}</span>
+          <span class="order-id-badge">${ICONS.hash}${o.receiptNo || '------'}</span>
           <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
         </div>
       </div>
@@ -1320,7 +1382,7 @@ function buildOrderStatusText(o){
   }
   lines.push("");
   lines.push(`📦 *${STATUS_LABEL[o.status]}*`);
-  if(o.receiptNo) lines.push(`Struk No.: ${String(o.receiptNo).padStart(6,'0')}`);
+  if(o.receiptNo) lines.push(`Struk No.: ${o.receiptNo}`);
   if(o.weightKg) lines.push(`Berat: ${o.weightKg} kg`);
   if(o.note) lines.push(`Catatan: ${o.note}`);
   if(o.id) lines.push(`\nPantau/lihat foto: ${trackingUrl(o.id)}`);
@@ -1703,7 +1765,7 @@ async function openAddOrderModal(){
       isFreeVisit = visitResult.isFree;
     }
 
-    const receiptNo = await DB.getNextReceiptNumber();
+    const receiptNo = await DB.getNextReceiptCode(serviceType, Reports.todayStr());
     const changeAmount = amountPaid - total;
     const orderRef = fs.collection("orders").doc();
     const orderId = orderRef.id;
@@ -1790,11 +1852,13 @@ function memberRowHtml(m, kiloanLoyalty){
           <div class="small muted">Kiloan (total ${(m.kiloanTotalAll||0).toFixed(1)}kg)</div>
           <div class="loyalty-bar" style="margin-top:4px;"><div class="loyalty-fill" style="width:${kPct}%"></div></div>
           <div class="small" style="margin-top:3px;">${kReady ? "🎉 Siap promo!" : `${kBalance.toFixed(1)}/${kThreshold} kg`}</div>
+          ${kReady ? `<button class="btn btn-primary btn-block" style="margin-top:8px; background:var(--coin);" data-action="claim-kiloan" data-phone="${m.phone}">Klaim Promo Kiloan</button>` : ""}
         </div>
         <div>
           <div class="small muted">Self-Service</div>
           <div class="loyalty-bar" style="margin-top:4px;"><div class="loyalty-fill" style="width:${ssPct}%"></div></div>
           <div class="small" style="margin-top:3px;">${ssReady ? "🎉 Siap gratis!" : `${m.visits||0}/${LOYALTY_TARGET} kunjungan`}</div>
+          ${ssReady ? `<button class="btn btn-primary btn-block" style="margin-top:8px; background:var(--mint);" data-action="claim-selfservice" data-phone="${m.phone}">Klaim Gratis 1x</button>` : ""}
         </div>
       </div>
     </div>
@@ -1976,11 +2040,12 @@ function buildReceiptText(t){
   const lines = [];
   lines.push(`*${state.businessName}*`);
   if(state.businessTagline) lines.push(state.businessTagline);
-  if(state.businessPhone) lines.push(`WA: ${state.businessPhone}`);
-  if(state.businessInstagram) lines.push(`IG: ${state.businessInstagram}`);
+  if(state.businessAddress) lines.push(`📍 ${state.businessAddress}`);
+  if(state.businessPhone) lines.push(`📱 ${state.businessPhone}`);
+  if(state.businessInstagram) lines.push(`📷 ${state.businessInstagram}`);
   lines.push("--------------------------------");
   lines.push(`Tgl        : ${fmtDate(t.date)}`);
-  if(t.receiptNo) lines.push(`Struk No.  : ${String(t.receiptNo).padStart(6,'0')}`);
+  if(t.receiptNo) lines.push(`Struk No.  : ${t.receiptNo}`);
   if(t.customerName) lines.push(`Pelanggan  : ${t.customerName}`);
   if(t.customerPhone) lines.push(`No. Telp   : ${t.customerPhone}`);
   lines.push("--------------------------------");
@@ -2087,13 +2152,14 @@ function buildEscPos(t, width){
   raw(GS,0x21,0x00);       // normal size
   raw(ESC,0x45,0);         // bold off
   if(state.businessTagline) text(state.businessTagline + "\n");
+  if(state.businessAddress) text(state.businessAddress + "\n");
   if(state.businessPhone) text(`WA: ${state.businessPhone}\n`);
   if(state.businessInstagram) text(`IG: ${state.businessInstagram}\n`);
   text("-".repeat(width) + "\n");
 
   raw(ESC,0x61,0);         // left align
   text(padRow("Tgl", fmtDate(t.date), width) + "\n");
-  if(t.receiptNo) text(padRow("Struk No.", String(t.receiptNo).padStart(6,'0'), width) + "\n");
+  if(t.receiptNo) text(padRow("Struk No.", t.receiptNo, width) + "\n");
   if(t.customerName) text(padRow("Pelanggan", t.customerName, width) + "\n");
   if(t.customerPhone) text(padRow("No. Telp", t.customerPhone, width) + "\n");
   text("-".repeat(width) + "\n");
@@ -2192,13 +2258,15 @@ function printReceiptSystemDialog(t){
   area.id = "receiptPrintArea";
   area.innerHTML = `
     <div class="print-receipt">
+      ${state.businessLogo ? `<img src="${state.businessLogo}" class="pr-logo">` : ""}
       <div class="pr-biz">${state.businessName}</div>
       ${state.businessTagline ? `<div class="pr-tagline">${escapeHtml(state.businessTagline)}</div>` : ""}
-      ${state.businessPhone ? `<div class="pr-tagline">WA: ${escapeHtml(state.businessPhone)}</div>` : ""}
-      ${state.businessInstagram ? `<div class="pr-tagline">IG: ${escapeHtml(state.businessInstagram)}</div>` : ""}
+      ${state.businessAddress ? `<div class="pr-tagline">${escapeHtml(state.businessAddress)}</div>` : ""}
+      ${state.businessPhone ? `<div class="pr-tagline">📱 ${escapeHtml(state.businessPhone)}</div>` : ""}
+      ${state.businessInstagram ? `<div class="pr-tagline">📷 ${escapeHtml(state.businessInstagram)}</div>` : ""}
       <div class="pr-divider"></div>
       <div class="pr-row"><span>Tgl</span><span>${fmtDate(t.date)}</span></div>
-      ${t.receiptNo ? `<div class="pr-row"><span>Struk No.</span><span>${String(t.receiptNo).padStart(6,'0')}</span></div>` : ""}
+      ${t.receiptNo ? `<div class="pr-row"><span>Struk No.</span><span>${t.receiptNo}</span></div>` : ""}
       ${t.customerName ? `<div class="pr-row"><span>Pelanggan</span><span>${escapeHtml(t.customerName)}</span></div>` : ""}
       ${t.customerPhone ? `<div class="pr-row"><span>No. Telp</span><span>${escapeHtml(t.customerPhone)}</span></div>` : ""}
       <div class="pr-divider"></div>
@@ -2231,15 +2299,30 @@ function printReceiptSystemDialog(t){
   }, 500);
 }
 
-function generateReceiptCanvas(t){
+function loadImageEl(url){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+async function generateReceiptCanvas(t){
   const width = 480;
   const padding = 32;
   const items = buildReceiptItems(t);
   const subtotal = items.reduce((s,i)=>s+i.subtotal, 0);
 
+  let logoImg = null;
+  if(state.businessLogo){
+    try{ logoImg = await loadImageEl(state.businessLogo); }catch(e){ logoImg = null; }
+  }
+
   const infoRows = [];
   infoRows.push(["Tgl", fmtDate(t.date)]);
-  if(t.receiptNo) infoRows.push(["Struk No.", String(t.receiptNo).padStart(6,'0')]);
+  if(t.receiptNo) infoRows.push(["Struk No.", t.receiptNo]);
   if(t.customerName) infoRows.push(["Pelanggan", t.customerName]);
   if(t.customerPhone) infoRows.push(["No. Telp", t.customerPhone]);
 
@@ -2255,8 +2338,9 @@ function generateReceiptCanvas(t){
   }
 
   const scale = 2;
-  const contactLines = (state.businessPhone?1:0) + (state.businessInstagram?1:0);
-  const estHeight = padding*2
+  const contactLines = (state.businessAddress?1:0) + (state.businessPhone?1:0) + (state.businessInstagram?1:0);
+  const logoHeight = logoImg ? 58 : 0;
+  const estHeight = padding*2 + logoHeight
     + 30 + (state.businessTagline?16:0) + contactLines*15 + 14   // header + divider
     + infoRows.length*22 + 14                   // info block + divider
     + items.reduce((s)=>s+40, 0) + (t.isFreeVisit?26:0) + (t.estimatedReadyAt?36:0) + 14 // items + divider
@@ -2293,6 +2377,11 @@ function generateReceiptCanvas(t){
   };
 
   let y = padding + 12;
+  if(logoImg){
+    const logoSize = 48;
+    ctx.drawImage(logoImg, width/2 - logoSize/2, y - 12, logoSize, logoSize);
+    y += logoSize + 6;
+  }
   ctx.textAlign = "center";
   ctx.fillStyle = "#16232E";
   ctx.font = "700 22px Georgia, serif";
@@ -2304,16 +2393,22 @@ function generateReceiptCanvas(t){
     ctx.fillText(state.businessTagline, width/2, y);
     y += 16;
   }
+  if(state.businessAddress){
+    ctx.fillStyle = "#5C6B70";
+    ctx.font = "400 11px -apple-system, sans-serif";
+    ctx.fillText(state.businessAddress, width/2, y);
+    y += 15;
+  }
   if(state.businessPhone){
     ctx.fillStyle = "#5C6B70";
     ctx.font = "400 11px -apple-system, sans-serif";
-    ctx.fillText(`WA: ${state.businessPhone}`, width/2, y);
+    ctx.fillText(`📱 ${state.businessPhone}`, width/2, y);
     y += 15;
   }
   if(state.businessInstagram){
     ctx.fillStyle = "#5C6B70";
     ctx.font = "400 11px -apple-system, sans-serif";
-    ctx.fillText(`IG: ${state.businessInstagram}`, width/2, y);
+    ctx.fillText(`📷 ${state.businessInstagram}`, width/2, y);
     y += 15;
   }
   y += 8;
@@ -2383,7 +2478,7 @@ function canvasToBlob(canvas){
 }
 
 async function shareReceiptImage(t){
-  const canvas = generateReceiptCanvas(t);
+  const canvas = await generateReceiptCanvas(t);
   const blob = await canvasToBlob(canvas);
   const safeName = (t.customerName || "pelanggan").replace(/[^a-z0-9]+/gi, "-");
   const fileName = `struk-${safeName}-${t.date}.png`;
@@ -2602,6 +2697,31 @@ function bindPageEvents(){
       if(m) openAddMemberModal(m);
     });
   });
+  document.querySelectorAll("[data-action='claim-kiloan']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const m = await DB.getMember(btn.dataset.phone);
+      const kiloanLoyalty = await getKiloanLoyalty();
+      if(!m || (m.kiloanBalance||0) < kiloanLoyalty.thresholdKg){ toast("Belum memenuhi target", "warn"); return; }
+      if(!confirm(`Klaim promo kiloan untuk ${m.name || m.phone} sekarang?`)) return;
+      m.kiloanBalance -= kiloanLoyalty.thresholdKg;
+      m.kiloanFreeRedeemed = (m.kiloanFreeRedeemed||0) + 1;
+      await DB.upsertMember(m);
+      toast("Promo kiloan diklaim — progress mulai lagi dari awal");
+      render();
+    });
+  });
+  document.querySelectorAll("[data-action='claim-selfservice']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const m = await DB.getMember(btn.dataset.phone);
+      if(!m || (m.visits||0) < LOYALTY_TARGET){ toast("Belum memenuhi target", "warn"); return; }
+      if(!confirm(`Klaim gratis 1x self-service untuk ${m.name || m.phone} sekarang?`)) return;
+      m.visits = 0;
+      m.freeRedeemed = (m.freeRedeemed||0) + 1;
+      await DB.upsertMember(m);
+      toast("Gratis 1x diklaim — progress mulai lagi dari awal");
+      render();
+    });
+  });
   const addOrderBtn = document.querySelector("[data-action='add-order']");
   if(addOrderBtn) addOrderBtn.addEventListener("click", openAddOrderModal);
   document.querySelectorAll("[data-report-tab]").forEach(btn=>{
@@ -2626,15 +2746,46 @@ function bindPageEvents(){
     const tagline = document.getElementById("bizTaglineInput").value.trim();
     const phone = document.getElementById("bizPhoneInput").value.trim();
     const instagram = document.getElementById("bizInstagramInput").value.trim();
+    const address = document.getElementById("bizAddressInput").value.trim();
     state.businessName = val;
     state.businessTagline = tagline;
     state.businessPhone = phone;
     state.businessInstagram = instagram;
+    state.businessAddress = address;
     await DB.setSetting("businessName", val);
     await DB.setSetting("businessTagline", tagline);
     await DB.setSetting("businessPhone", phone);
     await DB.setSetting("businessInstagram", instagram);
+    await DB.setSetting("businessAddress", address);
     toast("Profil usaha disimpan");
+    render();
+  });
+
+  const bizLogoBtn = document.querySelector("#bizLogoBtn");
+  if(bizLogoBtn) bizLogoBtn.addEventListener("click", ()=> document.getElementById("bizLogoInput").click());
+  const bizLogoInput = document.querySelector("#bizLogoInput");
+  if(bizLogoInput) bizLogoInput.addEventListener("change", async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    bizLogoBtn.textContent = "Mengunggah...";
+    bizLogoBtn.disabled = true;
+    try{
+      const url = await uploadPhotoToCloudinary(file);
+      state.businessLogo = url;
+      await DB.setSetting("businessLogo", url);
+      toast("Logo tersimpan");
+      render();
+    }catch(err){
+      toast("Gagal unggah logo — cek koneksi internet", "warn");
+      bizLogoBtn.innerHTML = `${ICONS.camera} ${state.businessLogo ? 'Ganti Logo' : 'Unggah Logo'}`;
+      bizLogoBtn.disabled = false;
+    }
+  });
+  const bizLogoRemoveBtn = document.querySelector("#bizLogoRemoveBtn");
+  if(bizLogoRemoveBtn) bizLogoRemoveBtn.addEventListener("click", async ()=>{
+    state.businessLogo = "";
+    await DB.setSetting("businessLogo", "");
+    toast("Logo dihapus");
     render();
   });
 
@@ -2704,6 +2855,22 @@ function bindPageEvents(){
     const field = document.getElementById("inviteCodeField");
     field.select();
     navigator.clipboard?.writeText(field.value).then(()=> toast("Kode disalin"));
+  });
+  document.querySelectorAll("[data-action='toggle-role']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const uid = btn.dataset.uid;
+      const currentRole = btn.dataset.role;
+      const newRole = currentRole === "owner" ? "pegawai" : "owner";
+      if(currentRole === "owner"){
+        const staff = await DB.getBusinessStaff();
+        const ownerCount = staff.filter(s=>s.role==="owner").length;
+        if(ownerCount <= 1){ toast("Tidak bisa menurunkan Owner terakhir", "warn"); return; }
+      }
+      if(!confirm(newRole === "owner" ? "Jadikan akun ini Owner (akses penuh)?" : "Turunkan akun ini jadi Pegawai (akses terbatas)?")) return;
+      await DB.setStaffRole(uid, newRole);
+      toast(newRole === "owner" ? "Akun dijadikan Owner" : "Akun diturunkan jadi Pegawai");
+      render();
+    });
   });
 }
 
@@ -2948,6 +3115,8 @@ async function startApp(){
   state.businessTagline = await DB.getSetting("businessTagline", "");
   state.businessPhone = await DB.getSetting("businessPhone", "");
   state.businessInstagram = await DB.getSetting("businessInstagram", "");
+  state.businessAddress = await DB.getSetting("businessAddress", "");
+  state.businessLogo = await DB.getSetting("businessLogo", "");
   state.categories = await DB.getCategories();
 
   if("serviceWorker" in navigator){

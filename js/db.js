@@ -76,6 +76,16 @@ const DB = {
     return doc.exists ? { id: doc.id, ...doc.data() } : null;
   },
 
+  async getBusinessStaff(){
+    const snap = await fs.collection("users").where("businessId","==",_businessId).get();
+    return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+  },
+
+  async setStaffRole(uid, role){
+    await fs.collection("users").doc(uid).update({ role });
+    return true;
+  },
+
   async init(){
     const snap = await fs.collection("categories").where("businessId","==",_businessId).limit(1).get();
     if(snap.empty){
@@ -207,14 +217,22 @@ const DB = {
     return true;
   },
 
-  async getNextReceiptNumber(){
-    return fs.runTransaction(async (tx) => {
+  async getNextReceiptCode(serviceType, dateStr){
+    const prefixMap = { "kiloan": "KL", "satuan": "ST", "self-service": "SS" };
+    const prefix = prefixMap[serviceType] || "TX";
+    const [y,m,d] = dateStr.split("-");
+    const dateCode = `${d}${m}${y.slice(2)}`;
+    const counterKey = `${prefix}${dateCode}`;
+
+    const seq = await fs.runTransaction(async (tx) => {
       const ref = fs.collection("businessSettings").doc(_businessId);
       const doc = await tx.get(ref);
-      const current = doc.exists ? (doc.data().receiptCounter || 0) : 0;
-      const next = current + 1;
-      tx.set(ref, { receiptCounter: next }, { merge: true });
+      const counters = doc.exists ? (doc.data().receiptCounters || {}) : {};
+      const next = (counters[counterKey] || 0) + 1;
+      tx.set(ref, { receiptCounters: { ...counters, [counterKey]: next } }, { merge: true });
       return next;
     });
+
+    return `${prefix}-${dateCode}-${String(seq).padStart(3,'0')}`;
   }
 };

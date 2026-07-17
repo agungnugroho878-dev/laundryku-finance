@@ -66,8 +66,13 @@ async function loadOrder(){
     const settingsDoc = await fs.collection("businessSettings").doc(o.businessId).get();
     const settings = settingsDoc.exists ? settingsDoc.data() : {};
     document.getElementById("bizName").textContent = settings.businessName || "LaundryKu";
-    const contactBits = [settings.businessTagline, settings.businessPhone ? `WA: ${settings.businessPhone}` : null, settings.businessInstagram ? `IG: ${settings.businessInstagram}` : null].filter(Boolean);
+    const contactBits = [settings.businessTagline, settings.businessAddress, settings.businessPhone ? `📱 ${settings.businessPhone}` : null, settings.businessInstagram ? `📷 ${settings.businessInstagram}` : null].filter(Boolean);
     document.getElementById("bizTagline").textContent = contactBits.join(" · ");
+    if(settings.businessLogo){
+      const logoEl = document.getElementById("bizLogo");
+      logoEl.src = settings.businessLogo;
+      logoEl.style.display = "block";
+    }
 
     renderOrder(o, content);
   }catch(err){
@@ -96,7 +101,7 @@ function renderOrder(o, content){
 
   content.innerHTML = `
     <div class="card">
-      <div class="muted center">Status Pesanan${o.receiptNo ? ` · #${String(o.receiptNo).padStart(6,'0')}` : ""}</div>
+      <div class="muted center">Status Pesanan${o.receiptNo ? ` · #${o.receiptNo}` : ""}</div>
       <div class="status-track">${stepsHtml}</div>
       ${o.estimatedReadyAt ? `<div class="center muted small-est">Estimasi selesai: <b>${fmtDateTime(o.estimatedReadyAt)}</b></div>` : ""}
       ${countdown ? `<div class="countdown" style="color:${countdown.overdue?'#C1554D':'#3E7CB1'}">${countdown.overdue?'⚠':'⏱'} ${countdown.text}</div>` : ""}

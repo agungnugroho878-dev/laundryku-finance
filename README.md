@@ -37,7 +37,7 @@ service cloud.firestore {
     function sameBusiness(bizId) { return isSignedIn() && myBusinessId() == bizId; }
 
     match /users/{uid} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (request.auth.uid == uid || sameBusiness(resource.data.businessId));
       allow create: if isSignedIn() && request.auth.uid == uid;
       allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
     }
@@ -89,6 +89,8 @@ service cloud.firestore {
 
 Untuk pegawai: Owner buka **Atur → Pegawai**, salin **Kode Undangan Usaha**, bagikan ke pegawai. Pegawai buka aplikasi → **Daftar** → pilih **"Gabung sebagai Pegawai"** → masukkan kode itu → otomatis bergabung ke usaha yang sama (bukan usaha lain).
 
+**Boleh lebih dari 1 Owner untuk usaha yang sama** (misalnya Anda & pasangan, masing-masing pantau dengan email sendiri): orang kedua daftar dulu lewat "Gabung sebagai Pegawai" pakai kode undangan di atas (otomatis jadi Pegawai) → Owner pertama buka **Atur → Anggota Tim** → klik **"Jadikan Owner"** di baris akun tersebut. Selesai, akses penuh untuk keduanya.
+
 ---
 
 ## 0b. Setup Cloudinary (untuk fitur foto pakaian)
@@ -113,7 +115,7 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
 ## 1. Cara pakai cepat
 
 1. Buka aplikasinya → login (atau daftar kalau belum punya akun)
-2. **Owner**: buka menu **Atur → Profil Usaha** dan isi nama, tagline, **No. WhatsApp usaha**, dan **Instagram usaha** (opsional, semuanya otomatis muncul di struk)
+2. **Owner**: buka menu **Atur → Profil Usaha** dan isi nama, tagline, **No. WhatsApp usaha**, **Instagram usaha**, **alamat**, dan **logo** (opsional, semuanya otomatis muncul di struk — logo muncul di struk gambar & cetak, teks WA/IG pakai ikon 📱📷)
 3. **Owner**: di menu **Atur → Harga Layanan**, klik tombol **"Setting Harga"** — popup ini menangani 3 hal sekaligus:
    - **Kiloan**: untuk tiap jenis (Cuci Kering Lipat, Cuci Setrika, Setrika Saja), bisa tambah **beberapa opsi harga & durasi berbeda** (misal "3 hari — Rp6.000/kg" dan "1 hari — Rp8.000/kg" untuk jenis yang sama) — cocok kalau Anda punya tarif reguler vs kilat/express. Tiap opsi langsung muncul di daftar rekap setelah disimpan
    - **Self-Service**: isi harga Cuci Saja/Kering Saja/Cuci+Kering
@@ -127,7 +129,7 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
    - **Self-Service**: pilih 1 jenis
    - Isi **Bayar** (uang yang diterima dari pelanggan) — **Kembalian** otomatis terhitung
    - Kalau nomor WA pelanggan diisi: kiloan otomatis terakumulasi ke saldo kg member (promo otomatis diterapkan kalau target tercapai), self-service kunjungan ke-10 otomatis gratis
-8. Setiap pesanan otomatis dapat **nomor struk urut** — total pesanan otomatis terhitung dari harga & berat/jenis layanan (bisa diubah manual), langsung tercatat sebagai pendapatan
+8. Setiap pesanan otomatis dapat **kode struk unik** berdasarkan jenis layanan + tanggal, contoh: `KL-160726-001` (Kiloan), `ST-160726-001` (Satuan), `SS-160726-001` (Self-Service) — nomor urut di belakang reset tiap hari per jenis layanan, jadi gampang dikenali sekilas. Total pesanan otomatis terhitung dari harga & berat/jenis layanan (bisa diubah manual), langsung tercatat sebagai pendapatan
 9. Setelah pesanan tersimpan, muncul pilihan **kirim atau cetak struk**: kirim gambar/teks via WhatsApp, cetak lewat **printer thermal Bluetooth**, atau cetak lewat **dialog print/PDF biasa** — semua format strukturnya sama persis (nama usaha, tagline, No. WA & Instagram usaha, tanggal, no. struk, pelanggan, rincian tiap item, **estimasi tanggal & jam selesai** untuk pesanan kiloan, subtotal, diskon, total, bayar, kembalian). Estimasi selesai ini juga muncul di halaman pantau online yang dikirim ke pelanggan
 10. **Foto barang (opsional)**: saat isi pesanan, ada 2 cara ambil foto:
     - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup
@@ -147,7 +149,8 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
 12. **Notifikasi siap diambil**: begitu status ditandai **"Selesai"**, langsung muncul pop-up untuk kirim notifikasi WA ke pelanggan (1 tombol, pesan sudah siap dengan nada bersemangat + link pantau)
 13. Halaman pantau yang dibuka pelanggan **otomatis memperbarui status setiap 20 detik** — kalau dibiarkan terbuka, pelanggan langsung melihat perubahan status tanpa perlu refresh manual
 14. **Beranda** sekarang punya kartu **"Analisis Pendapatan Layanan"** — filter waktu (Hari Ini/7 Hari/Bulan Ini/Tahun Ini), rincian omzet & jumlah transaksi per jenis (Kiloan/Satuan/Self-Service) plus Total Omzet, dan grafik tren 6 bulan terakhir untuk melihat jenis layanan mana yang tumbuh paling baik
-15. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
+15. **Klaim Promo**: di tab **Member**, kalau pelanggan sudah mencapai target (akumulasi kg kiloan atau 10x kunjungan self-service), muncul tombol **"Klaim"** — dipencet saat pelanggan datang mau ambil gratisannya, progress otomatis mulai lagi dari 0 setelah diklaim (tidak perlu bikin transaksi baru untuk ini)
+16. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
 
 ### Catatan soal indikator waktu di tab Cucian
 Indikator "sisa waktu"/"terlambat" dihitung saat halaman Cucian dibuka/di-refresh (bukan berjalan otomatis tiap detik seperti jam) — cukup akurat untuk penggunaan sehari-hari, cukup buka ulang tab Cucian sesekali untuk lihat update terbaru.
