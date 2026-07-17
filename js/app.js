@@ -3073,9 +3073,13 @@ function wireAuthForm(mode, root){
       const code = root.querySelector("#authInviteCode").value.trim();
       if(!code){ setErr("Isi kode undangan dari pemilik usaha."); return; }
       try{
-        const biz = await DB.getBusinessById(code);
-        if(!biz){ setErr("Kode undangan tidak ditemukan. Cek lagi dengan pemilik usaha."); return; }
         const cred = await auth.createUserWithEmailAndPassword(email, password);
+        const biz = await DB.getBusinessById(code);
+        if(!biz){
+          await cred.user.delete().catch(()=>{});
+          setErr("Kode undangan tidak ditemukan. Cek lagi dengan pemilik usaha.");
+          return;
+        }
         await fs.collection("users").doc(cred.user.uid).set({
           name, email, role: "pegawai", businessId: code, createdAt: Date.now()
         });
