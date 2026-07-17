@@ -3035,7 +3035,7 @@ function wireAuthForm(mode, root){
     try{
       await auth.signInWithEmailAndPassword(email, password);
     }catch(err){
-      setErr(authErrorMessage(err));
+      console.error("Auth error:", err); setErr(authErrorMessage(err));
     }
   });
 
@@ -3067,7 +3067,7 @@ function wireAuthForm(mode, root){
           name, email, role: "owner", businessId, createdAt: Date.now()
         });
       }catch(err){
-        setErr(authErrorMessage(err));
+        console.error("Auth error:", err); setErr(authErrorMessage(err));
       }
     } else {
       const code = root.querySelector("#authInviteCode").value.trim();
@@ -3080,7 +3080,7 @@ function wireAuthForm(mode, root){
           name, email, role: "pegawai", businessId: code, createdAt: Date.now()
         });
       }catch(err){
-        setErr(authErrorMessage(err));
+        console.error("Auth error:", err); setErr(authErrorMessage(err));
       }
     }
   });
@@ -3093,9 +3093,13 @@ function authErrorMessage(err){
     "auth/wrong-password": "Password salah.",
     "auth/invalid-credential": "Email atau password salah.",
     "auth/email-already-in-use": "Email ini sudah terdaftar.",
-    "auth/weak-password": "Password terlalu lemah (minimal 6 karakter)."
+    "auth/weak-password": "Password terlalu lemah (minimal 6 karakter).",
+    "auth/unauthorized-domain": "Domain ini belum diizinkan di Firebase. Owner perlu tambahkan domain ini di Firebase Console → Authentication → Settings → Authorized domains.",
+    "auth/network-request-failed": "Tidak ada koneksi internet. Cek jaringan lalu coba lagi.",
+    "auth/too-many-requests": "Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.",
+    "permission-denied": "Akses ditolak oleh server (Security Rules). Hubungi Owner untuk cek pengaturan Firebase."
   };
-  return map[err.code] || "Terjadi kesalahan. Coba lagi.";
+  return map[err.code] || `Terjadi kesalahan (${err.code || err.message || 'tidak diketahui'}). Coba lagi.`;
 }
 
 /* ---------------- Boot ---------------- */

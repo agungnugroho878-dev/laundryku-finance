@@ -1,4 +1,4 @@
-const CACHE_NAME = "laundryku-v23";
+const CACHE_NAME = "laundryku-v27";
 const APP_SHELL = [
   "./",
   "./index.html",
