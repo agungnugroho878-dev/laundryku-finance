@@ -198,7 +198,66 @@ async function getServiceTrend(n = 6){
   return buckets;
 }
 
+async function pagePegawaiDashboard(){
+  const orders = await DB.getOrders();
+  const belumDiproses = orders.filter(o=>o.status==="belum-diproses").length;
+  const sedangDiproses = orders.filter(o=>o.status==="sedang-diproses").length;
+  const today = Reports.todayStr();
+  const txToday = (await DB.getTransactions()).filter(t=>t.date===today).length;
+  const recentOrders = orders.slice(0,5);
+
+  return `
+    <div class="hero-balance">
+      <div class="card-title">Selamat Datang</div>
+      <div class="amount" style="font-family:var(--font-display); font-size:24px;">${escapeHtml(state.userName || "")}</div>
+      <div class="sub"><span>Pegawai · ${escapeHtml(state.businessName)}</span></div>
+    </div>
+
+    <div class="quick-actions">
+      <button class="in" data-action="add" data-type="in"><span class="qa-icon">${ICONS.arrowDown}</span>Catat Kas Masuk</button>
+      <button class="out" data-action="add" data-type="out"><span class="qa-icon">${ICONS.arrowUp}</span>Catat Kas Keluar</button>
+    </div>
+    <button class="btn btn-primary btn-block" data-action="add-order" style="margin-bottom:14px;">${ICONS.plus} Pesanan Cucian Baru</button>
+
+    <div class="stat-grid">
+      <div class="card stat-card income">
+        <div class="card-title">Belum Diproses</div>
+        <div class="amount num">${belumDiproses}</div>
+      </div>
+      <div class="card stat-card expense">
+        <div class="card-title">Sedang Diproses</div>
+        <div class="amount num">${sedangDiproses}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Transaksi Tercatat Hari Ini</div>
+      <div class="amount num" style="font-size:21px; font-weight:700;">${txToday}</div>
+    </div>
+
+    <div class="card">
+      <div class="row-between" style="margin-bottom:8px;">
+        <div class="card-title" style="margin-bottom:0">Pesanan Terbaru</div>
+        <button class="btn btn-ghost btn" data-page="cucian">Lihat semua</button>
+      </div>
+      ${recentOrders.length===0 ? emptyState("Belum ada pesanan cucian.") :
+        recentOrders.map(o=>`
+          <div class="tx-item">
+            <div class="tx-dot in">${serviceIconFor(o)}</div>
+            <div class="tx-info">
+              <div class="cat">${escapeHtml(o.customerName||"Tanpa nama")}</div>
+              <div class="meta">${o.receiptNo||""}</div>
+            </div>
+            <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
+          </div>
+        `).join("")}
+    </div>
+  `;
+}
+
 async function pageDashboard(){
+  if(state.role !== "owner") return pagePegawaiDashboard();
+
   const neraca = await Reports.neraca(Reports.todayStr());
   const monthRange = { start: Reports.startOfMonth(), end: Reports.todayStr() };
   const lr = await Reports.labaRugi(monthRange.start, monthRange.end);
@@ -1474,8 +1533,10 @@ async function openAddOrderModal(){
       <div class="field" style="flex:1;"><label>Kembalian</label><input type="text" id="ordKembalian" value="Rp0" disabled style="background:var(--foam-white);"></div>
     </div>
 
+    <button type="button" class="btn btn-outline btn-block" id="searchMemberBtn" style="margin-bottom:14px;">${ICONS.search} Cari Pelanggan Terdaftar</button>
     <div class="field"><label>Nama Pelanggan</label><input type="text" id="ordCustName" placeholder="Contoh: Budi"></div>
     <div class="field"><label>No. WhatsApp Pelanggan (opsional)</label><input type="tel" inputmode="numeric" id="ordCustPhone" placeholder="08xxxxxxxxxx"></div>
+    <div id="memberMatchNote"></div>
     <div class="field"><label>Catatan (opsional)</label><textarea id="ordNote" placeholder="Contoh: Jangan pakai pewangi"></textarea></div>
 
     <div class="field">
@@ -1672,7 +1733,40 @@ async function openAddOrderModal(){
   });
   modal.querySelector("#ordSubTypeSelf").addEventListener("change", recalcTotal);
   modal.querySelector("#ordBayar").addEventListener("input", recalcKembalian);
-  modal.querySelector("#ordCustPhone").addEventListener("input", refreshLoyaltyPreview);
+
+  const custNameInput = modal.querySelector("#ordCustName");
+  const custPhoneInput = modal.querySelector("#ordCustPhone");
+  const matchNoteBox = modal.querySelector("#memberMatchNote");
+
+  function applyMemberMatch(member){
+    if(member && member.name){
+      custNameInput.value = member.name;
+      custNameInput.readOnly = true;
+      custNameInput.style.background = "var(--foam-white)";
+      matchNoteBox.innerHTML = `<p class="small" style="color:var(--mint); margin:-6px 0 14px;">✓ Nomor ini terdaftar sebagai <b>${escapeHtml(member.name)}</b>. Nama terkunci — kalau ada kesalahan nama, ubah lewat menu Member.</p>`;
+    } else {
+      custNameInput.readOnly = false;
+      custNameInput.style.background = "";
+      matchNoteBox.innerHTML = "";
+    }
+  }
+
+  custPhoneInput.addEventListener("input", async ()=>{
+    refreshLoyaltyPreview();
+    const phone = custPhoneInput.value.trim();
+    if(phone.length < 8){ applyMemberMatch(null); return; }
+    const member = await getMemberStatus(phone);
+    applyMemberMatch(member && member.name ? member : null);
+  });
+
+  modal.querySelector("#searchMemberBtn").addEventListener("click", ()=>{
+    openMemberPickerModal((member)=>{
+      custNameInput.value = member.name || "";
+      custPhoneInput.value = member.phone ? member.phone.replace(/^62/,'0') : "";
+      applyMemberMatch(member);
+      custPhoneInput.dispatchEvent(new Event("input"));
+    });
+  });
 
   const addKiloanBtn = modal.querySelector("#addKiloanLine");
   addKiloanBtn.addEventListener("click", ()=>{
@@ -1750,6 +1844,7 @@ async function openAddOrderModal(){
     } else if(serviceType === "satuan"){
       if(satuanCart.length === 0){ toast("Tambahkan minimal 1 barang", "warn"); return; }
       categoryId = "cuci-satuan";
+      if(customerPhone) await ensureMemberIdentity(customerPhone, customerName);
     } else {
       const subType = modal.querySelector("#ordSubTypeSelf").value;
       categoryId = "self-service";
@@ -1865,6 +1960,52 @@ function memberRowHtml(m, kiloanLoyalty){
   `;
 }
 
+function openMemberPickerModal(onSelect){
+  const modal = openModal(`
+    <h2>Cari Pelanggan Terdaftar</h2>
+    <div class="cucian-search" style="margin-bottom:14px;">
+      ${ICONS.search}
+      <input type="text" id="memberSearchInput" placeholder="Cari nama atau No. WA..." autofocus>
+    </div>
+    <div id="memberSearchResults"></div>
+  `);
+
+  async function runSearch(){
+    const q = modal.querySelector("#memberSearchInput").value.trim().toLowerCase();
+    const box = modal.querySelector("#memberSearchResults");
+    const all = await DB.getAllMembers();
+    const filtered = q
+      ? all.filter(m => (m.name||"").toLowerCase().includes(q) || (m.phone||"").includes(q))
+      : all;
+    if(filtered.length === 0){
+      box.innerHTML = emptyState(q ? "Tidak ditemukan." : "Belum ada member terdaftar.");
+      return;
+    }
+    box.innerHTML = filtered.slice(0,30).map(m => `
+      <div class="tx-item" data-pick-member="${m.phone}" style="cursor:pointer;">
+        <div class="tx-dot in">${ICONS.star}</div>
+        <div class="tx-info">
+          <div class="cat">${escapeHtml(m.name||"Tanpa nama")}</div>
+          <div class="meta">${m.phone}</div>
+        </div>
+      </div>
+    `).join("");
+    box.querySelectorAll("[data-pick-member]").forEach(row=>{
+      row.addEventListener("click", async ()=>{
+        const member = all.find(m=>m.phone===row.dataset.pickMember);
+        if(member){ onSelect(member); closeModal(); }
+      });
+    });
+  }
+
+  let searchDebounce = null;
+  modal.querySelector("#memberSearchInput").addEventListener("input", ()=>{
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(runSearch, 200);
+  });
+  runSearch();
+}
+
 function openAddMemberModal(existing){
   const isEdit = !!existing;
   const modal = openModal(`
@@ -1915,13 +2056,29 @@ async function getMemberStatus(phone){
   return m || { phone: p, name: "", address: "", visits: 0, freeRedeemed: 0, kiloanBalance: 0, kiloanTotalAll: 0, kiloanFreeRedeemed: 0 };
 }
 
+/** Keeps the member directory in sync for ANY service type (including Satuan,
+ *  which doesn't otherwise touch loyalty). Enforces "1 nomor = 1 nama":
+ *  if the phone already belongs to someone, their registered name is kept —
+ *  never silently overwritten by a different name typed on a new order. */
+async function ensureMemberIdentity(phone, name){
+  const p = normalizePhone(phone);
+  if(!p) return;
+  const existing = await DB.getMember(p);
+  if(existing && existing.name){
+    return; // registered name is the source of truth — don't touch it here
+  }
+  const m = existing || { phone: p, visits: 0, freeRedeemed: 0, kiloanBalance: 0, kiloanTotalAll: 0, kiloanFreeRedeemed: 0 };
+  m.name = name || m.name || "";
+  await DB.upsertMember(m);
+}
+
 /** Call after saving a self-service transaction. Returns { isFree, progress, member } */
 async function recordSelfServiceVisit(phone, name){
   const p = normalizePhone(phone);
   if(!p) return null;
   let m = await DB.getMember(p);
   if(!m) m = { phone: p, name: name || "", visits: 0, freeRedeemed: 0 };
-  if(name) m.name = name;
+  else if(!m.name && name) m.name = name;
 
   const isFree = m.visits >= LOYALTY_TARGET;
   if(isFree){
@@ -1959,7 +2116,7 @@ async function recordKiloanAccumulation(phone, name, weightKg, kiloanLoyalty){
   if(!p) return null;
   let m = await DB.getMember(p);
   if(!m) m = { phone: p, name: name || "", visits: 0, freeRedeemed: 0, kiloanBalance: 0, kiloanTotalAll: 0, kiloanFreeRedeemed: 0 };
-  if(name) m.name = name;
+  else if(!m.name && name) m.name = name;
 
   m.kiloanBalance = (m.kiloanBalance || 0) + weightKg;
   m.kiloanTotalAll = (m.kiloanTotalAll || 0) + weightKg;

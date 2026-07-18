@@ -123,6 +123,7 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
 4. **Owner**: buka menu **Atur → Promo Kiloan** untuk mengaktifkan promo akumulasi berat cucian — tentukan target kg, dan bentuk promonya (potongan harga Rp, atau gratis sejumlah kg)
 5. **Owner**: buka menu **Atur → Saldo Awal Pembukuan** dan isi saldo kas/aset/utang saat ini (boleh dikosongkan/0 kalau baru mulai dari nol)
 6. **Member bisa ditambah manual** di tab **Member → "+ Tambah Member"** (No. HP jadi ID unik member, plus nama & alamat), atau otomatis muncul saat nomor WA diisi di transaksi cucian
+7. **Cari pelanggan lama saat catat pesanan**: di form Pesanan Cucian Baru, klik **"Cari Pelanggan Terdaftar"** untuk cari berdasarkan nama/No. WA — pilih, nama & nomor otomatis terisi, tidak perlu ketik ulang. Kalau ketik nomor yang sudah terdaftar secara manual, nama pelanggan **otomatis terisi & terkunci** sesuai data terdaftar (mencegah 1 nomor WA punya beberapa nama berbeda) — kalau perlu koreksi nama, ubah lewat tab Member
 7. Untuk pendapatan cucian (Kiloan, Satuan, maupun Self-Service), gunakan menu **Cucian → "+ Pesanan Cucian Baru"**:
    - **Kiloan**: sekarang seperti keranjang — pilih jenis (Cuci Kering Lipat/Cuci Setrika/Setrika Saja), lalu pilih **opsi durasi & harga** yang tersedia untuk jenis itu (kalau Anda sudah setting beberapa opsi, misal reguler vs express), isi berat, klik "+". Bisa tambah beberapa baris berbeda dalam 1 pesanan
    - **Satuan**: pilih barang + jumlah, bisa banyak jenis barang
