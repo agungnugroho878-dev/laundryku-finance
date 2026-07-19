@@ -49,6 +49,13 @@ service cloud.firestore {
       allow update, delete: if isOwner() && sameBusiness(bizId);
     }
 
+    match /branches/{branchId} {
+      allow get: if isSignedIn();
+      allow list: if sameBusiness(resource.data.businessId);
+      allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
+      allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
+    }
+
     match /businessSettings/{bizId} {
       allow get: if true;
       allow list: if false;
@@ -150,8 +157,15 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 ## 1. Cara pakai cepat
 
 1. Buka aplikasinya → login (atau daftar kalau belum punya akun)
+1b. **Multi-Cabang**: setiap usaha otomatis punya 1 cabang ("Cabang Utama") sejak awal. Kalau usaha Anda lebih dari 1 lokasi:
+   - **Owner**: buka **Atur → Cabang** → **"+ Tambah Cabang"** → isi nama & alamat cabang baru
+   - Tiap cabang punya **kode undangan sendiri**, **harga layanan sendiri**, dan **kas/laporan sendiri** — tapi tetap ada tampilan **gabungan (Semua Cabang)** untuk Owner
+   - **Pegawai daftar pakai kode cabang** (bukan kode usaha lagi) — otomatis terkunci ke cabang itu saja, tidak bisa lihat/kerja di cabang lain
+   - **Owner** bisa pilih cabang mana yang mau dilihat lewat dropdown di Beranda ("Semua Cabang" untuk rekap gabungan, atau pilih 1 cabang spesifik) — pilihan ini berlaku juga saat lihat Transaksi, Cucian, dan Laporan
+   - **Penting**: mencatat pesanan/transaksi baru **wajib** memilih 1 cabang spesifik dulu (bukan "Semua Cabang") — kalau masih di mode gabungan dan ada lebih dari 1 cabang, aplikasi akan minta Anda pilih cabang dulu di Beranda
+   - **Saldo awal pembukuan** dan **Aset Tetap** juga sudah per-cabang — tampilan "Semua Cabang" otomatis menjumlahkan semua cabang
 2. **Owner**: buka menu **Atur → Profil Usaha** dan isi nama, tagline, **No. WhatsApp usaha**, **Instagram usaha**, **alamat**, dan **logo** (opsional, semuanya otomatis muncul di struk — logo muncul di struk gambar & cetak, teks WA/IG pakai ikon 📱📷)
-3. **Owner**: di menu **Atur → Harga Layanan**, klik tombol **"Setting Harga"** — popup ini menangani 3 hal sekaligus:
+3. **Owner**: di menu **Atur → Harga Layanan**, klik tombol **"Setting Harga"** — popup ini menangani 3 hal sekaligus (harga ini **khusus untuk cabang yang sedang aktif** — pilih cabang lain di Beranda dulu kalau mau atur harga cabang lain):
    - **Kiloan**: untuk tiap jenis (Cuci Kering Lipat, Cuci Setrika, Setrika Saja), bisa tambah **beberapa opsi harga & durasi berbeda** (misal "3 hari — Rp6.000/kg" dan "1 hari — Rp8.000/kg" untuk jenis yang sama) — cocok kalau Anda punya tarif reguler vs kilat/express. Tiap opsi langsung muncul di daftar rekap setelah disimpan
    - **Self-Service**: isi harga Cuci Saja/Kering Saja/Cuci+Kering
    - **Cuci Satuan**: kelola daftar barang (Jas, Gaun, Sprei, PDL, dll) beserta harganya
@@ -190,7 +204,8 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 13. Halaman pantau yang dibuka pelanggan **otomatis memperbarui status setiap 20 detik** — kalau dibiarkan terbuka, pelanggan langsung melihat perubahan status tanpa perlu refresh manual
 14. **Beranda** sekarang punya kartu **"Analisis Pendapatan Layanan"** — filter waktu (Hari Ini/7 Hari/Bulan Ini/Tahun Ini), rincian omzet & jumlah transaksi per jenis (Kiloan/Satuan/Self-Service) plus Total Omzet, dan grafik tren 6 bulan terakhir untuk melihat jenis layanan mana yang tumbuh paling baik
 15. **Klaim Promo**: di tab **Member**, kalau pelanggan sudah mencapai target (akumulasi kg kiloan atau 10x kunjungan self-service), muncul tombol **"Klaim"** — dipencet saat pelanggan datang mau ambil gratisannya, progress otomatis mulai lagi dari 0 setelah diklaim (tidak perlu bikin transaksi baru untuk ini)
-16. **Owner**: buka menu **Laporan → Aset Tetap** untuk mendaftarkan mesin cuci, dryer, dan peralatan lain. Isi jenis, merk, harga perolehan, tanggal beli, dan umur manfaat (otomatis terisi estimasi umum per jenis, bisa disesuaikan) — sistem otomatis menghitung **penyusutan per bulan** (metode garis lurus), **akumulasi penyusutan**, dan **nilai buku**, yang otomatis muncul sebagai **Beban Penyusutan** di Laba Rugi dan **Akumulasi Penyusutan** (pengurang nilai aset) di Neraca setiap bulan — tidak perlu input manual tiap bulan
+16. **Cara tercepat catat aset tetap**: cukup lewat **Beranda/Transaksi → Catat Kas Keluar**, pilih kategori **"Beli Peralatan/Aset Tetap"** — form rincian aset (jenis, merk, umur manfaat, nilai residu) otomatis muncul di bawahnya, jadi 1x isi langsung tercatat sebagai **transaksi kas** sekaligus **aset tetap** dengan jadwal penyusutan. Untuk aset yang tidak perlu transaksi baru (misal peralatan lama sebelum pakai aplikasi ini), tetap bisa didaftarkan langsung lewat **Laporan → Aset Tetap → Tambah Aset Tetap**
+17. **Owner**: buka menu **Laporan → Aset Tetap** untuk melihat daftar & rincian aset tetap. Sistem otomatis menghitung **penyusutan per bulan** (metode garis lurus), **akumulasi penyusutan**, dan **nilai buku**, yang otomatis muncul sebagai **Beban Penyusutan** di Laba Rugi dan **Akumulasi Penyusutan** (pengurang nilai aset) di Neraca setiap bulan — tidak perlu input manual tiap bulan
 
     > Catatan: estimasi umur manfaat (default 5 tahun untuk mesin, 4 tahun untuk peralatan lain) adalah perkiraan umum praktik akuntansi, bukan patokan pajak resmi — untuk pelaporan pajak, sebaiknya dikonsultasikan ke akuntan/konsultan pajak.
 17. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)

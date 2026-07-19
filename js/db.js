@@ -81,6 +81,34 @@ const DB = {
     return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
   },
 
+  async getBranches(){
+    const snap = await fs.collection("branches").where("businessId","==",_businessId).get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+    return list;
+  },
+
+  async getBranchById(branchId){
+    const doc = await fs.collection("branches").doc(branchId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+  },
+
+  async addBranch(branch){
+    const payload = { ...branch, businessId: _businessId, pricing: null, createdAt: Date.now() };
+    const ref = await fs.collection("branches").add(payload);
+    return ref.id;
+  },
+
+  async updateBranch(id, fields){
+    await fs.collection("branches").doc(id).update(fields);
+    return true;
+  },
+
+  async deleteBranch(id){
+    await fs.collection("branches").doc(id).delete();
+    return true;
+  },
+
   async setStaffRole(uid, role){
     await fs.collection("users").doc(uid).update({ role });
     return true;

@@ -182,6 +182,16 @@ a{ color:var(--suds-blue); }
   100%{ transform:scale(1) rotate(0); }
 }
 
+.branch-switcher{
+  display:flex; align-items:center; gap:10px;
+  background:var(--paper); border:1.5px solid var(--line); border-radius:12px;
+  padding:10px 14px; margin-bottom:14px;
+}
+.branch-switcher svg{ width:16px; height:16px; color:var(--text-muted); flex-shrink:0; }
+.branch-switcher select{
+  border:none; outline:none; font-size:14px; font-weight:600; width:100%; background:none; color:var(--ink-navy);
+}
+
 .hero-balance{
   background:linear-gradient(155deg, var(--ink-navy), #1E3040 55%, var(--suds-blue-dark));
   color:var(--foam-white);

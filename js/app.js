@@ -48,7 +48,9 @@ const state = {
   cucianFilter: "belum-diproses",
   cucianSort: "deadline-asc",
   cucianSearch: "",
-  dashboardPeriod: "month"
+  dashboardPeriod: "month",
+  currentBranchId: "all",
+  branches: []
 };
 
 function el(html){
@@ -128,6 +130,12 @@ async function render(){
         render();
       });
     });
+    const branchSwitcherSelect = document.getElementById("branchSwitcherSelect");
+    if(branchSwitcherSelect) branchSwitcherSelect.addEventListener("change", ()=>{
+      state.currentBranchId = branchSwitcherSelect.value;
+      setActiveBranch(state.currentBranchId !== "all" ? state.currentBranchId : (state.branches[0]?.id || null));
+      render();
+    });
   }
   if(state.page === "cucian"){ bindCucianControls(); renderCucianList(); }
 }
@@ -162,8 +170,9 @@ function getPeriodRange(period){
   return { start: Reports.startOfMonth(), end: today }; // "month" default
 }
 
-async function computeServiceBreakdown(start, end){
-  const txs = await DB.getTransactionsInRange(start, end);
+async function computeServiceBreakdown(start, end, branchId = null){
+  let txs = await DB.getTransactionsInRange(start, end);
+  if(branchId) txs = txs.filter(t => t.branchId === branchId);
   const breakdown = {
     "kiloan": { total: 0, count: 0 },
     "satuan": { total: 0, count: 0 },
@@ -180,8 +189,9 @@ async function computeServiceBreakdown(start, end){
   return { breakdown, omzetTotal, omzetCount };
 }
 
-async function getServiceTrend(n = 6){
-  const all = await DB.getTransactions();
+async function getServiceTrend(n = 6, branchId = null){
+  let all = await DB.getTransactions();
+  if(branchId) all = all.filter(t => t.branchId === branchId);
   const now = new Date();
   const buckets = [];
   for(let i = n-1; i >= 0; i--){
@@ -199,18 +209,19 @@ async function getServiceTrend(n = 6){
 }
 
 async function pagePegawaiDashboard(){
-  const orders = await DB.getOrders();
+  const orders = (await DB.getOrders()).filter(o=>o.branchId===state.currentBranchId);
   const belumDiproses = orders.filter(o=>o.status==="belum-diproses").length;
   const sedangDiproses = orders.filter(o=>o.status==="sedang-diproses").length;
   const today = Reports.todayStr();
-  const txToday = (await DB.getTransactions()).filter(t=>t.date===today).length;
+  const txToday = (await DB.getTransactions()).filter(t=>t.date===today && t.branchId===state.currentBranchId).length;
   const recentOrders = orders.slice(0,5);
+  const branchName = state.branches.find(b=>b.id===state.currentBranchId)?.name || "";
 
   return `
     <div class="hero-balance">
       <div class="card-title">Selamat Datang</div>
       <div class="amount" style="font-family:var(--font-display); font-size:24px;">${escapeHtml(state.userName || "")}</div>
-      <div class="sub"><span>Pegawai · ${escapeHtml(state.businessName)}</span></div>
+      <div class="sub"><span>Pegawai · ${escapeHtml(branchName)}</span></div>
     </div>
 
     <div class="quick-actions">
@@ -258,23 +269,37 @@ async function pagePegawaiDashboard(){
 async function pageDashboard(){
   if(state.role !== "owner") return pagePegawaiDashboard();
 
-  const neraca = await Reports.neraca(Reports.todayStr());
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
+  const neraca = await Reports.neraca(Reports.todayStr(), activeBranchId);
   const monthRange = { start: Reports.startOfMonth(), end: Reports.todayStr() };
-  const lr = await Reports.labaRugi(monthRange.start, monthRange.end);
+  const lr = await Reports.labaRugi(monthRange.start, monthRange.end, activeBranchId);
   const months = await Reports.lastMonthsNet(6);
   const maxAbs = Math.max(1, ...months.map(m => Math.max(m.pendapatan, m.beban)));
-  const txs = (await DB.getTransactions()).slice(0,5);
+  let txs = await DB.getTransactions();
+  if(activeBranchId) txs = txs.filter(t=>t.branchId===activeBranchId);
+  txs = txs.slice(0,5);
   const cats = Object.fromEntries(state.categories.map(c=>[c.id,c]));
 
   const period = state.dashboardPeriod || "month";
   const periodRange = getPeriodRange(period);
-  const { breakdown, omzetTotal, omzetCount } = await computeServiceBreakdown(periodRange.start, periodRange.end);
-  const trend = await getServiceTrend(6);
+  const { breakdown, omzetTotal, omzetCount } = await computeServiceBreakdown(periodRange.start, periodRange.end, activeBranchId);
+  const trend = await getServiceTrend(6, activeBranchId);
   const trendMax = Math.max(1, ...trend.map(m => m.kiloan + m.satuan + m["self-service"]));
 
+  const branchSwitcher = state.branches.length > 1 ? `
+    <div class="branch-switcher no-print">
+      ${ICONS.hash}
+      <select id="branchSwitcherSelect">
+        <option value="all" ${state.currentBranchId==='all'?'selected':''}>Semua Cabang (Gabungan)</option>
+        ${state.branches.map(b=>`<option value="${b.id}" ${state.currentBranchId===b.id?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+      </select>
+    </div>
+  ` : "";
+
   return `
+    ${branchSwitcher}
     <div class="hero-balance">
-      <div class="card-title">Saldo Kas Saat Ini</div>
+      <div class="card-title">Saldo Kas Saat Ini${activeBranchId ? ` — ${escapeHtml(state.branches.find(b=>b.id===activeBranchId)?.name||'')}` : ' (Semua Cabang)'}</div>
       <div class="amount num" data-countup="${neraca.kas}">Rp0</div>
       <div class="sub">
         <span>Aset: <b>${Reports.formatRupiah(neraca.totalAset)}</b></span>
@@ -377,9 +402,18 @@ async function pageDashboard(){
 /* ---------------- Transaksi ---------------- */
 
 async function pageTransaksi(){
-  const txs = await DB.getTransactions();
+  let txs = await DB.getTransactions();
+  if(state.role === "pegawai"){
+    txs = txs.filter(t => t.branchId === state.currentBranchId);
+  } else if(state.currentBranchId !== "all"){
+    txs = txs.filter(t => t.branchId === state.currentBranchId);
+  }
   const cats = Object.fromEntries(state.categories.map(c=>[c.id,c]));
+  const activeBranchName = state.role === "pegawai"
+    ? state.branches.find(b=>b.id===state.currentBranchId)?.name
+    : (state.currentBranchId !== "all" ? state.branches.find(b=>b.id===state.currentBranchId)?.name : "Semua Cabang");
   return `
+    ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchName||'')}</p>` : ''}
     <div class="btn-row" style="margin-bottom:14px;">
       <button class="btn btn-primary btn-block" data-action="add" data-type="in">${ICONS.plus} Kas Masuk</button>
       <button class="btn btn-outline btn-block" data-action="add" data-type="out">${ICONS.plus} Kas Keluar</button>
@@ -434,7 +468,9 @@ const ASSET_CATEGORIES = {
 };
 
 async function renderAsetTetapSection(){
-  const assets = await DB.getAssets();
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
+  let assets = await DB.getAssets();
+  if(activeBranchId) assets = assets.filter(a => a.branchId === activeBranchId);
   const today = Reports.todayStr();
   let totalCost = 0, totalAccum = 0;
   const rows = assets.map(a => {
@@ -444,6 +480,7 @@ async function renderAsetTetapSection(){
     return { ...a, accum, book: a.acquisitionCost - accum };
   });
   const totalBook = totalCost - totalAccum;
+  const branchMap = Object.fromEntries(state.branches.map(b=>[b.id,b.name]));
 
   return `
     <div class="card no-print">
@@ -460,7 +497,7 @@ async function renderAsetTetapSection(){
         <div class="row-between">
           <div>
             <div style="font-weight:700;">${escapeHtml(a.name)}</div>
-            <div class="small muted">${escapeHtml(a.category)}${a.brand ? ' · '+escapeHtml(a.brand) : ''}</div>
+            <div class="small muted">${escapeHtml(a.category)}${a.brand ? ' · '+escapeHtml(a.brand) : ''}${!activeBranchId ? ' · '+escapeHtml(branchMap[a.branchId]||'Cabang tidak diketahui') : ''}</div>
           </div>
           <div style="display:flex; gap:6px;">
             <button class="tx-del" data-action="edit-asset" data-id="${a.id}">${ICONS.edit}</button>
@@ -479,8 +516,38 @@ async function renderAsetTetapSection(){
   `;
 }
 
+function openBranchModal(existing){
+  const isEdit = !!existing;
+  const modal = openModal(`
+    <h2>${isEdit ? 'Edit' : 'Tambah'} Cabang</h2>
+    <div class="field"><label>Nama Cabang</label><input type="text" id="branchName" placeholder="Contoh: Cabang Sanur" value="${escapeHtml(existing?.name||'')}"></div>
+    <div class="field"><label>Alamat (opsional)</label><textarea id="branchAddress" placeholder="Contoh: Jl. Danau Tamblingan No. 5">${escapeHtml(existing?.address||'')}</textarea></div>
+    <button class="btn btn-primary btn-block" data-action="save-branch">Simpan</button>
+  `);
+
+  modal.querySelector("[data-action='save-branch']").addEventListener("click", async ()=>{
+    const name = modal.querySelector("#branchName").value.trim();
+    const address = modal.querySelector("#branchAddress").value.trim();
+    if(!name){ toast("Isi nama cabang", "warn"); return; }
+
+    if(isEdit){
+      await DB.updateBranch(existing.id, { name, address });
+      toast("Cabang diperbarui");
+    } else {
+      await DB.addBranch({ name, address });
+      toast("Cabang ditambahkan");
+    }
+    closeModal();
+    render();
+  });
+}
+
 function openAssetModal(existing){
   const isEdit = !!existing;
+  if(!isEdit){
+    const guardBranchId = resolveActionBranchId();
+    if(!guardBranchId){ toast("Pilih cabang spesifik dulu di Beranda sebelum tambah aset", "warn"); return; }
+  }
   const modal = openModal(`
     <h2>${isEdit ? 'Edit' : 'Tambah'} Aset Tetap</h2>
     <div class="field">
@@ -527,6 +594,7 @@ function openAssetModal(existing){
       categoryId, category: ASSET_CATEGORIES[categoryId]?.label || categoryId,
       name, brand, acquisitionCost, acquisitionDate, usefulLifeYears, salvageValue
     };
+    if(!isEdit) payload.branchId = resolveActionBranchId();
 
     if(isEdit){
       await DB.updateAsset(existing.id, payload);
@@ -537,7 +605,7 @@ function openAssetModal(existing){
         await DB.addTransaction({
           type: "out", categoryId: "beli-aset", categoryName: "Beli Peralatan/Aset Tetap",
           account: DB.ACCOUNT.ASET_TETAP, amount: acquisitionCost, date: acquisitionDate,
-          note: `${name}${brand?' ('+brand+')':''}`
+          note: `${name}${brand?' ('+brand+')':''}`, branchId: resolveActionBranchId()
         });
       }
       toast("Aset ditambahkan");
@@ -548,10 +616,11 @@ function openAssetModal(existing){
 }
 
 async function pageLaporan(){
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
   const tabBtn = (id,label) => `<button class="btn ${state.reportTab===id?'btn-primary':'btn-outline'}" data-report-tab="${id}">${label}</button>`;
   let body = "";
   if(state.reportTab === "labarugi"){
-    const lr = await Reports.labaRugi(state.labaRugiRange.start, state.labaRugiRange.end);
+    const lr = await Reports.labaRugi(state.labaRugiRange.start, state.labaRugiRange.end, activeBranchId);
     body = `
       <div class="card no-print">
         <div class="card-title">Periode</div>
@@ -564,7 +633,7 @@ async function pageLaporan(){
       ${renderLabaRugiReceipt(lr)}
     `;
   } else if(state.reportTab === "neraca"){
-    const neraca = await Reports.neraca(state.neracaDate);
+    const neraca = await Reports.neraca(state.neracaDate, activeBranchId);
     body = `
       <div class="card no-print">
         <div class="card-title">Per Tanggal</div>
@@ -577,6 +646,7 @@ async function pageLaporan(){
   }
 
   return `
+    ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchId ? (state.branches.find(b=>b.id===activeBranchId)?.name||'') : 'Semua Cabang')}</p>` : ''}
     <div class="btn-row no-print" style="margin-bottom:14px;">
       ${tabBtn("labarugi","Laba Rugi")}
       ${tabBtn("neraca","Neraca")}
@@ -667,12 +737,13 @@ function fmtDateTime(timestamp){
 
 async function pagePengaturan(){
   const isOwner = state.role === "owner";
-  const opening = isOwner ? await Reports.getOpeningBalances() : null;
+  const opening = isOwner ? await Reports.getOpeningBalances(getActiveBranch()) : null;
   const pricing = isOwner ? await getPricing() : null;
   const kiloanLoyalty = isOwner ? await getKiloanLoyalty() : null;
   const printerSettings = isOwner ? await getPrinterSettings() : null;
   const photoRetentionDays = isOwner ? await DB.getSetting("photoRetentionDays", 10) : null;
   const staff = isOwner ? await DB.getBusinessStaff() : null;
+  const branchList = isOwner ? await DB.getBranches() : null;
   const customCats = state.categories.filter(c=>!c.system);
 
   const accountCard = `
@@ -735,9 +806,9 @@ async function pagePengaturan(){
       <button class="btn btn-primary" data-action="save-biz-name">Simpan Profil</button>
     </div>
 
-    <h3 class="section-title">Harga Layanan</h3>
+    <h3 class="section-title">Harga Layanan${state.branches.length > 1 ? ` — ${escapeHtml(state.branches.find(b=>b.id===getActiveBranch())?.name||'')}` : ''}</h3>
     <div class="card">
-      <p class="small muted">Harga & estimasi waktu pengerjaan ini otomatis dipakai saat mencatat pesanan cucian baru di menu Cucian.</p>
+      <p class="small muted">Harga & estimasi waktu pengerjaan ini otomatis dipakai saat mencatat pesanan cucian baru di menu Cucian.${state.branches.length > 1 ? ' Tiap cabang punya harga masing-masing — pilih cabang di Beranda dulu untuk atur harga cabang lain.' : ''}</p>
       <p class="small" style="font-weight:700; margin:14px 0 6px;">Kiloan</p>
       ${Object.entries(KILOAN_LABELS).map(([id,label]) => `
         <div class="small" style="margin-bottom:6px;">
@@ -807,9 +878,9 @@ async function pagePengaturan(){
       <button class="btn btn-primary" data-action="save-photo-retention">Simpan</button>
     </div>
 
-    <h3 class="section-title">Saldo Awal Pembukuan</h3>
+    <h3 class="section-title">Saldo Awal Pembukuan${state.branches.length > 1 ? ` — ${escapeHtml(state.branches.find(b=>b.id===getActiveBranch())?.name||'')}` : ''}</h3>
     <div class="card">
-      <p class="small muted">Isi saldo di sini jika usahamu sudah berjalan sebelum mulai pakai aplikasi ini. Modal dihitung otomatis agar neraca selalu seimbang.</p>
+      <p class="small muted">Isi saldo di sini jika usahamu sudah berjalan sebelum mulai pakai aplikasi ini. Modal dihitung otomatis agar neraca selalu seimbang.${state.branches.length > 1 ? ' Saldo awal ini khusus untuk cabang yang sedang aktif — pilih cabang lain di Beranda untuk atur saldo awal cabang lain.' : ''}</p>
       <div class="field"><label>Tanggal Saldo Awal</label><input type="date" id="ob-date" value="${opening.date==='1970-01-01'?Reports.todayStr():opening.date}"></div>
       <div class="field"><label>Kas</label><input type="number" id="ob-kas" value="${opening.kas}"></div>
       <div class="field"><label>Piutang Usaha</label><input type="number" id="ob-piutang" value="${opening.piutang}"></div>
@@ -833,14 +904,28 @@ async function pagePengaturan(){
       </div>
     </div>
 
-    <h3 class="section-title">Pegawai</h3>
+    <h3 class="section-title">Cabang (${branchList.length})</h3>
     <div class="card">
-      <p class="small muted">Bagikan kode ini ke pegawai — mereka masukkan kode ini saat mendaftar (pilih "Gabung sebagai Pegawai") supaya otomatis bergabung ke usaha ini, bukan usaha lain.</p>
-      <div class="field">
-        <label>Kode Undangan Usaha</label>
-        <input type="text" id="inviteCodeField" value="${state.businessId || ''}" readonly style="font-family:var(--font-mono); font-size:12px;">
+      <p class="small muted">Tiap cabang punya kode undangan, harga layanan, dan kas sendiri-sendiri (tetap ada rekap gabungan di Beranda/Laporan). Bagikan kode cabang ke pegawai supaya mereka bergabung ke cabang yang benar.</p>
+      <div style="margin-top:10px;">
+        ${branchList.map(b => `
+          <div style="padding:12px 0; border-bottom:1px dashed var(--line);">
+            <div class="row-between">
+              <div style="font-weight:700;">${escapeHtml(b.name)}</div>
+              <div style="display:flex; gap:6px;">
+                <button class="tx-del" data-action="edit-branch" data-id="${b.id}">${ICONS.edit}</button>
+                ${branchList.length > 1 ? `<button class="tx-del" data-action="delete-branch" data-id="${b.id}">${ICONS.trash}</button>` : ''}
+              </div>
+            </div>
+            ${b.address ? `<div class="small muted">${escapeHtml(b.address)}</div>` : ''}
+            <div style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+              <input type="text" value="${b.id}" readonly style="font-family:var(--font-mono); font-size:11px; padding:6px 8px; border-radius:8px; border:1.5px solid var(--line); flex:1;">
+              <button class="btn btn-outline" data-action="copy-branch-code" data-id="${b.id}">Salin Kode</button>
+            </div>
+          </div>
+        `).join("")}
       </div>
-      <button class="btn btn-outline" data-action="copy-invite-code">Salin Kode</button>
+      <button class="btn btn-primary btn-block" data-action="add-branch" style="margin-top:14px;">${ICONS.plus} Tambah Cabang</button>
     </div>
 
     <h3 class="section-title">Anggota Tim (${staff.length})</h3>
@@ -851,7 +936,7 @@ async function pagePengaturan(){
           <div class="row-between" style="padding:10px 0; border-bottom:1px dashed var(--line);">
             <div>
               <div class="small" style="font-weight:700;">${escapeHtml(s.name || s.email)}${s.uid === state.user?.uid ? ' <span class="muted">(Anda)</span>' : ''}</div>
-              <div class="small muted">${escapeHtml(s.email || '')}</div>
+              <div class="small muted">${escapeHtml(s.email || '')}${s.role==='pegawai' ? ` · ${escapeHtml(branchList.find(b=>b.id===s.branchId)?.name || 'Cabang tidak diketahui')}` : ''}</div>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
               <span class="status-badge ${s.role==='owner' ? 'status-selesai' : 'status-belum-diproses'}">${s.role === 'owner' ? 'Owner' : 'Pegawai'}</span>
@@ -985,8 +1070,14 @@ function tierLabel(tier){
   return `${tier.duration} ${tier.unit}`;
 }
 
+let _activeBranchId = null;
+function setActiveBranch(branchId){ _activeBranchId = branchId; }
+function getActiveBranch(){ return _activeBranchId; }
+
 async function getPricing(){
-  const saved = await DB.getSetting("pricing", null);
+  if(!_activeBranchId) return JSON.parse(JSON.stringify(DEFAULT_PRICING));
+  const branch = await DB.getBranchById(_activeBranchId);
+  const saved = branch?.pricing || null;
   if(!saved) return JSON.parse(JSON.stringify(DEFAULT_PRICING));
   const kiloan = {};
   for(const key of Object.keys(KILOAN_LABELS)){
@@ -1001,7 +1092,8 @@ async function getPricing(){
 }
 
 async function setPricing(p){
-  await DB.setSetting("pricing", p);
+  if(!_activeBranchId) return;
+  await DB.updateBranch(_activeBranchId, { pricing: p });
 }
 
 async function getKiloanLoyalty(){
@@ -1037,8 +1129,9 @@ function formatCountdown(estimatedReadyAt){
 }
 
 function openPriceSettingsModal(){
+  const branchName = state.branches.find(b=>b.id===getActiveBranch())?.name || "";
   const modal = openModal(`
-    <h2>Setting Harga</h2>
+    <h2>Setting Harga${branchName ? ` — ${escapeHtml(branchName)}` : ''}</h2>
 
     <h3 class="section-title" style="margin-top:4px;">Kiloan</h3>
     <div id="kiloanPriceGroups"></div>
@@ -1375,7 +1468,12 @@ function nextOrderStatus(current){
 }
 
 async function pageCucian(){
-  const all = await DB.getOrders();
+  let all = await DB.getOrders();
+  if(state.role === "pegawai"){
+    all = all.filter(o => o.branchId === state.currentBranchId);
+  } else if(state.currentBranchId !== "all"){
+    all = all.filter(o => o.branchId === state.currentBranchId);
+  }
   const filter = state.cucianFilter || "belum-diproses";
   const counts = {
     "belum-diproses": all.filter(o=>o.status==="belum-diproses").length,
@@ -1383,6 +1481,9 @@ async function pageCucian(){
     "selesai": all.filter(o=>o.status==="selesai").length
   };
   const isActiveTab = filter !== "selesai";
+  const activeBranchName = state.role === "pegawai"
+    ? state.branches.find(b=>b.id===state.currentBranchId)?.name
+    : (state.currentBranchId !== "all" ? state.branches.find(b=>b.id===state.currentBranchId)?.name : "Semua Cabang");
 
   const tabBtn = (id,label) => `
     <button class="cucian-tab ${filter===id?'active':''} status-${id}" data-cucian-tab="${id}">
@@ -1400,6 +1501,7 @@ async function pageCucian(){
   `;
 
   return `
+    ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchName||'')}</p>` : ''}
     <button class="btn btn-primary btn-block" data-action="add-order" style="margin-bottom:14px;">${ICONS.plus} Pesanan Cucian Baru</button>
 
     <div class="cucian-search">
@@ -1444,7 +1546,12 @@ function filterAndSortOrders(orders, status, search, sort){
 async function renderCucianList(){
   const container = document.getElementById("cucianListContainer");
   if(!container) return;
-  const all = await DB.getOrders();
+  let all = await DB.getOrders();
+  if(state.role === "pegawai"){
+    all = all.filter(o => o.branchId === state.currentBranchId);
+  } else if(state.currentBranchId !== "all"){
+    all = all.filter(o => o.branchId === state.currentBranchId);
+  }
   const list = filterAndSortOrders(all, state.cucianFilter, state.cucianSearch, state.cucianSort);
   container.innerHTML = `
     <div class="cucian-grid">
@@ -1627,7 +1734,16 @@ function sendOrderStatusWA(o){
   window.open(url, "_blank");
 }
 
+function resolveActionBranchId(){
+  if(state.role === "pegawai") return state.userBranchId || state.branches[0]?.id || null;
+  if(state.currentBranchId !== "all") return state.currentBranchId;
+  if(state.branches.length === 1) return state.branches[0].id;
+  return null; // ambiguous — owner must pick a specific branch first
+}
+
 async function openAddOrderModal(){
+  const branchId = resolveActionBranchId();
+  if(!branchId){ toast("Pilih cabang spesifik dulu di Beranda sebelum catat pesanan", "warn"); return; }
   const pricing = await getPricing();
   const kiloanLoyalty = await getKiloanLoyalty();
   const kiloanJenisOptions = Object.entries(KILOAN_LABELS).map(([id,label])=>`<option value="${id}">${label}</option>`).join("");
@@ -2019,7 +2135,7 @@ async function openAddOrderModal(){
     const txRecord = {
       type: "in", categoryId, categoryName,
       account: cat?.account, amount: total, date: Reports.todayStr(),
-      note, customerName, serviceType, receiptNo, amountPaid, changeAmount, orderId
+      note, customerName, serviceType, receiptNo, amountPaid, changeAmount, orderId, branchId
     };
     if(serviceType === "kiloan") txRecord.kiloanItems = kiloanCart;
     if(serviceType === "satuan") txRecord.satuanItems = satuanCart;
@@ -2033,7 +2149,7 @@ async function openAddOrderModal(){
 
     const txId = await DB.addTransaction(txRecord);
 
-    const orderPayload = { customerName, note, serviceType, total, receiptNo, amountPaid, changeAmount };
+    const orderPayload = { customerName, note, serviceType, total, receiptNo, amountPaid, changeAmount, branchId };
     if(serviceType === "kiloan") orderPayload.kiloanItems = kiloanCart;
     if(serviceType === "satuan") orderPayload.satuanItems = satuanCart;
     if(serviceType === "self-service"){ orderPayload.subType = selfSubType; orderPayload.subTypeLabel = selfSubTypeLabel; }
@@ -2828,6 +2944,8 @@ async function shareReceiptImage(t){
 /* ---------------- Add transaction modal ---------------- */
 
 function openAddTxModal(defaultType){
+  const branchId = resolveActionBranchId();
+  if(!branchId){ toast("Pilih cabang spesifik dulu di Beranda sebelum catat transaksi", "warn"); return; }
   // jasa-cuci & self-service are created via the Cucian order flow now,
   // so pegawai doesn't have to enter them twice.
   const excludedIds = ["jasa-cuci", "self-service"];
@@ -2856,8 +2974,37 @@ function openAddTxModal(defaultType){
       <label>Catatan (opsional)</label>
       <textarea id="txNote" placeholder="Contoh: Beli deterjen"></textarea>
     </div>
+
+    <div id="assetDetailFields" style="display:none;">
+      <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px; margin-top:-6px;">
+        <p class="small" style="font-weight:700; margin-bottom:10px;">📦 Rincian Aset Tetap</p>
+        <div class="field">
+          <label>Jenis Aset</label>
+          <select id="txAssetCategory">
+            ${Object.entries(ASSET_CATEGORIES).map(([id,c])=>`<option value="${id}">${c.label}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field"><label>Nama/Keterangan Aset</label><input type="text" id="txAssetName" placeholder="Contoh: Mesin Cuci Front Loading 10kg"></div>
+        <div class="field"><label>Merk</label><input type="text" id="txAssetBrand" placeholder="Contoh: LG, Electrolux"></div>
+        <div class="field"><label>Umur Manfaat (tahun) <span class="small muted">— estimasi umum, bisa disesuaikan</span></label><input type="number" id="txAssetLife" value="5"></div>
+        <div class="field" style="margin-bottom:0;"><label>Nilai Residu (Rp, opsional)</label><input type="number" id="txAssetSalvage" value="0"></div>
+      </div>
+    </div>
+
     <button class="btn btn-primary btn-block" data-action="save-tx">Simpan Transaksi</button>
   `);
+
+  const assetFieldsBox = modal.querySelector("#assetDetailFields");
+  function toggleAssetFields(){
+    const categoryId = modal.querySelector("#txCategory").value;
+    assetFieldsBox.style.display = (currentType === "out" && categoryId === "beli-aset") ? "block" : "none";
+  }
+  modal.querySelector("#txCategory").addEventListener("change", toggleAssetFields);
+  modal.querySelector("#txAssetCategory").addEventListener("change", (e)=>{
+    const cat = ASSET_CATEGORIES[e.target.value];
+    if(cat) modal.querySelector("#txAssetLife").value = cat.defaultLife;
+  });
+  toggleAssetFields();
 
   let currentType = defaultType;
   function refreshCategoryOptions(){
@@ -2871,6 +3018,7 @@ function openAddTxModal(defaultType){
       modal.querySelectorAll("#typeSeg button").forEach(b=>{ b.classList.remove("active","in","out"); });
       btn.classList.add("active", currentType);
       refreshCategoryOptions();
+      toggleAssetFields();
     });
   });
 
@@ -2886,12 +3034,27 @@ function openAddTxModal(defaultType){
 
     const record = {
       type: currentType, categoryId, categoryName: cat?.name,
-      account: cat?.account, amount, date, note
+      account: cat?.account, amount, date, note, branchId
     };
 
     await DB.addTransaction(record);
+
+    if(currentType === "out" && categoryId === "beli-aset"){
+      const assetCategoryId = modal.querySelector("#txAssetCategory").value;
+      const assetName = modal.querySelector("#txAssetName").value.trim() || note || "Aset Tetap";
+      const brand = modal.querySelector("#txAssetBrand").value.trim();
+      const usefulLifeYears = parseFloat(modal.querySelector("#txAssetLife").value) || 5;
+      const salvageValue = parseFloat(modal.querySelector("#txAssetSalvage").value) || 0;
+      await DB.addAsset({
+        categoryId: assetCategoryId, category: ASSET_CATEGORIES[assetCategoryId]?.label || assetCategoryId,
+        name: assetName, brand, acquisitionCost: amount, acquisitionDate: date,
+        usefulLifeYears, salvageValue, branchId
+      });
+      toast("Transaksi & data aset tetap tersimpan");
+    } else {
+      toast("Transaksi tersimpan");
+    }
     closeModal();
-    toast("Transaksi tersimpan");
     render();
   });
 }
@@ -3134,7 +3297,7 @@ function bindPageEvents(){
       date: document.getElementById("ob-date").value || Reports.todayStr(),
       kas: num("ob-kas"), piutang: num("ob-piutang"), persediaan: num("ob-persediaan"),
       asetTetap: num("ob-asetTetap"), utangUsaha: num("ob-utangUsaha"), utangBank: num("ob-utangBank")
-    });
+    }, getActiveBranch());
     toast("Saldo awal disimpan");
     render();
   });
@@ -3195,11 +3358,27 @@ function bindPageEvents(){
   if(wipeBtn) wipeBtn.addEventListener("click", wipeData);
   const logoutBtn = document.querySelector("[data-action='logout']");
   if(logoutBtn) logoutBtn.addEventListener("click", ()=> auth.signOut());
-  const copyInviteBtn = document.querySelector("[data-action='copy-invite-code']");
-  if(copyInviteBtn) copyInviteBtn.addEventListener("click", ()=>{
-    const field = document.getElementById("inviteCodeField");
-    field.select();
-    navigator.clipboard?.writeText(field.value).then(()=> toast("Kode disalin"));
+  const addBranchBtn = document.querySelector("[data-action='add-branch']");
+  if(addBranchBtn) addBranchBtn.addEventListener("click", ()=> openBranchModal());
+  document.querySelectorAll("[data-action='edit-branch']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const branches = await DB.getBranches();
+      const b = branches.find(x=>x.id===btn.dataset.id);
+      if(b) openBranchModal(b);
+    });
+  });
+  document.querySelectorAll("[data-action='delete-branch']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      if(!confirm("Hapus cabang ini? Harga, saldo awal, dan aset tetap yang terdaftar di cabang ini akan hilang. Pegawai yang terdaftar di cabang ini juga perlu dipindahkan manual.")) return;
+      await DB.deleteBranch(btn.dataset.id);
+      toast("Cabang dihapus");
+      render();
+    });
+  });
+  document.querySelectorAll("[data-action='copy-branch-code']").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      navigator.clipboard?.writeText(btn.dataset.id).then(()=> toast("Kode cabang disalin"));
+    });
   });
   document.querySelectorAll("[data-action='toggle-role']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
@@ -3222,16 +3401,21 @@ function bindPageEvents(){
 /* ---------------- Export / Import / Backup ---------------- */
 
 async function exportCsv(){
-  const txs = await DB.getTransactions();
+  let txs = await DB.getTransactions();
+  if(state.currentBranchId !== "all"){
+    txs = txs.filter(t => t.branchId === state.currentBranchId);
+  }
+  const branchMap = Object.fromEntries(state.branches.map(b=>[b.id,b.name]));
   const cats = Object.fromEntries(state.categories.map(c=>[c.id,c]));
-  const header = "Tanggal,Jenis,Kategori,Jenis Layanan,Sub-Layanan,Berat (kg),Pelanggan,Jumlah,Catatan\n";
+  const header = "Tanggal,Cabang,Jenis,Kategori,Jenis Layanan,Sub-Layanan,Berat (kg),Pelanggan,Jumlah,Catatan\n";
   const rows = txs.map(t=>{
     const cat = cats[t.categoryId]?.name || t.categoryName || "";
     const jenis = t.type === "in" ? "Kas Masuk" : "Kas Keluar";
     const serviceTypeLabel = { kiloan: "Kiloan", satuan: "Satuan", "self-service": "Self-Service" }[t.serviceType] || "";
     const note = (t.note||"").replace(/"/g,'""');
     const customer = (t.customerName||"").replace(/"/g,'""');
-    return `${t.date},${jenis},"${cat}","${serviceTypeLabel}","${t.subTypeLabel||""}",${t.weightKg||""},"${customer}",${t.amount},"${note}"`;
+    const branchName = (branchMap[t.branchId]||"").replace(/"/g,'""');
+    return `${t.date},"${branchName}",${jenis},"${cat}","${serviceTypeLabel}","${t.subTypeLabel||""}",${t.weightKg||""},"${customer}",${t.amount},"${note}"`;
   }).join("\n");
   downloadFile(`transaksi-${Reports.todayStr()}.csv`, header + rows, "text/csv");
 }
@@ -3268,7 +3452,7 @@ function importJson(){
       if(!confirm("Ini akan menimpa data yang ada saat ini. Lanjutkan?")) return;
       for(const c of data.categories||[]) await DB.addCategory(c);
       for(const t of data.transactions||[]){ const copy={...t}; delete copy.id; await DB.addTransaction(copy); }
-      if(data.openingBalances) await Reports.setOpeningBalances(data.openingBalances);
+      if(data.openingBalances) await Reports.setOpeningBalances(data.openingBalances, getActiveBranch());
       if(data.businessName){ state.businessName = data.businessName; await DB.setSetting("businessName", data.businessName); }
       state.categories = await DB.getCategories();
       toast("Data berhasil dipulihkan");
@@ -3334,7 +3518,7 @@ function registerFormHtml(){
       <div class="field"><label>Nama Usaha</label><input type="text" id="authBizName" placeholder="Contoh: WashSpace Laundry"></div>
     </div>
     <div id="pegawaiFields" style="display:none;">
-      <div class="field"><label>Kode Undangan Usaha</label><input type="text" id="authInviteCode" placeholder="Minta ke pemilik usaha"></div>
+      <div class="field"><label>Kode Undangan Cabang</label><input type="text" id="authInviteCode" placeholder="Minta ke pemilik/manajer cabang"></div>
     </div>
     <div class="field"><label>Nama Anda</label><input type="text" id="authName" placeholder="Nama Anda"></div>
     <div class="field"><label>Email</label><input type="email" id="authEmail" placeholder="nama@email.com"></div>
@@ -3416,17 +3600,17 @@ function wireAuthForm(mode, root){
       }
     } else {
       const code = root.querySelector("#authInviteCode").value.trim();
-      if(!code){ setErr("Isi kode undangan dari pemilik usaha."); return; }
+      if(!code){ setErr("Isi kode undangan dari pemilik/manajer cabang."); return; }
       try{
         const cred = await auth.createUserWithEmailAndPassword(email, password);
-        const biz = await DB.getBusinessById(code);
-        if(!biz){
+        const branch = await DB.getBranchById(code);
+        if(!branch){
           await cred.user.delete().catch(()=>{});
-          setErr("Kode undangan tidak ditemukan. Cek lagi dengan pemilik usaha.");
+          setErr("Kode undangan tidak ditemukan. Cek lagi dengan pemilik/manajer cabang.");
           return;
         }
         await fs.collection("users").doc(cred.user.uid).set({
-          name, email, role: "pegawai", businessId: code, createdAt: Date.now()
+          name, email, role: "pegawai", businessId: branch.businessId, branchId: code, createdAt: Date.now()
         });
       }catch(err){
         console.error("Auth error:", err); setErr(authErrorMessage(err));
@@ -3509,6 +3693,25 @@ async function runPhotoCleanupIfDue(){
   }
 }
 
+async function ensureDefaultBranch(){
+  let branches = await DB.getBranches();
+  if(branches.length === 0){
+    // First-time migration: existing single-branch businesses get a default
+    // branch, and any pre-existing business-wide pricing/opening balances move into it.
+    const legacyPricing = await DB.getSetting("pricing", null);
+    const legacyOpening = await DB.getSetting("openingBalances", null);
+    const branchId = await DB.addBranch({ name: "Cabang Utama", address: "" });
+    const updates = {};
+    if(legacyPricing) updates.pricing = legacyPricing;
+    if(legacyOpening) updates.openingBalances = legacyOpening;
+    if(Object.keys(updates).length > 0){
+      await DB.updateBranch(branchId, updates);
+    }
+    branches = await DB.getBranches();
+  }
+  return branches;
+}
+
 async function startApp(){
   await DB.init();
   state.businessName = await DB.getSetting("businessName", "Usaha Laundry Saya");
@@ -3518,6 +3721,14 @@ async function startApp(){
   state.businessAddress = await DB.getSetting("businessAddress", "");
   state.businessLogo = await DB.getSetting("businessLogo", "");
   state.categories = await DB.getCategories();
+  state.branches = await ensureDefaultBranch();
+
+  if(state.role === "pegawai"){
+    state.currentBranchId = state.userBranchId || state.branches[0]?.id || "all";
+  } else if(state.branches.length === 1){
+    state.currentBranchId = state.branches[0].id; // only one branch — no point showing "Semua Cabang"
+  }
+  setActiveBranch(state.currentBranchId !== "all" ? state.currentBranchId : (state.branches[0]?.id || null));
 
   if("serviceWorker" in navigator){
     navigator.serviceWorker.register("./sw.js").catch(()=>{});
@@ -3548,6 +3759,7 @@ auth.onAuthStateChanged(async (user) => {
     state.role = profile.role || "pegawai";
     state.userName = profile.name || user.email;
     state.businessId = profile.businessId;
+    state.userBranchId = profile.branchId || null;
     DB.setBusinessContext(profile.businessId);
     hideAuthScreen();
     await startApp();

@@ -68,8 +68,9 @@ const Reports = {
   },
 
   /** Laba Rugi for a date range [start, end] inclusive, grouped by category */
-  async labaRugi(start, end){
-    const txs = await DB.getTransactionsInRange(start, end);
+  async labaRugi(start, end, branchId = null){
+    let txs = await DB.getTransactionsInRange(start, end);
+    if(branchId) txs = txs.filter(t => t.branchId === branchId);
     const categories = await DB.getCategories();
     const catMap = Object.fromEntries(categories.map(c => [c.id, c]));
 
@@ -86,9 +87,10 @@ const Reports = {
       }
     }
 
-    // Non-cash depreciation expense (from Aset Tetap module), computed on the fly —
-    // never touches Kas, just reduces Laba Bersih like a normal beban line.
-    const assets = await DB.getAssets();
+    // Non-cash depreciation expense (from Aset Tetap module) — only assets
+    // belonging to this branch (or all assets, in the aggregate view).
+    let assets = await DB.getAssets();
+    if(branchId) assets = assets.filter(a => a.branchId === branchId);
     let depreciationTotal = 0;
     for(const asset of assets){
       depreciationTotal += depreciationForPeriod(asset, start, end);
@@ -121,10 +123,11 @@ const Reports = {
   },
 
   /** Full Neraca (Balance Sheet) as of a given date */
-  async neraca(asOf){
-    const opening = await this.getOpeningBalances();
+  async neraca(asOf, branchId = null){
+    const opening = await this.getOpeningBalances(branchId);
     const all = await DB.getTransactions();
-    const relevant = all.filter(t => t.date > opening.date && t.date <= asOf);
+    let relevant = all.filter(t => t.date > opening.date && t.date <= asOf);
+    if(branchId) relevant = relevant.filter(t => t.branchId === branchId);
 
     let kas = opening.kas;
     let piutang = opening.piutang;
@@ -151,8 +154,10 @@ const Reports = {
 
     const persediaan = opening.persediaan;
 
-    // Accumulated depreciation (contra-asset) from the Aset Tetap module.
-    const assets = await DB.getAssets();
+    // Accumulated depreciation (contra-asset) — only this branch's assets
+    // (or all assets, in the aggregate view).
+    let assets = await DB.getAssets();
+    if(branchId) assets = assets.filter(a => a.branchId === branchId);
     let akumulasiPenyusutan = 0;
     let depresiasiSejakSaldoAwal = 0;
     for(const asset of assets){
@@ -178,23 +183,41 @@ const Reports = {
     };
   },
 
-  async getOpeningBalances(){
+  async getOpeningBalances(branchId = null){
     const def = {
       date: "1970-01-01",
       kas: 0, piutang: 0, persediaan: 0, asetTetap: 0,
       utangUsaha: 0, utangBank: 0, modal: 0
     };
-    const saved = await DB.getSetting("openingBalances", null);
-    if(!saved) return def;
-    const merged = { ...def, ...saved };
-    // Modal is always auto-balanced: Aset = Kewajiban + Modal
-    merged.modal = (merged.kas + merged.piutang + merged.persediaan + merged.asetTetap)
-                 - (merged.utangUsaha + merged.utangBank);
-    return merged;
+
+    if(branchId){
+      const branch = await DB.getBranchById(branchId);
+      const saved = branch?.openingBalances || null;
+      if(!saved) return def;
+      const merged = { ...def, ...saved };
+      merged.modal = (merged.kas + merged.piutang + merged.persediaan + merged.asetTetap)
+                   - (merged.utangUsaha + merged.utangBank);
+      return merged;
+    }
+
+    // Aggregate ("Semua Cabang"): sum every branch's own opening balance.
+    const branches = await DB.getBranches();
+    const sum = { date: null, kas:0, piutang:0, persediaan:0, asetTetap:0, utangUsaha:0, utangBank:0 };
+    for(const b of branches){
+      const ob = b.openingBalances;
+      if(!ob) continue;
+      sum.kas += ob.kas||0; sum.piutang += ob.piutang||0; sum.persediaan += ob.persediaan||0;
+      sum.asetTetap += ob.asetTetap||0; sum.utangUsaha += ob.utangUsaha||0; sum.utangBank += ob.utangBank||0;
+      if(ob.date && (!sum.date || ob.date < sum.date)) sum.date = ob.date;
+    }
+    sum.date = sum.date || def.date;
+    sum.modal = (sum.kas + sum.piutang + sum.persediaan + sum.asetTetap) - (sum.utangUsaha + sum.utangBank);
+    return sum;
   },
 
-  async setOpeningBalances(vals){
-    await DB.setSetting("openingBalances", vals);
+  async setOpeningBalances(vals, branchId){
+    if(!branchId) return;
+    await DB.updateBranch(branchId, { openingBalances: vals });
   },
 
   /** last N months of net income, for the dashboard mini chart */
