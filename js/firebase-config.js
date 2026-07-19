@@ -28,3 +28,9 @@ fs.enablePersistence({ synchronizeTabs: true }).catch((err) => {
 // from cloudinary.com → Settings → Upload → Upload presets.
 const CLOUDINARY_CLOUD_NAME = "jvcpln9q";
 const CLOUDINARY_UPLOAD_PRESET = "laundryku_photos";
+
+// --- Photo auto-cleanup (deletes old finished orders' photos from Cloudinary) ---
+// TODO: set this to any random string of your choosing, then set the SAME
+// value as an environment variable named CLEANUP_SECRET in Vercel
+// (Project → Settings → Environment Variables).
+const CLEANUP_SHARED_SECRET = "REPLACE_WITH_ANY_RANDOM_STRING";

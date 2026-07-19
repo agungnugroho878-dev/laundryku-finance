@@ -4,13 +4,57 @@
  * account tag stored on each category/transaction.
  */
 
+/** Local (not UTC) date formatting — using .toISOString() here would shift
+ *  dates backward for any timezone ahead of UTC (like Indonesia, UTC+7/+8),
+ *  causing "today"/"this month" to sometimes resolve to the wrong day. */
+function localDateStr(d = new Date()){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function localMonthStr(d = new Date()){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+/* ---------------- Penyusutan Aset Tetap (garis lurus) ---------------- */
+
+function monthIndex(dateStr){
+  const [y,m] = dateStr.split("-").map(Number);
+  return y*12 + (m-1);
+}
+
+function assetMonthlyDepreciation(asset){
+  const life = asset.usefulLifeYears || 1;
+  const depreciable = (asset.acquisitionCost||0) - (asset.salvageValue||0);
+  return depreciable / (life*12);
+}
+
+/** Accumulated depreciation for one asset as of a given date (whole-month convention). */
+function depreciationAsOf(asset, dateStr){
+  if(!asset.acquisitionDate || dateStr < asset.acquisitionDate) return 0;
+  const monthly = assetMonthlyDepreciation(asset);
+  const monthsElapsed = Math.max(0, monthIndex(dateStr) - monthIndex(asset.acquisitionDate) + 1);
+  const maxDepreciable = (asset.acquisitionCost||0) - (asset.salvageValue||0);
+  return Math.min(monthsElapsed * monthly, maxDepreciable);
+}
+
+/** Depreciation expense that accrued within [start, end] inclusive. */
+function depreciationForPeriod(asset, start, end){
+  const dayBefore = new Date(start+"T00:00:00");
+  dayBefore.setDate(dayBefore.getDate()-1);
+  const upTo = depreciationAsOf(asset, end);
+  const before = depreciationAsOf(asset, localDateStr(dayBefore));
+  return Math.max(0, upTo - before);
+}
+
 const Reports = {
   todayStr(){
-    return new Date().toISOString().slice(0,10);
+    return localDateStr();
   },
 
   startOfMonth(d = new Date()){
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0,10);
+    return localDateStr(new Date(d.getFullYear(), d.getMonth(), 1));
   },
 
   formatRupiah(n){
@@ -40,6 +84,17 @@ const Reports = {
         const name = catMap[t.categoryId]?.name || t.categoryName || "Beban Lain";
         bebanLines[name] = (bebanLines[name]||0) + t.amount;
       }
+    }
+
+    // Non-cash depreciation expense (from Aset Tetap module), computed on the fly —
+    // never touches Kas, just reduces Laba Bersih like a normal beban line.
+    const assets = await DB.getAssets();
+    let depreciationTotal = 0;
+    for(const asset of assets){
+      depreciationTotal += depreciationForPeriod(asset, start, end);
+    }
+    if(depreciationTotal > 0){
+      bebanLines["Beban Penyusutan Aset Tetap"] = (bebanLines["Beban Penyusutan Aset Tetap"]||0) + depreciationTotal;
     }
 
     const totalPendapatan = Object.values(pendapatanLines).reduce((a,b)=>a+b,0);
@@ -95,14 +150,27 @@ const Reports = {
     }
 
     const persediaan = opening.persediaan;
-    const totalAset = kas + piutang + persediaan + asetTetap;
+
+    // Accumulated depreciation (contra-asset) from the Aset Tetap module.
+    const assets = await DB.getAssets();
+    let akumulasiPenyusutan = 0;
+    let depresiasiSejakSaldoAwal = 0;
+    for(const asset of assets){
+      akumulasiPenyusutan += depreciationAsOf(asset, asOf);
+      const effectiveStart = asset.acquisitionDate > opening.date ? asset.acquisitionDate : opening.date;
+      depresiasiSejakSaldoAwal += depreciationForPeriod(asset, effectiveStart, asOf);
+    }
+    laba -= depresiasiSejakSaldoAwal;
+
+    const asetTetapBersih = asetTetap - akumulasiPenyusutan;
+    const totalAset = kas + piutang + persediaan + asetTetapBersih;
     const totalKewajiban = utangUsaha + utangBank;
     const ekuitas = modalSetor + laba - prive;
     const totalKewajibanModal = totalKewajiban + ekuitas;
 
     return {
       asOf,
-      kas, piutang, persediaan, asetTetap, totalAset,
+      kas, piutang, persediaan, asetTetap, akumulasiPenyusutan, asetTetapBersih, totalAset,
       utangUsaha, utangBank, totalKewajiban,
       modalSetor, labaBerjalan: laba, prive, ekuitas,
       totalKewajibanModal,
@@ -136,7 +204,7 @@ const Reports = {
     const buckets = [];
     for(let i = n-1; i >= 0; i--){
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = d.toISOString().slice(0,7);
+      const key = localMonthStr(d);
       buckets.push({ key, label: d.toLocaleDateString("id-ID",{month:"short"}), pendapatan:0, beban:0 });
     }
     const byKey = Object.fromEntries(buckets.map(b=>[b.key,b]));

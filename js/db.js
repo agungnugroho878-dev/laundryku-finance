@@ -217,6 +217,29 @@ const DB = {
     return true;
   },
 
+  async getAssets(){
+    const snap = await fs.collection("assets").where("businessId","==",_businessId).get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (a.acquisitionDate||"").localeCompare(b.acquisitionDate||""));
+    return list;
+  },
+
+  async addAsset(asset){
+    const payload = { ...asset, businessId: _businessId, createdAt: Date.now() };
+    const ref = await fs.collection("assets").add(payload);
+    return ref.id;
+  },
+
+  async updateAsset(id, fields){
+    await fs.collection("assets").doc(id).update(fields);
+    return true;
+  },
+
+  async deleteAsset(id){
+    await fs.collection("assets").doc(id).delete();
+    return true;
+  },
+
   async getNextReceiptCode(serviceType, dateStr){
     const prefixMap = { "kiloan": "KL", "satuan": "ST", "self-service": "SS" };
     const prefix = prefixMap[serviceType] || "TX";

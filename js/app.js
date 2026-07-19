@@ -154,7 +154,7 @@ function getPeriodRange(period){
   if(period === "today") return { start: today, end: today };
   if(period === "week"){
     const d = new Date(); d.setDate(d.getDate()-6);
-    return { start: d.toISOString().slice(0,10), end: today };
+    return { start: localDateStr(d), end: today };
   }
   if(period === "year"){
     return { start: `${new Date().getFullYear()}-01-01`, end: today };
@@ -186,7 +186,7 @@ async function getServiceTrend(n = 6){
   const buckets = [];
   for(let i = n-1; i >= 0; i--){
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = d.toISOString().slice(0,7);
+    const key = localMonthStr(d);
     buckets.push({ key, label: d.toLocaleDateString("id-ID",{month:"short"}), kiloan:0, satuan:0, "self-service":0 });
   }
   const byKey = Object.fromEntries(buckets.map(b=>[b.key,b]));
@@ -426,6 +426,127 @@ function escapeHtml(s){
 
 /* ---------------- Laporan ---------------- */
 
+const ASSET_CATEGORIES = {
+  "paket-mesin": { label: "Paket Mesin (Cuci + Dryer)", defaultLife: 5 },
+  "mesin-cuci": { label: "Mesin Cuci", defaultLife: 5 },
+  "dryer": { label: "Dryer / Pengering", defaultLife: 5 },
+  "peralatan-lain": { label: "Peralatan Lain", defaultLife: 4 }
+};
+
+async function renderAsetTetapSection(){
+  const assets = await DB.getAssets();
+  const today = Reports.todayStr();
+  let totalCost = 0, totalAccum = 0;
+  const rows = assets.map(a => {
+    const accum = depreciationAsOf(a, today);
+    totalCost += a.acquisitionCost;
+    totalAccum += accum;
+    return { ...a, accum, book: a.acquisitionCost - accum };
+  });
+  const totalBook = totalCost - totalAccum;
+
+  return `
+    <div class="card no-print">
+      <div class="card-title">Ringkasan Aset Tetap</div>
+      <div class="r-row"><span>Total Harga Perolehan</span><span class="val num">${Reports.formatRupiah(totalCost)}</span></div>
+      <div class="r-row"><span>Total Akumulasi Penyusutan</span><span class="val num">-${Reports.formatRupiah(totalAccum)}</span></div>
+      <div class="r-row total"><span>Total Nilai Buku</span><span class="val num">${Reports.formatRupiah(totalBook)}</span></div>
+    </div>
+
+    <button class="btn btn-primary btn-block" data-action="add-asset" style="margin:14px 0;">${ICONS.plus} Tambah Aset Tetap</button>
+
+    ${rows.length === 0 ? emptyState("Belum ada aset tetap terdaftar.") : rows.map(a => `
+      <div class="card" style="margin-bottom:12px;">
+        <div class="row-between">
+          <div>
+            <div style="font-weight:700;">${escapeHtml(a.name)}</div>
+            <div class="small muted">${escapeHtml(a.category)}${a.brand ? ' · '+escapeHtml(a.brand) : ''}</div>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button class="tx-del" data-action="edit-asset" data-id="${a.id}">${ICONS.edit}</button>
+            <button class="tx-del" data-action="delete-asset" data-id="${a.id}">${ICONS.trash}</button>
+          </div>
+        </div>
+        <div class="small muted" style="margin-top:8px;">Perolehan: ${fmtDate(a.acquisitionDate)} · Umur manfaat: ${a.usefulLifeYears} tahun</div>
+        <div class="small" style="margin-top:6px; line-height:1.9;">
+          Harga Perolehan: <b class="num">${Reports.formatRupiah(a.acquisitionCost)}</b><br>
+          Penyusutan/bulan: <span class="num">${Reports.formatRupiah(assetMonthlyDepreciation(a))}</span><br>
+          Akumulasi Penyusutan: <span class="num">${Reports.formatRupiah(a.accum)}</span><br>
+          Nilai Buku: <b class="num" style="color:var(--mint);">${Reports.formatRupiah(a.book)}</b>
+        </div>
+      </div>
+    `).join("")}
+  `;
+}
+
+function openAssetModal(existing){
+  const isEdit = !!existing;
+  const modal = openModal(`
+    <h2>${isEdit ? 'Edit' : 'Tambah'} Aset Tetap</h2>
+    <div class="field">
+      <label>Jenis Aset</label>
+      <select id="assetCategory">
+        ${Object.entries(ASSET_CATEGORIES).map(([id,c])=>`<option value="${id}" ${existing?.categoryId===id?'selected':''}>${c.label}</option>`).join("")}
+      </select>
+    </div>
+    <div class="field"><label>Nama/Keterangan Aset</label><input type="text" id="assetName" placeholder="Contoh: Mesin Cuci Front Loading 10kg" value="${escapeHtml(existing?.name||'')}"></div>
+    <div class="field"><label>Merk</label><input type="text" id="assetBrand" placeholder="Contoh: LG, Electrolux" value="${escapeHtml(existing?.brand||'')}"></div>
+    <div class="field"><label>Harga Perolehan (Rp)</label><input type="number" id="assetCost" value="${existing?.acquisitionCost||''}"></div>
+    <div class="field"><label>Tanggal Perolehan</label><input type="date" id="assetDate" value="${existing?.acquisitionDate||Reports.todayStr()}"></div>
+    <div class="field"><label>Umur Manfaat (tahun) <span class="small muted">— estimasi umum, bisa disesuaikan</span></label><input type="number" id="assetLife" value="${existing?.usefulLifeYears||5}"></div>
+    <div class="field"><label>Nilai Residu (Rp, opsional)</label><input type="number" id="assetSalvage" value="${existing?.salvageValue||0}"></div>
+    ${!isEdit ? `
+      <div class="field" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="assetLogCash" style="width:auto; margin:0;">
+        <label for="assetLogCash" style="margin:0; font-weight:400;">Catat juga sebagai pengeluaran kas sekarang (baru dibeli tunai)</label>
+      </div>
+    ` : ''}
+    <button class="btn btn-primary btn-block" data-action="save-asset" style="margin-top:10px;">Simpan</button>
+  `);
+
+  modal.querySelector("#assetCategory").addEventListener("change", (e)=>{
+    const cat = ASSET_CATEGORIES[e.target.value];
+    if(cat) modal.querySelector("#assetLife").value = cat.defaultLife;
+  });
+
+  modal.querySelector("[data-action='save-asset']").addEventListener("click", async ()=>{
+    const categoryId = modal.querySelector("#assetCategory").value;
+    const name = modal.querySelector("#assetName").value.trim();
+    const brand = modal.querySelector("#assetBrand").value.trim();
+    const acquisitionCost = parseFloat(modal.querySelector("#assetCost").value);
+    const acquisitionDate = modal.querySelector("#assetDate").value;
+    const usefulLifeYears = parseFloat(modal.querySelector("#assetLife").value);
+    const salvageValue = parseFloat(modal.querySelector("#assetSalvage").value) || 0;
+
+    if(!name){ toast("Isi nama aset", "warn"); return; }
+    if(!acquisitionCost || acquisitionCost <= 0){ toast("Isi harga perolehan yang valid", "warn"); return; }
+    if(!acquisitionDate){ toast("Isi tanggal perolehan", "warn"); return; }
+    if(!usefulLifeYears || usefulLifeYears <= 0){ toast("Isi umur manfaat yang valid", "warn"); return; }
+
+    const payload = {
+      categoryId, category: ASSET_CATEGORIES[categoryId]?.label || categoryId,
+      name, brand, acquisitionCost, acquisitionDate, usefulLifeYears, salvageValue
+    };
+
+    if(isEdit){
+      await DB.updateAsset(existing.id, payload);
+      toast("Aset diperbarui");
+    } else {
+      await DB.addAsset(payload);
+      if(modal.querySelector("#assetLogCash")?.checked){
+        await DB.addTransaction({
+          type: "out", categoryId: "beli-aset", categoryName: "Beli Peralatan/Aset Tetap",
+          account: DB.ACCOUNT.ASET_TETAP, amount: acquisitionCost, date: acquisitionDate,
+          note: `${name}${brand?' ('+brand+')':''}`
+        });
+      }
+      toast("Aset ditambahkan");
+    }
+    closeModal();
+    render();
+  });
+}
+
 async function pageLaporan(){
   const tabBtn = (id,label) => `<button class="btn ${state.reportTab===id?'btn-primary':'btn-outline'}" data-report-tab="${id}">${label}</button>`;
   let body = "";
@@ -442,7 +563,7 @@ async function pageLaporan(){
       </div>
       ${renderLabaRugiReceipt(lr)}
     `;
-  } else {
+  } else if(state.reportTab === "neraca"){
     const neraca = await Reports.neraca(state.neracaDate);
     body = `
       <div class="card no-print">
@@ -451,18 +572,23 @@ async function pageLaporan(){
       </div>
       ${renderNeracaReceipt(neraca)}
     `;
+  } else {
+    body = await renderAsetTetapSection();
   }
 
   return `
     <div class="btn-row no-print" style="margin-bottom:14px;">
       ${tabBtn("labarugi","Laba Rugi")}
       ${tabBtn("neraca","Neraca")}
+      ${tabBtn("aset-tetap","Aset Tetap")}
     </div>
     ${body}
-    <div class="btn-row no-print">
-      <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
-      <button class="btn btn-outline btn-block" data-action="export-csv">${ICONS.download} Unduh CSV</button>
-    </div>
+    ${state.reportTab !== "aset-tetap" ? `
+      <div class="btn-row no-print">
+        <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
+        <button class="btn btn-outline btn-block" data-action="export-csv">${ICONS.download} Unduh CSV</button>
+      </div>
+    ` : ""}
   `;
 }
 
@@ -504,7 +630,9 @@ function renderNeracaReceipt(n){
       <div class="r-row"><span>Kas</span><span class="val num">${Reports.formatRupiah(n.kas)}</span></div>
       <div class="r-row"><span>Piutang Usaha</span><span class="val num">${Reports.formatRupiah(n.piutang)}</span></div>
       <div class="r-row"><span>Persediaan</span><span class="val num">${Reports.formatRupiah(n.persediaan)}</span></div>
-      <div class="r-row"><span>Peralatan/Aset Tetap</span><span class="val num">${Reports.formatRupiah(n.asetTetap)}</span></div>
+      <div class="r-row"><span>Peralatan/Aset Tetap (Harga Perolehan)</span><span class="val num">${Reports.formatRupiah(n.asetTetap)}</span></div>
+      ${n.akumulasiPenyusutan > 0 ? `<div class="r-row"><span>Akumulasi Penyusutan</span><span class="val num">-${Reports.formatRupiah(n.akumulasiPenyusutan)}</span></div>
+      <div class="r-row"><span style="padding-left:12px;">Nilai Buku Aset Tetap</span><span class="val num">${Reports.formatRupiah(n.asetTetapBersih)}</span></div>` : ''}
       <div class="r-row total"><span>Total Aset</span><span class="val num">${Reports.formatRupiah(n.totalAset)}</span></div>
 
       <div class="r-row section">Kewajiban</div>
@@ -543,6 +671,7 @@ async function pagePengaturan(){
   const pricing = isOwner ? await getPricing() : null;
   const kiloanLoyalty = isOwner ? await getKiloanLoyalty() : null;
   const printerSettings = isOwner ? await getPrinterSettings() : null;
+  const photoRetentionDays = isOwner ? await DB.getSetting("photoRetentionDays", 10) : null;
   const staff = isOwner ? await DB.getBusinessStaff() : null;
   const customCats = state.categories.filter(c=>!c.system);
 
@@ -668,6 +797,16 @@ async function pagePengaturan(){
       <p class="small muted" style="margin-top:10px;">Cetak via Bluetooth hanya didukung browser Chrome di Android/Desktop (tidak didukung Safari/iPhone). Untuk iPhone, gunakan opsi "Dialog Print/PDF" saat cetak struk.</p>
     </div>
 
+    <h3 class="section-title">Foto Pesanan</h3>
+    <div class="card">
+      <p class="small muted">Foto pesanan yang sudah Selesai akan otomatis dihapus dari penyimpanan setelah sekian hari (supaya kuota penyimpanan tidak terus menumpuk).</p>
+      <div class="field">
+        <label>Hapus otomatis setelah (hari)</label>
+        <input type="number" id="photo-retention-days" value="${photoRetentionDays}" min="1">
+      </div>
+      <button class="btn btn-primary" data-action="save-photo-retention">Simpan</button>
+    </div>
+
     <h3 class="section-title">Saldo Awal Pembukuan</h3>
     <div class="card">
       <p class="small muted">Isi saldo di sini jika usahamu sudah berjalan sebelum mulai pakai aplikasi ini. Modal dihitung otomatis agar neraca selalu seimbang.</p>
@@ -745,7 +884,7 @@ async function streakCardHtml(){
   const txs = await DB.getTransactions();
   if(txs.length === 0) return "";
   const dateSet = new Set(txs.map(t=>t.date));
-  const toStr = (dt) => dt.toISOString().slice(0,10);
+  const toStr = (dt) => localDateStr(dt);
   let cursor = new Date();
   if(!dateSet.has(toStr(cursor))) cursor.setDate(cursor.getDate()-1);
   let streak = 0;
@@ -1095,8 +1234,13 @@ async function uploadPhotoToCloudinary(file){
   });
   if(!res.ok) throw new Error("Upload gagal");
   const data = await res.json();
-  return data.secure_url;
+  return { url: data.secure_url, publicId: data.public_id };
 }
+
+/** Photos may be stored as either a plain URL string (older orders, before
+ *  public_id tracking existed) or {url, publicId} (current format). */
+function photoUrl(p){ return typeof p === "string" ? p : p.url; }
+function photoPublicId(p){ return typeof p === "string" ? null : p.publicId; }
 
 /** Opens a live camera preview with an explicit device picker (built-in or
  *  external/USB webcam). Calls onPhotoUploaded(url) each time a photo is
@@ -1195,8 +1339,8 @@ function openCameraCaptureModal(onPhotoUploaded){
     try{
       const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.9));
       const file = new File([blob], `foto-${Date.now()}.jpg`, { type: "image/jpeg" });
-      const url = await uploadPhotoToCloudinary(file);
-      onPhotoUploaded(url);
+      const result = await uploadPhotoToCloudinary(file);
+      onPhotoUploaded(result);
       capturedCount++;
       overlay.querySelector("#capturedCount").textContent = `${capturedCount} foto sudah diambil.`;
     }catch(err){
@@ -1340,6 +1484,7 @@ function orderCardHtml(o){
       </div>
 
       ${itemLines ? `<div class="order-card-items">${escapeHtml(itemLines)}${typeof o.total === 'number' ? ` <span class="num order-card-total">${Reports.formatRupiah(o.total)}</span>` : ""}</div>` : ""}
+      ${o.photos?.length ? `<div class="small muted" style="margin-top:2px;">📷 ${o.photos.length} pcs pakaian difoto</div>` : ""}
       ${o.discountAmount ? `<div class="small" style="color:var(--coin); margin-top:2px;">🎁 ${escapeHtml(o.discountReason || 'Diskon promo')}</div>` : ""}
       ${o.note ? `<div class="small muted" style="margin-top:4px;">${escapeHtml(o.note)}</div>` : ""}
 
@@ -1547,6 +1692,7 @@ async function openAddOrderModal(){
         <button type="button" class="btn btn-outline btn-block" id="ordPhotoBtn">${ICONS.chat} Galeri / File</button>
       </div>
       <div id="ordPhotoPreview" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;"></div>
+      <div id="ordPhotoCount" class="small muted" style="margin-top:8px;"></div>
     </div>
 
     <button class="btn btn-primary btn-block" data-action="save-order">Simpan & Catat Pendapatan</button>
@@ -1570,12 +1716,15 @@ async function openAddOrderModal(){
 
   function renderPhotoPreview(){
     const box = modal.querySelector("#ordPhotoPreview");
-    box.innerHTML = photoUrls.map((url,i) => `
+    box.innerHTML = photoUrls.map((p,i) => `
       <div style="position:relative; width:64px; height:64px;">
-        <img src="${url}" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid var(--line);">
+        <img src="${photoUrl(p)}" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid var(--line);">
         <button type="button" data-remove-photo="${i}" style="position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; background:var(--rose); color:#fff; border:none; font-size:12px; line-height:1; cursor:pointer;">✕</button>
       </div>
     `).join("");
+    modal.querySelector("#ordPhotoCount").textContent = photoUrls.length > 0
+      ? `Total ${photoUrls.length} pcs pakaian difoto`
+      : "";
     box.querySelectorAll("[data-remove-photo]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         photoUrls.splice(parseInt(btn.dataset.removePhoto), 1);
@@ -1585,22 +1734,24 @@ async function openAddOrderModal(){
   }
 
   modal.querySelector("#ordCameraBtn").addEventListener("click", ()=>{
-    openCameraCaptureModal((url)=>{
-      photoUrls.push(url);
+    openCameraCaptureModal((photo)=>{
+      photoUrls.push(photo);
       renderPhotoPreview();
     });
   });
-  modal.querySelector("#ordPhotoBtn").addEventListener("click", ()=> modal.querySelector("#ordPhotoInput").click());
+  modal.querySelector("#ordPhotoBtn").addEventListener("click", ()=>{
+    modal.querySelector("#ordPhotoInput").click();
+  });
   modal.querySelector("#ordPhotoInput").addEventListener("change", async (e)=>{
-    const files = Array.from(e.target.files || []);
+    let files = Array.from(e.target.files || []);
     if(files.length === 0) return;
     const btn = modal.querySelector("#ordPhotoBtn");
     btn.textContent = "Mengunggah...";
     btn.disabled = true;
     try{
       for(const file of files){
-        const url = await uploadPhotoToCloudinary(file);
-        photoUrls.push(url);
+        const photo = await uploadPhotoToCloudinary(file);
+        photoUrls.push(photo);
         renderPhotoPreview();
       }
     }catch(err){
@@ -1878,7 +2029,7 @@ async function openAddOrderModal(){
     if(isFreeVisit) txRecord.isFreeVisit = true;
     if(discountAmount > 0){ txRecord.discountAmount = discountAmount; txRecord.discountReason = discountReason; }
     if(estimatedReadyAt){ txRecord.estimatedReadyAt = estimatedReadyAt; txRecord.durationLabel = durationLabel; }
-    if(photoUrls.length > 0) txRecord.hasPhotos = true;
+    if(photoUrls.length > 0){ txRecord.hasPhotos = true; txRecord.photoCount = photoUrls.length; }
 
     const txId = await DB.addTransaction(txRecord);
 
@@ -2224,6 +2375,7 @@ function buildReceiptText(t){
     lines.push(`Kembalian  : ${Reports.formatRupiah(t.changeAmount||0)}`);
   }
   if(t.note) lines.push(`Catatan: ${t.note}`);
+  if(t.photoCount) lines.push(`📷 Total ${t.photoCount} pcs pakaian difoto`);
   lines.push("--------------------------------");
   if(t.orderId){
     lines.push(`📦 Pantau status & foto cucianmu:`);
@@ -2334,6 +2486,10 @@ function buildEscPos(t, width){
     raw(ESC,0x61,0);
     text(`Estimasi Selesai:\n${fmtDateTime(t.estimatedReadyAt)}\n`);
   }
+  if(t.photoCount){
+    raw(ESC,0x61,0);
+    text(`Total ${t.photoCount} pcs pakaian difoto\n`);
+  }
 
   text("-".repeat(width) + "\n");
   if(t.discountAmount > 0){
@@ -2433,6 +2589,7 @@ function printReceiptSystemDialog(t){
       `).join("")}
       ${t.isFreeVisit ? `<div class="pr-badge">GRATIS REWARD MEMBER</div>` : ""}
       ${t.estimatedReadyAt ? `<div class="pr-row"><span>Estimasi Selesai</span><span>${fmtDateTime(t.estimatedReadyAt)}</span></div>` : ""}
+      ${t.photoCount ? `<div class="pr-row"><span>Foto Pakaian</span><span>${t.photoCount} pcs</span></div>` : ""}
       <div class="pr-divider"></div>
       ${t.discountAmount > 0 ? `
         <div class="pr-row"><span>Subtotal</span><span>${Reports.formatRupiah(subtotal)}</span></div>
@@ -2500,7 +2657,7 @@ async function generateReceiptCanvas(t){
   const estHeight = padding*2 + logoHeight
     + 30 + (state.businessTagline?16:0) + contactLines*15 + 14   // header + divider
     + infoRows.length*22 + 14                   // info block + divider
-    + items.reduce((s)=>s+40, 0) + (t.isFreeVisit?26:0) + (t.estimatedReadyAt?36:0) + 14 // items + divider
+    + items.reduce((s)=>s+40, 0) + (t.isFreeVisit?26:0) + (t.estimatedReadyAt?36:0) + (t.photoCount?20:0) + 14 // items + divider
     + footRows.length*22
     + 34                                         // total row
     + payRows.length*22 + 14                     // pay rows + divider
@@ -2598,6 +2755,13 @@ async function generateReceiptCanvas(t){
     y += 16;
     ctx.font = "600 13px -apple-system, sans-serif";
     ctx.fillText(fmtDateTime(t.estimatedReadyAt), padding, y);
+    y += 20;
+  }
+  if(t.photoCount){
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#5C6B70";
+    ctx.font = "400 12px -apple-system, sans-serif";
+    ctx.fillText(`📷 Total ${t.photoCount} pcs pakaian difoto`, padding, y);
     y += 20;
   }
   drawDivider(y); y += 22;
@@ -2884,6 +3048,23 @@ function bindPageEvents(){
   document.querySelectorAll("[data-report-tab]").forEach(btn=>{
     btn.addEventListener("click", ()=>{ state.reportTab = btn.dataset.reportTab; render(); });
   });
+  const addAssetBtn = document.querySelector("[data-action='add-asset']");
+  if(addAssetBtn) addAssetBtn.addEventListener("click", ()=> openAssetModal());
+  document.querySelectorAll("[data-action='edit-asset']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const assets = await DB.getAssets();
+      const a = assets.find(x=>x.id===btn.dataset.id);
+      if(a) openAssetModal(a);
+    });
+  });
+  document.querySelectorAll("[data-action='delete-asset']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      if(!confirm("Hapus aset ini dari daftar? (Transaksi kas yang sudah tercatat sebelumnya tidak ikut terhapus)")) return;
+      await DB.deleteAsset(btn.dataset.id);
+      toast("Aset dihapus");
+      render();
+    });
+  });
   const lrStart = document.getElementById("lrStart");
   const lrEnd = document.getElementById("lrEnd");
   if(lrStart) lrStart.addEventListener("change", ()=>{ state.labaRugiRange.start = lrStart.value; render(); });
@@ -2927,9 +3108,9 @@ function bindPageEvents(){
     bizLogoBtn.textContent = "Mengunggah...";
     bizLogoBtn.disabled = true;
     try{
-      const url = await uploadPhotoToCloudinary(file);
-      state.businessLogo = url;
-      await DB.setSetting("businessLogo", url);
+      const result = await uploadPhotoToCloudinary(file);
+      state.businessLogo = result.url;
+      await DB.setSetting("businessLogo", result.url);
       toast("Logo tersimpan");
       render();
     }catch(err){
@@ -2984,6 +3165,13 @@ function bindPageEvents(){
   if(savePrinterBtn) savePrinterBtn.addEventListener("click", async ()=>{
     await setPrinterSettings({ widthChars: parseInt(document.getElementById("printer-width").value) });
     toast("Pengaturan printer disimpan");
+    render();
+  });
+  const savePhotoRetentionBtn = document.querySelector("[data-action='save-photo-retention']");
+  if(savePhotoRetentionBtn) savePhotoRetentionBtn.addEventListener("click", async ()=>{
+    const days = parseInt(document.getElementById("photo-retention-days").value) || 10;
+    await DB.setSetting("photoRetentionDays", days);
+    toast(`Disimpan — foto akan dihapus otomatis setelah ${days} hari`);
     render();
   });
 
@@ -3274,6 +3462,53 @@ async function loadUserProfile(user){
   return rec;
 }
 
+/** Periodically (throttled to ~once/day, owner-only) deletes photos from
+ *  Cloudinary for orders that finished 30+ days ago, so storage usage stays
+ *  bounded as the business grows instead of accumulating forever. Runs
+ *  silently in the background — failures are logged, never shown to the user. */
+async function runPhotoCleanupIfDue(){
+  if(state.role !== "owner") return;
+  const ONE_DAY = 24*3600*1000;
+  try{
+    const retentionDays = await DB.getSetting("photoRetentionDays", 10);
+    const RETENTION_MS = retentionDays*ONE_DAY;
+    const lastCheck = await DB.getSetting("lastPhotoCleanupCheck", 0);
+    if(Date.now() - lastCheck < ONE_DAY) return;
+
+    const orders = await DB.getOrders();
+    const now = Date.now();
+    const toClean = orders.filter(o=>{
+      if(o.status !== "selesai" || !o.photos?.length) return false;
+      const selesaiEntry = [...(o.statusHistory||[])].reverse().find(h=>h.status==="selesai");
+      const completedAt = selesaiEntry?.at || o.createdAt;
+      return (now - completedAt) > RETENTION_MS;
+    });
+
+    if(toClean.length > 0){
+      const publicIds = [];
+      for(const o of toClean){
+        for(const p of o.photos){
+          const pid = photoPublicId(p);
+          if(pid) publicIds.push(pid);
+        }
+      }
+      if(publicIds.length > 0 && CLEANUP_SHARED_SECRET && !CLEANUP_SHARED_SECRET.startsWith("REPLACE_")){
+        await fetch("/api/cleanup-photos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ publicIds, secret: CLEANUP_SHARED_SECRET })
+        });
+      }
+      for(const o of toClean){
+        await fs.collection("orders").doc(o.id).update({ photos: [], photosCleanedAt: Date.now() });
+      }
+    }
+    await DB.setSetting("lastPhotoCleanupCheck", Date.now());
+  }catch(err){
+    console.error("Photo cleanup check failed:", err);
+  }
+}
+
 async function startApp(){
   await DB.init();
   state.businessName = await DB.getSetting("businessName", "Usaha Laundry Saya");
@@ -3289,6 +3524,7 @@ async function startApp(){
   }
 
   await render();
+  runPhotoCleanupIfDue(); // fire-and-forget, throttled to ~once/day, owner-only
 }
 
 auth.onAuthStateChanged(async (user) => {

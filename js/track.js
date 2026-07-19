@@ -74,13 +74,13 @@ async function loadOrder(){
       logoEl.style.display = "block";
     }
 
-    renderOrder(o, content);
+    renderOrder(o, content, settings);
   }catch(err){
     content.innerHTML = `<div class="card center muted">Gagal memuat data. Cek koneksi internet dan coba lagi.</div>`;
   }
 }
 
-function renderOrder(o, content){
+function renderOrder(o, content, settings = {}){
   const currentIdx = ORDER_FLOW.indexOf(o.status);
   const stepsHtml = ORDER_FLOW.map((s,i) => {
     const cls = i < currentIdx ? "done" : i === currentIdx ? "current" : "";
@@ -119,8 +119,9 @@ function renderOrder(o, content){
       <div class="card">
         <div class="muted" style="margin-bottom:8px;">Foto Barang (${o.photos.length})</div>
         <div class="photos">
-          ${o.photos.map(url=>`<img src="${url}" data-full="${url}">`).join("")}
+          ${o.photos.map(p=>{ const url = typeof p === "string" ? p : p.url; return `<img src="${url}" data-full="${url}">`; }).join("")}
         </div>
+        <p class="small muted" style="margin-top:10px;">📌 Foto ini otomatis terhapus dari sistem ${settings.photoRetentionDays || 10} hari setelah cucian selesai — simpan/screenshot dulu kalau ingin menyimpannya lebih lama.</p>
       </div>
     ` : ""}
 

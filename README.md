@@ -79,6 +79,12 @@ service cloud.firestore {
       allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
       allow delete: if isOwner() && sameBusiness(resource.data.businessId);
     }
+
+    match /assets/{id} {
+      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow create, update: if isOwner() && sameBusiness(request.resource.data.businessId);
+      allow delete: if isOwner() && sameBusiness(resource.data.businessId);
+    }
   }
 }
 ```
@@ -112,6 +118,35 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
 
 ---
 
+## 0c. Setup Pembersihan Foto Otomatis (opsional, tapi disarankan)
+
+Fitur ini otomatis menghapus foto dari pesanan yang sudah **Selesai lebih dari 10 hari** — supaya penyimpanan Cloudinary tidak terus menumpuk selamanya seiring usaha berkembang. Ini butuh 1 file kecil yang berjalan di server (bukan di HP), jadi perlu setup environment variable di Vercel:
+
+1. Buka **cloudinary.com** dashboard → halaman utama, catat **API Key** dan **API Secret** (klik "Reveal" untuk lihat Secret-nya — ini **beda** dari Upload Preset yang dipakai sebelumnya, dan harus **dirahasiakan**, jangan taruh di file `firebase-config.js`)
+2. Buka **Vercel Dashboard** → project ini → **Settings → Environment Variables** → tambahkan 4 variable ini satu-satu:
+   | Name | Value |
+   |---|---|
+   | `CLOUDINARY_CLOUD_NAME` | Cloud name Anda (sama seperti di firebase-config.js) |
+   | `CLOUDINARY_API_KEY` | API Key dari langkah 1 |
+   | `CLOUDINARY_API_SECRET` | API Secret dari langkah 1 |
+   | `CLEANUP_SECRET` | Bebas, buat sendiri string acak (misal `wsp-clean-8271-xyz`) — ini kunci supaya endpoint pembersihan tidak bisa dipicu orang lain |
+3. Setelah menambah 4 variable itu, klik **Redeploy** di tab Deployments (supaya variable barunya aktif)
+4. Buka file `js/firebase-config.js` → cari baris:
+   ```js
+   const CLEANUP_SHARED_SECRET = "REPLACE_WITH_ANY_RANDOM_STRING";
+   ```
+   Ganti isinya dengan **string acak yang SAMA PERSIS** dengan yang Anda isi untuk `CLEANUP_SECRET` di langkah 2 → Commit
+
+Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali sehari, saat Owner login) apakah ada pesanan Selesai yang fotonya sudah lebih dari batas hari yang ditentukan, lalu menghapusnya dari Cloudinary secara otomatis — tidak perlu tindakan manual apa pun setelah setup awal ini.
+
+> Jumlah harinya (default 10 hari) bisa diubah kapan saja tanpa perlu update kode — buka **Atur → Foto Pesanan**, ganti angkanya, klik Simpan.
+
+> Catatan: kalau langkah ini dilewati (tidak di-setup), fitur foto tetap berfungsi normal seperti biasa — cuma pembersihan otomatisnya yang tidak aktif, dan foto akan terus menumpuk di Cloudinary.
+>
+> Catatan keamanan: kunci `CLEANUP_SECRET` ini tetap bisa dilihat siapa saja yang membuka kode sumber aplikasi di browser (karena ini aplikasi web murni tanpa login khusus untuk API-nya) — jadi anggap ini sebagai penghalang dasar, bukan pengaman yang benar-benar kuat. Risikonya rendah karena yang bisa dilakukan cuma menghapus foto pesanan lama milik usaha sendiri, bukan akses ke data lain.
+
+---
+
 ## 1. Cara pakai cepat
 
 1. Buka aplikasinya → login (atau daftar kalau belum punya akun)
@@ -132,13 +167,17 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
    - Kalau nomor WA pelanggan diisi: kiloan otomatis terakumulasi ke saldo kg member (promo otomatis diterapkan kalau target tercapai), self-service kunjungan ke-10 otomatis gratis
 8. Setiap pesanan otomatis dapat **kode struk unik** berdasarkan jenis layanan + tanggal, contoh: `KL-160726-001` (Kiloan), `ST-160726-001` (Satuan), `SS-160726-001` (Self-Service) — nomor urut di belakang reset tiap hari per jenis layanan, jadi gampang dikenali sekilas. Total pesanan otomatis terhitung dari harga & berat/jenis layanan (bisa diubah manual), langsung tercatat sebagai pendapatan
 9. Setelah pesanan tersimpan, muncul pilihan **kirim atau cetak struk**: kirim gambar/teks via WhatsApp, cetak lewat **printer thermal Bluetooth**, atau cetak lewat **dialog print/PDF biasa** — semua format strukturnya sama persis (nama usaha, tagline, No. WA & Instagram usaha, tanggal, no. struk, pelanggan, rincian tiap item, **estimasi tanggal & jam selesai** untuk pesanan kiloan, subtotal, diskon, total, bayar, kembalian). Estimasi selesai ini juga muncul di halaman pantau online yang dikirim ke pelanggan
-10. **Foto barang (opsional)**: saat isi pesanan, ada 2 cara ambil foto:
+10. **Foto barang (opsional, maksimal 20 foto per pesanan)**: saat isi pesanan, ada 2 cara ambil foto:
     - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup
     - **"Galeri/File"** — cara lama, buka galeri atau file manager biasa
+
+    Total foto otomatis dihitung dan tampil sebagai ringkasan (misal **"Total 15 pcs pakaian difoto"**) — muncul di form saat mengambil foto, kartu pesanan di tab Cucian, dan semua jenis struk (bukan deteksi jenis pakaian otomatis, cuma jumlah keseluruhan)
 
     Kalau pesanan punya nomor pelacakan, link pantau otomatis **ikut terkirim bersama struk** (baik lewat teks maupun gambar) — tidak perlu kirim terpisah. Pelanggan buka link itu (tanpa perlu login/install apa pun) untuk lihat status pesanan real-time dan foto barangnya
 
     > Catatan: fitur "Kamera (pilih perangkat)" butuh izin akses kamera dari browser (akan muncul pop-up izin saat pertama kali dipakai). Nama kamera eksternal baru muncul jelas (misal "USB Webcam") setelah izin diberikan — sebelum itu mungkin cuma tertulis "Kamera 1", "Kamera 2".
+
+    > Catatan penyimpanan: foto disimpan di Cloudinary (kuota gratis 25 credit/bulan). Ada fitur **pembersihan otomatis** (lihat bagian "0c. Setup Pembersihan Foto Otomatis") — foto dari pesanan yang sudah Selesai lebih dari 10 hari otomatis dihapus, supaya kuota tidak terus menumpuk seiring usaha berkembang.
 
 > Catatan teknis: untuk pengiriman **struk gambar**, link pantau disertakan sebagai "keterangan/caption" lewat fitur share bawaan HP. Beberapa versi WhatsApp menampilkan caption ini otomatis di bawah gambar, sebagian lain mungkin tidak menampilkannya. Kalau linknya tidak muncul di WA, gunakan opsi **"Kirim sebagai Teks Saja"** sebagai cadangan — di situ link selalu ikut karena bagian dari teks pesan biasa.
 
@@ -151,7 +190,10 @@ Setelah ini, fitur foto pakaian di menu Cucian akan langsung berfungsi.
 13. Halaman pantau yang dibuka pelanggan **otomatis memperbarui status setiap 20 detik** — kalau dibiarkan terbuka, pelanggan langsung melihat perubahan status tanpa perlu refresh manual
 14. **Beranda** sekarang punya kartu **"Analisis Pendapatan Layanan"** — filter waktu (Hari Ini/7 Hari/Bulan Ini/Tahun Ini), rincian omzet & jumlah transaksi per jenis (Kiloan/Satuan/Self-Service) plus Total Omzet, dan grafik tren 6 bulan terakhir untuk melihat jenis layanan mana yang tumbuh paling baik
 15. **Klaim Promo**: di tab **Member**, kalau pelanggan sudah mencapai target (akumulasi kg kiloan atau 10x kunjungan self-service), muncul tombol **"Klaim"** — dipencet saat pelanggan datang mau ambil gratisannya, progress otomatis mulai lagi dari 0 setelah diklaim (tidak perlu bikin transaksi baru untuk ini)
-16. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
+16. **Owner**: buka menu **Laporan → Aset Tetap** untuk mendaftarkan mesin cuci, dryer, dan peralatan lain. Isi jenis, merk, harga perolehan, tanggal beli, dan umur manfaat (otomatis terisi estimasi umum per jenis, bisa disesuaikan) — sistem otomatis menghitung **penyusutan per bulan** (metode garis lurus), **akumulasi penyusutan**, dan **nilai buku**, yang otomatis muncul sebagai **Beban Penyusutan** di Laba Rugi dan **Akumulasi Penyusutan** (pengurang nilai aset) di Neraca setiap bulan — tidak perlu input manual tiap bulan
+
+    > Catatan: estimasi umur manfaat (default 5 tahun untuk mesin, 4 tahun untuk peralatan lain) adalah perkiraan umum praktik akuntansi, bukan patokan pajak resmi — untuk pelaporan pajak, sebaiknya dikonsultasikan ke akuntan/konsultan pajak.
+17. **Owner**: buka menu **Laporan** untuk melihat Laba Rugi (per periode, otomatis terpisah per jenis layanan: Kiloan, Satuan, Self-Service) dan Neraca (per tanggal), lalu bisa **Cetak/Simpan PDF** atau **Unduh CSV** (sudah termasuk kolom Jenis Layanan, Sub-Layanan, Berat, dan Pelanggan untuk analisis lebih dalam di Excel/Sheets)
 
 ### Catatan soal indikator waktu di tab Cucian
 Indikator "sisa waktu"/"terlambat" dihitung saat halaman Cucian dibuka/di-refresh (bukan berjalan otomatis tiap detik seperti jam) — cukup akurat untuk penggunaan sehari-hari, cukup buka ulang tab Cucian sesekali untuk lihat update terbaru.
