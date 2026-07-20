@@ -2228,18 +2228,24 @@ function memberRowHtml(m, kiloanLoyalty){
 }
 
 function openMemberPickerModal(onSelect){
-  const modal = openModal(`
-    <h2>Cari Pelanggan Terdaftar</h2>
-    <div class="cucian-search" style="margin-bottom:14px;">
-      ${ICONS.search}
-      <input type="text" id="memberSearchInput" placeholder="Cari nama atau No. WA..." autofocus>
+  const overlay = el(`
+    <div class="camera-overlay" style="z-index:75;">
+      <div class="modal-sheet">
+        <h2>Cari Pelanggan Terdaftar</h2>
+        <div class="cucian-search" style="margin-bottom:14px;">
+          ${ICONS.search}
+          <input type="text" id="memberSearchInput" placeholder="Cari nama atau No. WA..." autofocus>
+        </div>
+        <div id="memberSearchResults"></div>
+        <button type="button" class="btn btn-outline btn-block" id="closeMemberPickerBtn" style="margin-top:14px;">Tutup</button>
+      </div>
     </div>
-    <div id="memberSearchResults"></div>
   `);
+  document.body.appendChild(overlay);
 
   async function runSearch(){
-    const q = modal.querySelector("#memberSearchInput").value.trim().toLowerCase();
-    const box = modal.querySelector("#memberSearchResults");
+    const q = overlay.querySelector("#memberSearchInput").value.trim().toLowerCase();
+    const box = overlay.querySelector("#memberSearchResults");
     const all = await DB.getAllMembers();
     const filtered = q
       ? all.filter(m => (m.name||"").toLowerCase().includes(q) || (m.phone||"").includes(q))
@@ -2260,13 +2266,15 @@ function openMemberPickerModal(onSelect){
     box.querySelectorAll("[data-pick-member]").forEach(row=>{
       row.addEventListener("click", async ()=>{
         const member = all.find(m=>m.phone===row.dataset.pickMember);
-        if(member){ onSelect(member); closeModal(); }
+        if(member){ onSelect(member); overlay.remove(); }
       });
     });
   }
 
+  overlay.querySelector("#closeMemberPickerBtn").addEventListener("click", ()=> overlay.remove());
+
   let searchDebounce = null;
-  modal.querySelector("#memberSearchInput").addEventListener("input", ()=>{
+  overlay.querySelector("#memberSearchInput").addEventListener("input", ()=>{
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(runSearch, 200);
   });
@@ -2290,6 +2298,14 @@ function openAddMemberModal(existing){
     const address = modal.querySelector("#memAddress").value.trim();
     if(!phone || phone.length < 10){ toast("Isi No. HP yang valid", "warn"); return; }
     if(!name){ toast("Isi nama member", "warn"); return; }
+
+    if(!isEdit){
+      const dup = await DB.getMember(phone);
+      if(dup){
+        toast(`Nomor ini sudah terdaftar sebagai "${dup.name || phone}" — buka & edit member itu, jangan buat baru`, "warn");
+        return;
+      }
+    }
 
     const rec = existing || { phone, visits:0, freeRedeemed:0, kiloanBalance:0, kiloanTotalAll:0, kiloanFreeRedeemed:0 };
     rec.phone = phone;
