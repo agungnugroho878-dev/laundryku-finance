@@ -4,27 +4,29 @@
    folded linen, and the brass coin drawer.
    =========================================================== */
 :root{
-  --ink-navy:      #16232E;
-  --ink-navy-70:   #16232Eb3;
-  --suds-blue:     #3E7CB1;
-  --suds-blue-dark:#2C5D8A;
-  --foam-white:    #F3F7F6;
+  --ink-navy:      #16233A;
+  --ink-navy-70:   #16233Ab3;
+  --suds-blue:     #2F7FD6;
+  --suds-blue-dark:#1E5FA8;
+  --brand-deep:    #142A4D;
+  --brand-grad:    linear-gradient(135deg, #142A4D 0%, #2F7FD6 100%);
+  --foam-white:    #F2F6FB;
   --paper:         #FFFFFF;
-  --mint:          #4E9C82;
-  --mint-bg:       #E7F3EE;
-  --coin:          #C98A3B;
-  --coin-bg:       #FBF1E2;
-  --rose:          #C1554D;
-  --rose-bg:       #FBEBEA;
-  --line:          #DDE5E3;
-  --text-muted:    #5C6B70;
+  --mint:          #21A179;
+  --mint-bg:       #E4F5EE;
+  --coin:          #D68A2D;
+  --coin-bg:       #FCF1E1;
+  --rose:          #DC5B54;
+  --rose-bg:       #FDECEB;
+  --line:          #E3E8F0;
+  --text-muted:    #6B7686;
 
   --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
-  --radius-card: 14px;
-  --shadow-card: 0 1px 2px rgba(22,35,46,0.06), 0 6px 16px rgba(22,35,46,0.06);
+  --radius-card: 18px;
+  --shadow-card: 0 2px 4px rgba(20,42,77,0.05), 0 10px 24px rgba(20,42,77,0.08);
 }
 
 *{ box-sizing:border-box; }
@@ -33,10 +35,7 @@ html,body{ height:100%; }
 body{
   margin:0;
   font-family:var(--font-body);
-  background:
-    radial-gradient(circle at 92% 6%, rgba(62,124,177,.07), transparent 40%),
-    radial-gradient(circle at 6% 70%, rgba(78,156,130,.07), transparent 35%),
-    var(--foam-white);
+  background: var(--foam-white);
   background-attachment:fixed;
   color:var(--ink-navy);
   -webkit-font-smoothing:antialiased;
@@ -55,7 +54,7 @@ a{ color:var(--suds-blue); }
   flex-direction:column;
 }
 .app-header{
-  background:var(--ink-navy);
+  background:var(--brand-grad);
   color:var(--foam-white);
   padding:18px 20px 16px;
   display:flex;
@@ -89,6 +88,34 @@ a{ color:var(--suds-blue); }
 }
 
 /* ---------- Bottom nav (mobile) ---------- */
+.fab-quick-action{
+  position:fixed; left:50%; bottom:52px; transform:translateX(-50%);
+  width:58px; height:58px; border-radius:50%; border:none;
+  background:var(--brand-grad); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 8px 20px rgba(47,127,214,.4), 0 0 0 6px var(--foam-white);
+  z-index:35; cursor:pointer;
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1);
+}
+.fab-quick-action svg{ width:26px; height:26px; }
+.fab-quick-action:active{ transform:translateX(-50%) scale(.92); }
+.fab-quick-action.open svg{ transform:rotate(45deg); }
+@media (min-width:860px){ .fab-quick-action{ display:none; } }
+
+.fab-menu{
+  position:fixed; left:50%; bottom:120px; transform:translateX(-50%);
+  background:var(--paper); border-radius:16px; box-shadow:var(--shadow-card);
+  padding:8px; z-index:36; display:none; min-width:220px;
+}
+.fab-menu.open{ display:block; animation:popIn .18s cubic-bezier(.34,1.56,.64,1) both; }
+.fab-menu button{
+  display:flex; align-items:center; gap:10px; width:100%;
+  border:none; background:none; padding:11px 12px; border-radius:10px;
+  font-size:14px; font-weight:600; color:var(--ink-navy); cursor:pointer; text-align:left;
+}
+.fab-menu button:active{ background:var(--foam-white); }
+.fab-menu button svg{ width:18px; height:18px; color:var(--suds-blue); flex-shrink:0; }
+
 .bottom-nav{
   position:fixed; left:0; right:0; bottom:0;
   background:var(--paper);
@@ -193,19 +220,19 @@ a{ color:var(--suds-blue); }
 }
 
 .hero-balance{
-  background:linear-gradient(155deg, var(--ink-navy), #1E3040 55%, var(--suds-blue-dark));
+  background:linear-gradient(155deg, var(--brand-deep), var(--ink-navy) 45%, var(--suds-blue));
   color:var(--foam-white);
   border-radius:20px;
   padding:24px 22px;
   margin-bottom:14px;
   position:relative;
   overflow:hidden;
-  box-shadow:0 10px 28px rgba(22,35,46,.28);
+  box-shadow:0 10px 28px rgba(20,42,77,.28);
   animation:fadeInUp .35s ease both;
 }
 .hero-balance::before, .hero-balance::after{
   content:""; position:absolute; border-radius:50%;
-  background:radial-gradient(circle at 30% 30%, rgba(127,190,171,.35), transparent 70%);
+  background:radial-gradient(circle at 30% 30%, rgba(255,255,255,.18), transparent 70%);
   animation:floatBubble 7s ease-in-out infinite;
 }
 .hero-balance::before{ width:150px; height:150px; top:-50px; right:-30px; }
@@ -340,7 +367,10 @@ a{ color:var(--suds-blue); }
   border-left:4px solid var(--suds-blue);
   padding:16px; animation:fadeInUp .3s ease both;
   box-shadow:var(--shadow-card);
+  transition:transform .12s ease, box-shadow .15s ease;
 }
+.order-card:hover{ box-shadow:0 4px 14px rgba(22,35,46,.1); }
+.order-card:active{ transform:scale(.99); }
 .order-card.status-belum-diproses{ border-left-color:var(--suds-blue); }
 .order-card.status-sedang-diproses{ border-left-color:var(--coin); }
 .order-card.status-selesai{ border-left-color:var(--mint); opacity:.85; }
@@ -413,13 +443,13 @@ body.printing-receipt #receiptPrintArea{
 /* ---------- Buttons ---------- */
 .btn{
   display:inline-flex; align-items:center; justify-content:center; gap:6px;
-  border:none; border-radius:10px; padding:11px 16px;
+  border:none; border-radius:14px; padding:12px 18px;
   font-size:14px; font-weight:600; cursor:pointer;
 }
 .btn svg{ width:16px; height:16px; flex-shrink:0; }
-.btn-primary{ background:var(--suds-blue); color:#fff; box-shadow:0 3px 10px rgba(62,124,177,.32); }
-.btn-primary:active{ background:var(--suds-blue-dark); transform:scale(.98); }
-.btn-outline{ background:transparent; border:1.5px solid var(--line); color:var(--ink-navy); }
+.btn-primary{ background:var(--brand-grad); color:#fff; box-shadow:0 4px 14px rgba(47,127,214,.35); }
+.btn-primary:active{ filter:brightness(.94); transform:scale(.98); }
+.btn-outline{ background:var(--paper); border:1.5px solid var(--line); color:var(--ink-navy); }
 .btn-outline:active{ transform:scale(.98); background:var(--foam-white); }
 .btn-ghost{ background:none; color:var(--suds-blue-dark); padding:8px 6px; }
 .btn-danger{ background:var(--rose-bg); color:var(--rose); }
@@ -525,14 +555,14 @@ body.printing-receipt #receiptPrintArea{
   border-radius:20px; padding:7px 14px; font-size:12.5px; font-weight:600; cursor:pointer;
   transition:all .15s ease;
 }
-.period-pill.active{ background:var(--ink-navy); border-color:var(--ink-navy); color:#fff; }
+.period-pill.active{ background:var(--brand-grad); border-color:transparent; color:#fff; }
 .period-pill:active{ transform:scale(.96); }
 
 .service-stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .service-stat-tile{
   border-radius:12px; padding:12px 14px; background:var(--foam-white);
 }
-.service-stat-tile.total{ background:var(--ink-navy); }
+.service-stat-tile.total{ background:var(--brand-grad); }
 .service-stat-tile.total .service-stat-label{ color:#9FB6BF; }
 .service-stat-tile.total .service-stat-amount{ color:#fff; }
 .service-stat-tile.total .service-stat-count{ color:#C7D6DB; }

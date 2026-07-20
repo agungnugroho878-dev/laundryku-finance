@@ -95,6 +95,42 @@ function visibleNavItems(){
   return NAV_ITEMS.filter(i => i.id !== "laporan");
 }
 
+function initFabQuickAction(){
+  const fab = document.getElementById("fabQuickAction");
+  if(!fab || fab.dataset.wired) return;
+  fab.dataset.wired = "1";
+
+  function closeFabMenu(){
+    document.querySelector(".fab-menu")?.remove();
+    fab.classList.remove("open");
+  }
+
+  fab.addEventListener("click", ()=>{
+    const existing = document.querySelector(".fab-menu");
+    if(existing){ closeFabMenu(); return; }
+    fab.classList.add("open");
+    const menu = el(`
+      <div class="fab-menu open">
+        <button type="button" data-fab="order">${ICONS.plus} Pesanan Cucian Baru</button>
+        <button type="button" data-fab="in">${ICONS.arrowDown} Catat Kas Masuk</button>
+        <button type="button" data-fab="out">${ICONS.arrowUp} Catat Kas Keluar</button>
+      </div>
+    `);
+    document.body.appendChild(menu);
+    menu.querySelector("[data-fab='order']").addEventListener("click", ()=>{ closeFabMenu(); openAddOrderModal(); });
+    menu.querySelector("[data-fab='in']").addEventListener("click", ()=>{ closeFabMenu(); openAddTxModal("in"); });
+    menu.querySelector("[data-fab='out']").addEventListener("click", ()=>{ closeFabMenu(); openAddTxModal("out"); });
+    setTimeout(()=>{
+      document.addEventListener("click", function outside(e){
+        if(!menu.contains(e.target) && e.target !== fab){
+          closeFabMenu();
+          document.removeEventListener("click", outside);
+        }
+      });
+    }, 0);
+  });
+}
+
 function renderNav(){
   const items = visibleNavItems().map(i => `
     <button data-page="${i.id}" class="${state.page===i.id?'active':''}">
@@ -110,6 +146,7 @@ function renderNav(){
 async function render(){
   if(state.page === "laporan" && state.role !== "owner") state.page = "dashboard";
   renderNav();
+  initFabQuickAction();
   document.getElementById("bizName").textContent = state.businessName;
   const main = document.getElementById("appMain");
   main.classList.toggle("wide", state.page === "cucian");
@@ -1566,6 +1603,66 @@ function serviceIconFor(o){
   return ICONS.droplet;
 }
 
+function openOrderDetailModal(o){
+  const dateLabel = new Date(o.createdAt).toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"});
+  const itemLines = o.kiloanItems?.length ? o.kiloanItems.map(l=>`${l.subTypeLabel} (${l.duration} ${l.unit}) — ${l.weightKg}kg × Rp${l.rate.toLocaleString('id-ID')} = ${Reports.formatRupiah(l.subtotal)}`)
+    : o.satuanItems?.length ? o.satuanItems.map(l=>`${l.qty}x ${l.name} = ${Reports.formatRupiah(l.price*l.qty)}`)
+    : o.subTypeLabel ? [o.subTypeLabel] : [];
+
+  const modal = openModal(`
+    <h2>Detail Pesanan</h2>
+    <div class="row-between" style="margin-bottom:14px;">
+      <span class="order-id-badge">${ICONS.hash}${o.receiptNo || '------'}</span>
+      <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
+    </div>
+
+    <div class="small" style="line-height:1.9;">
+      <b>${escapeHtml(o.customerName || "Tanpa nama")}</b><br>
+      ${o.customerPhone ? `${escapeHtml(o.customerPhone)}<br>` : ""}
+      Diterima: ${dateLabel}
+      ${o.durationLabel ? ` · Estimasi: ${o.durationLabel}` : ""}
+      ${o.estimatedReadyAt ? `<br>Estimasi Selesai: <b>${fmtDateTime(o.estimatedReadyAt)}</b>` : ""}
+    </div>
+
+    <div class="small" style="margin-top:14px; padding:12px; background:var(--foam-white); border-radius:10px; line-height:1.9;">
+      ${itemLines.map(l=>`${l}<br>`).join("")}
+      ${typeof o.total === "number" ? `<b>Total: ${Reports.formatRupiah(o.total)}</b>` : ""}
+      ${o.discountAmount ? `<br><span style="color:var(--coin);">🎁 ${escapeHtml(o.discountReason||'Diskon promo')}: -${Reports.formatRupiah(o.discountAmount)}</span>` : ""}
+    </div>
+
+    ${o.note ? `<div class="small muted" style="margin-top:10px;">📝 ${escapeHtml(o.note)}</div>` : ""}
+
+    ${o.photos?.length ? `
+      <div style="margin-top:14px;">
+        <p class="small" style="font-weight:700; margin-bottom:8px;">📷 Foto Pakaian (${o.photos.length})</p>
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+          ${o.photos.map(p=>`<img src="${photoUrl(p)}" data-full="${photoUrl(p)}" class="order-detail-photo" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; cursor:pointer;">`).join("")}
+        </div>
+      </div>
+    ` : ""}
+
+    ${o.customerPhone ? `<button class="btn btn-outline btn-block" data-action="detail-send-tracking" style="margin-top:16px;">${ICONS.star} Kirim Link Pantau</button>` : ""}
+    <button class="btn btn-outline btn-block" data-action="detail-close" style="margin-top:10px;">Tutup</button>
+  `);
+
+  modal.querySelectorAll(".order-detail-photo").forEach(img=>{
+    img.addEventListener("click", ()=>{
+      window.open(img.dataset.full, "_blank");
+    });
+  });
+
+  const trackBtn = modal.querySelector("[data-action='detail-send-tracking']");
+  if(trackBtn) trackBtn.addEventListener("click", ()=>{
+    const url = trackingUrl(o.id);
+    const msg = `Halo${o.customerName ? " "+o.customerName : ""}, pantau status cucianmu (termasuk foto barang) di link ini:\n${url}`;
+    const phone = normalizePhone(o.customerPhone);
+    const waUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, "_blank");
+  });
+
+  modal.querySelector("[data-action='detail-close']").addEventListener("click", closeModal);
+}
+
 function orderCardHtml(o){
   const dateLabel = new Date(o.createdAt).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"});
   const next = nextOrderStatus(o.status);
@@ -1576,7 +1673,7 @@ function orderCardHtml(o){
     : o.subTypeLabel || "";
 
   return `
-    <div class="order-card status-${o.status}">
+    <div class="order-card status-${o.status}" data-action="view-order-detail" data-id="${o.id}" style="cursor:pointer;">
       <div class="order-card-top">
         <div class="order-service-icon status-${o.status}">${serviceIconFor(o)}</div>
         <div class="order-card-id">
@@ -1639,6 +1736,14 @@ function bindCucianControls(){
 }
 
 function bindCucianCardEvents(){
+  document.querySelectorAll("[data-action='view-order-detail']").forEach(card=>{
+    card.addEventListener("click", async (e)=>{
+      if(e.target.closest(".btn-row")) return; // don't open detail when clicking an action button
+      const orders = await DB.getOrders();
+      const o = orders.find(x => x.id === card.dataset.id);
+      if(o) openOrderDetailModal(o);
+    });
+  });
   document.querySelectorAll("[data-action='advance-order']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       await DB.updateOrderStatus(btn.dataset.id, btn.dataset.next);
