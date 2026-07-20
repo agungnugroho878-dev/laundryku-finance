@@ -2995,6 +2995,7 @@ function openAddTxModal(defaultType){
   `);
 
   const assetFieldsBox = modal.querySelector("#assetDetailFields");
+  let currentType = defaultType;
   function toggleAssetFields(){
     const categoryId = modal.querySelector("#txCategory").value;
     assetFieldsBox.style.display = (currentType === "out" && categoryId === "beli-aset") ? "block" : "none";
@@ -3006,7 +3007,6 @@ function openAddTxModal(defaultType){
   });
   toggleAssetFields();
 
-  let currentType = defaultType;
   function refreshCategoryOptions(){
     const sel = modal.querySelector("#txCategory");
     sel.innerHTML = state.categories.filter(c=>c.type===currentType && !excludedIds.includes(c.id)).map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
