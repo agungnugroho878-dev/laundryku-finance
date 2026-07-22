@@ -50,7 +50,8 @@ const state = {
   cucianSearch: "",
   dashboardPeriod: "month",
   currentBranchId: "all",
-  branches: []
+  branches: [],
+  memberSearch: ""
 };
 
 function el(html){
@@ -175,6 +176,7 @@ async function render(){
     });
   }
   if(state.page === "cucian"){ bindCucianControls(); renderCucianList(); }
+  if(state.page === "member"){ bindMemberControls(); renderMemberList(); }
 }
 
 /* ---------------- Dashboard ---------------- */
@@ -182,9 +184,9 @@ async function render(){
 /* ---------------- Analisis Pendapatan per Layanan ---------------- */
 
 const SERVICE_TYPE_META = {
-  "kiloan": { label: "Kiloan", color: "var(--suds-blue)", bg: "#EAF2F9", text: "var(--suds-blue-dark)" },
-  "satuan": { label: "Satuan", color: "var(--coin)", bg: "var(--coin-bg)", text: "var(--coin)" },
-  "self-service": { label: "Self-Service", color: "var(--mint)", bg: "var(--mint-bg)", text: "var(--mint)" }
+  "kiloan": { label: "Kiloan", color: "var(--suds-blue)", bg: "#EAF2F9", text: "var(--suds-blue-dark)", icon: "droplet" },
+  "satuan": { label: "Satuan", color: "var(--coin)", bg: "var(--coin-bg)", text: "var(--coin)", icon: "shirt" },
+  "self-service": { label: "Self-Service", color: "var(--mint)", bg: "var(--mint-bg)", text: "var(--mint)", icon: "clock" }
 };
 
 const PERIOD_LABELS = {
@@ -373,12 +375,14 @@ async function pageDashboard(){
       <div class="service-stat-grid">
         ${Object.entries(SERVICE_TYPE_META).map(([key,meta])=>`
           <div class="service-stat-tile" style="background:${meta.bg};">
+            <div class="service-stat-icon" style="background:${meta.color}; color:#fff;">${ICONS[meta.icon]}</div>
             <div class="service-stat-label" style="color:${meta.text};">${meta.label}</div>
             <div class="service-stat-amount num" style="color:${meta.text};">${Reports.formatRupiah(breakdown[key].total)}</div>
             <div class="service-stat-count">${breakdown[key].count} transaksi</div>
           </div>
         `).join("")}
         <div class="service-stat-tile total">
+          <div class="service-stat-icon" style="background:rgba(255,255,255,.2); color:#fff;">${ICONS.hash}</div>
           <div class="service-stat-label">Total Omzet</div>
           <div class="service-stat-amount num">${Reports.formatRupiah(omzetTotal)}</div>
           <div class="service-stat-count">${omzetCount} transaksi</div>
@@ -777,6 +781,7 @@ async function pagePengaturan(){
   const opening = isOwner ? await Reports.getOpeningBalances(getActiveBranch()) : null;
   const pricing = isOwner ? await getPricing() : null;
   const kiloanLoyalty = isOwner ? await getKiloanLoyalty() : null;
+  const ssLoyalty = isOwner ? await getSelfServiceLoyalty() : null;
   const printerSettings = isOwner ? await getPrinterSettings() : null;
   const photoRetentionDays = isOwner ? await DB.getSetting("photoRetentionDays", 10) : null;
   const staff = isOwner ? await DB.getBusinessStaff() : null;
@@ -865,30 +870,50 @@ async function pagePengaturan(){
     </div>
 
     <h3 class="section-title">Promo Kiloan</h3>
+    <p class="small muted" style="margin:-6px 0 10px;">Tiap jenis kiloan punya target & bentuk promo sendiri-sendiri — akumulasi beratnya juga dihitung terpisah per jenis.</p>
+    ${Object.entries(KILOAN_LABELS).map(([key,label]) => {
+      const cfg = kiloanLoyalty[key];
+      return `
+        <div class="card">
+          <div class="card-title">${label}</div>
+          <div class="field">
+            <label>Aktifkan Promo?</label>
+            <select id="kl-enabled-${key}">
+              <option value="0" ${!cfg.enabled?'selected':''}>Nonaktif</option>
+              <option value="1" ${cfg.enabled?'selected':''}>Aktif</option>
+            </select>
+          </div>
+          <div class="field"><label>Akumulasi berapa kg untuk dapat promo?</label><input type="number" id="kl-threshold-${key}" value="${cfg.thresholdKg}"></div>
+          <div class="field">
+            <label>Bentuk Promo</label>
+            <select id="kl-type-${key}">
+              <option value="discount" ${cfg.promoType==='discount'?'selected':''}>Potongan Harga (Rp)</option>
+              <option value="free-kg" ${cfg.promoType==='free-kg'?'selected':''}>Gratis Sejumlah Kg</option>
+            </select>
+          </div>
+          <div class="field" id="kl-discount-field-${key}" style="display:${cfg.promoType==='discount'?'block':'none'}">
+            <label>Nilai Potongan (Rp)</label><input type="number" id="kl-discount-amount-${key}" value="${cfg.discountAmount}">
+          </div>
+          <div class="field" id="kl-freekg-field-${key}" style="display:${cfg.promoType==='free-kg'?'block':'none'}">
+            <label>Jumlah Kg Gratis</label><input type="number" id="kl-freekg-${key}" value="${cfg.freeKg}">
+          </div>
+          <button class="btn btn-primary" data-action="save-kiloan-loyalty" data-subtype="${key}">Simpan Promo ${label}</button>
+        </div>
+      `;
+    }).join("")}
+
+    <h3 class="section-title">Promo Self-Service</h3>
     <div class="card">
-      <p class="small muted">Pelanggan yang mencuci kiloan akan otomatis terakumulasi berat cuciannya (per nomor WA). Saat mencapai target, promo otomatis diterapkan ke transaksi berikutnya.</p>
+      <p class="small muted">Pelanggan yang cuci self-service akan otomatis terhitung jumlah kunjungannya (per nomor WA). Saat mencapai target, kunjungan berikutnya otomatis gratis.</p>
       <div class="field">
-        <label>Aktifkan Promo Kiloan?</label>
-        <select id="kl-enabled">
-          <option value="0" ${!kiloanLoyalty.enabled?'selected':''}>Nonaktif</option>
-          <option value="1" ${kiloanLoyalty.enabled?'selected':''}>Aktif</option>
+        <label>Aktifkan Promo Self-Service?</label>
+        <select id="ss-enabled">
+          <option value="0" ${!ssLoyalty.enabled?'selected':''}>Nonaktif</option>
+          <option value="1" ${ssLoyalty.enabled?'selected':''}>Aktif</option>
         </select>
       </div>
-      <div class="field"><label>Akumulasi berapa kg untuk dapat promo?</label><input type="number" id="kl-threshold" value="${kiloanLoyalty.thresholdKg}"></div>
-      <div class="field">
-        <label>Bentuk Promo</label>
-        <select id="kl-type">
-          <option value="discount" ${kiloanLoyalty.promoType==='discount'?'selected':''}>Potongan Harga (Rp)</option>
-          <option value="free-kg" ${kiloanLoyalty.promoType==='free-kg'?'selected':''}>Gratis Sejumlah Kg</option>
-        </select>
-      </div>
-      <div class="field" id="kl-discount-field" style="display:${kiloanLoyalty.promoType==='discount'?'block':'none'}">
-        <label>Nilai Potongan (Rp)</label><input type="number" id="kl-discount-amount" value="${kiloanLoyalty.discountAmount}">
-      </div>
-      <div class="field" id="kl-freekg-field" style="display:${kiloanLoyalty.promoType==='free-kg'?'block':'none'}">
-        <label>Jumlah Kg Gratis</label><input type="number" id="kl-freekg" value="${kiloanLoyalty.freeKg}">
-      </div>
-      <button class="btn btn-primary" data-action="save-kiloan-loyalty">Simpan Promo Kiloan</button>
+      <div class="field"><label>Setiap berapa kali kunjungan dapat gratis 1x?</label><input type="number" id="ss-target" value="${ssLoyalty.visitTarget}" min="1"></div>
+      <button class="btn btn-primary" data-action="save-ss-loyalty">Simpan Promo Self-Service</button>
     </div>
 
     <h3 class="section-title">Pengaturan Printer</h3>
@@ -1083,7 +1108,7 @@ const DEFAULT_PRICING = {
   ]
 };
 
-const DEFAULT_KILOAN_LOYALTY = {
+const DEFAULT_KILOAN_LOYALTY_ITEM = {
   enabled: false,
   thresholdKg: 20,
   promoType: "discount", // 'discount' (Rp off) | 'free-kg' (X kg gratis)
@@ -1133,13 +1158,32 @@ async function setPricing(p){
   await DB.updateBranch(_activeBranchId, { pricing: p });
 }
 
+/** Returns { "cuci-kering-lipat": {enabled,thresholdKg,...}, "cuci-setrika": {...}, "setrika-saja": {...} } */
 async function getKiloanLoyalty(){
-  const saved = await DB.getSetting("kiloanLoyalty", null);
-  return { ...DEFAULT_KILOAN_LOYALTY, ...(saved||{}) };
+  const saved = await DB.getSetting("kiloanLoyaltyBySubtype", null);
+  const result = {};
+  for(const key of Object.keys(KILOAN_LABELS)){
+    result[key] = { ...DEFAULT_KILOAN_LOYALTY_ITEM, ...(saved?.[key]||{}) };
+  }
+  return result;
 }
 
-async function setKiloanLoyalty(v){
-  await DB.setSetting("kiloanLoyalty", v);
+/** Saves the config for just ONE kiloan sub-type, leaving the others untouched. */
+async function setKiloanLoyaltyFor(subTypeKey, config){
+  const all = await getKiloanLoyalty();
+  all[subTypeKey] = config;
+  await DB.setSetting("kiloanLoyaltyBySubtype", all);
+}
+
+const DEFAULT_SELF_SERVICE_LOYALTY = { enabled: true, visitTarget: 10 };
+
+async function getSelfServiceLoyalty(){
+  const saved = await DB.getSetting("selfServiceLoyalty", null);
+  return { ...DEFAULT_SELF_SERVICE_LOYALTY, ...(saved||{}) };
+}
+
+async function setSelfServiceLoyalty(v){
+  await DB.setSetting("selfServiceLoyalty", v);
 }
 
 function durationMs(duration, unit){
@@ -1851,6 +1895,7 @@ async function openAddOrderModal(){
   if(!branchId){ toast("Pilih cabang spesifik dulu di Beranda sebelum catat pesanan", "warn"); return; }
   const pricing = await getPricing();
   const kiloanLoyalty = await getKiloanLoyalty();
+  const ssLoyalty = await getSelfServiceLoyalty();
   const kiloanJenisOptions = Object.entries(KILOAN_LABELS).map(([id,label])=>`<option value="${id}">${label}</option>`).join("");
   const selfServiceOptions = Object.entries(SELF_SERVICE_LABELS).map(([id,label])=>`<option value="${id}">${label} (Rp${pricing.selfService[id].toLocaleString('id-ID')})</option>`).join("");
   const satuanOptions = pricing.satuan.map(s=>`<option value="${s.id}">${s.name} (${Reports.formatRupiah(s.price)})</option>`).join("");
@@ -2055,9 +2100,11 @@ async function openAddOrderModal(){
     } else if(serviceType === "kiloan"){
       total = kiloanCart.reduce((sum,l) => sum + l.subtotal, 0);
       if(pendingKiloanPromo){
-        const totalWeight = kiloanCart.reduce((s,l)=>s+l.weightKg,0) || 1;
-        const avgRate = total / totalWeight;
-        total = Math.max(0, total - computeDiscountRp(pendingKiloanPromo, avgRate));
+        const subtypeLines = kiloanCart.filter(l=>l.subType===pendingKiloanPromo.subType);
+        const subtypeTotal = subtypeLines.reduce((s,l)=>s+l.subtotal,0);
+        const subtypeWeight = subtypeLines.reduce((s,l)=>s+l.weightKg,0) || 1;
+        const avgRate = subtypeTotal / subtypeWeight;
+        total = Math.max(0, total - Math.min(computeDiscountRp(pendingKiloanPromo, avgRate), subtypeTotal));
       }
     } else {
       const subType = modal.querySelector("#ordSubTypeSelf").value;
@@ -2074,17 +2121,31 @@ async function openAddOrderModal(){
     if(serviceType === "self-service"){
       if(phone.length < 8){ box.innerHTML = ""; return; }
       const status = await getMemberStatus(phone);
-      box.innerHTML = loyaltyNoteHtml(status);
-      if(status.visits >= LOYALTY_TARGET){ modal.querySelector("#ordTotal").value = 0; recalcKembalian(); }
+      box.innerHTML = loyaltyNoteHtml(status, ssLoyalty);
+      const ssTarget = ssLoyalty.visitTarget || 10;
+      if(ssLoyalty.enabled && status.visits >= ssTarget){ modal.querySelector("#ordTotal").value = 0; recalcKembalian(); }
     } else if(serviceType === "kiloan"){
       if(phone.length < 8){ box.innerHTML = ""; pendingKiloanPromo = null; recalcTotal(); return; }
       const status = await getMemberStatus(phone);
-      const cartWeight = kiloanCart.reduce((s,l)=>s+l.weightKg,0);
-      const projected = (status.kiloanBalance || 0) + cartWeight;
-      box.innerHTML = kiloanLoyaltyNoteHtml({ kiloanBalance: projected }, kiloanLoyalty);
-      pendingKiloanPromo = (kiloanLoyalty.enabled && projected >= kiloanLoyalty.thresholdKg)
-        ? { applied:true, promoType:kiloanLoyalty.promoType, discountAmount:kiloanLoyalty.discountAmount, freeKg:kiloanLoyalty.freeKg, thresholdKg:kiloanLoyalty.thresholdKg }
-        : null;
+      const existingBalances = (typeof status.kiloanBalance === "object" && status.kiloanBalance) || {};
+      const cartWeightBySubtype = {};
+      for(const line of kiloanCart){
+        cartWeightBySubtype[line.subType] = (cartWeightBySubtype[line.subType]||0) + line.weightKg;
+      }
+      const projectedBalances = { ...existingBalances };
+      for(const [subType, w] of Object.entries(cartWeightBySubtype)){
+        projectedBalances[subType] = (projectedBalances[subType]||0) + w;
+      }
+      box.innerHTML = kiloanLoyaltyNoteHtml({ kiloanBalance: projectedBalances }, kiloanLoyalty);
+
+      pendingKiloanPromo = null;
+      for(const [subType] of Object.entries(cartWeightBySubtype)){
+        const cfg = kiloanLoyalty[subType];
+        if(cfg?.enabled && projectedBalances[subType] >= cfg.thresholdKg){
+          pendingKiloanPromo = { applied:true, subType, subTypeLabel: KILOAN_LABELS[subType], promoType:cfg.promoType, discountAmount:cfg.discountAmount, freeKg:cfg.freeKg, thresholdKg:cfg.thresholdKg };
+          break;
+        }
+      }
       recalcTotal();
     } else {
       box.innerHTML = "";
@@ -2203,14 +2264,16 @@ async function openAddOrderModal(){
       durationLabel = durLine.label;
 
       if(customerPhone){
-        const { promo } = await recordKiloanAccumulation(customerPhone, customerName, totalWeightKg, kiloanLoyalty);
+        const { promo } = await recordKiloanAccumulation(customerPhone, customerName, kiloanCart, kiloanLoyalty);
         if(promo.applied){
-          const baseTotal = kiloanCart.reduce((s,l)=>s+l.subtotal,0);
-          const avgRate = baseTotal / (totalWeightKg || 1);
-          discountAmount = Math.min(computeDiscountRp(promo, avgRate), baseTotal);
+          const subtypeLines = kiloanCart.filter(l=>l.subType===promo.subType);
+          const subtypeTotal = subtypeLines.reduce((s,l)=>s+l.subtotal,0);
+          const subtypeWeight = subtypeLines.reduce((s,l)=>s+l.weightKg,0);
+          const avgRate = subtypeTotal / (subtypeWeight || 1);
+          discountAmount = Math.min(computeDiscountRp(promo, avgRate), subtypeTotal);
           discountReason = promo.promoType === "discount"
-            ? `Promo Member (akumulasi ${promo.thresholdKg}kg): Potongan ${Reports.formatRupiah(promo.discountAmount)}`
-            : `Promo Member (akumulasi ${promo.thresholdKg}kg): Gratis ${promo.freeKg}kg`;
+            ? `Promo Member ${promo.subTypeLabel} (akumulasi ${promo.thresholdKg}kg): Potongan ${Reports.formatRupiah(promo.discountAmount)}`
+            : `Promo Member ${promo.subTypeLabel} (akumulasi ${promo.thresholdKg}kg): Gratis ${promo.freeKg}kg`;
         }
       }
     } else if(serviceType === "satuan"){
@@ -2274,33 +2337,134 @@ async function openAddOrderModal(){
   });
 }
 
+function bindMemberRowEvents(){
+  document.querySelectorAll("[data-action='edit-member']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const m = await DB.getMember(btn.dataset.phone);
+      if(m) openAddMemberModal(m);
+    });
+  });
+  document.querySelectorAll("[data-action='wa-member']").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      window.open(`https://wa.me/${btn.dataset.phone}`, "_blank");
+    });
+  });
+  document.querySelectorAll("[data-action='claim-kiloan']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const key = btn.dataset.subtype;
+      const m = await DB.getMember(btn.dataset.phone);
+      const kiloanLoyalty = await getKiloanLoyalty();
+      const cfg = kiloanLoyalty[key];
+      const balance = (typeof m?.kiloanBalance === "object" && m.kiloanBalance?.[key]) || 0;
+      if(!m || balance < cfg.thresholdKg){ toast("Belum memenuhi target", "warn"); return; }
+      if(!confirm(`Klaim promo ${KILOAN_LABELS[key]} untuk ${m.name || m.phone} sekarang?`)) return;
+      m.kiloanBalance[key] -= cfg.thresholdKg;
+      m.kiloanFreeRedeemed = m.kiloanFreeRedeemed || {};
+      m.kiloanFreeRedeemed[key] = (m.kiloanFreeRedeemed[key]||0) + 1;
+      await DB.upsertMember(m);
+      toast(`Promo ${KILOAN_LABELS[key]} diklaim — progress mulai lagi dari awal`);
+      renderMemberList();
+    });
+  });
+  document.querySelectorAll("[data-action='claim-selfservice']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const m = await DB.getMember(btn.dataset.phone);
+      const ssLoyalty = await getSelfServiceLoyalty();
+      const target = ssLoyalty.visitTarget || 10;
+      if(!m || (m.visits||0) < target){ toast("Belum memenuhi target", "warn"); return; }
+      if(!confirm(`Klaim gratis 1x self-service untuk ${m.name || m.phone} sekarang?`)) return;
+      m.visits = 0;
+      m.freeRedeemed = (m.freeRedeemed||0) + 1;
+      await DB.upsertMember(m);
+      toast("Gratis 1x diklaim — progress mulai lagi dari awal");
+      renderMemberList();
+    });
+  });
+}
+
 async function pageMember(){
-  const members = (await DB.getAllMembers()).sort((a,b)=> (b.visits+b.freeRedeemed*LOYALTY_TARGET) - (a.visits+a.freeRedeemed*LOYALTY_TARGET));
   const kiloanLoyalty = await getKiloanLoyalty();
+  const ssLoyalty = await getSelfServiceLoyalty();
   return `
     <button class="btn btn-primary btn-block" data-action="add-member" style="margin-bottom:14px;">${ICONS.plus} Tambah Member</button>
     <div class="card" style="background:linear-gradient(120deg, var(--coin-bg), #fff 80%); border:1px solid #F0DFC0;">
       <div class="card-title">Program Loyalty</div>
-      <div class="small" style="line-height:1.5;">
-        Self-Service: setiap <b>${LOYALTY_TARGET}x</b> kunjungan, gratis 1x cuci+kering berikutnya.<br>
-        Kiloan: ${kiloanLoyalty.enabled ? `setiap akumulasi <b>${kiloanLoyalty.thresholdKg}kg</b>, dapat ${kiloanLoyalty.promoType==='discount' ? `potongan <b>${Reports.formatRupiah(kiloanLoyalty.discountAmount)}</b>` : `gratis <b>${kiloanLoyalty.freeKg}kg</b>`}.` : `<span class="muted">belum diaktifkan — atur di Atur → Promo Kiloan.</span>`}
+      <div class="small" style="line-height:1.7;">
+        Self-Service: ${ssLoyalty.enabled ? `setiap <b>${ssLoyalty.visitTarget}x</b> kunjungan, gratis 1x cuci+kering berikutnya.` : `<span class="muted">belum diaktifkan — atur di Atur → Promo Self-Service.</span>`}<br>
+        ${Object.entries(KILOAN_LABELS).map(([key,label])=>{
+          const cfg = kiloanLoyalty[key];
+          return `${label}: ${cfg.enabled ? `setiap akumulasi <b>${cfg.thresholdKg}kg</b>, dapat ${cfg.promoType==='discount' ? `potongan <b>${Reports.formatRupiah(cfg.discountAmount)}</b>` : `gratis <b>${cfg.freeKg}kg</b>`}.` : `<span class="muted">belum diaktifkan.</span>`}`;
+        }).join("<br>")}
       </div>
     </div>
-    <div class="card">
-      <div class="card-title">Daftar Member (${members.length})</div>
-      ${members.length===0 ? emptyState("Belum ada member. Tambahkan manual, atau otomatis muncul saat transaksi cucian diisi nomor WA.") :
-        members.map(m=>memberRowHtml(m, kiloanLoyalty)).join("")}
+    <div class="cucian-search" style="margin-bottom:14px;">
+      ${ICONS.search}
+      <input type="text" id="memberListSearchInput" placeholder="Cari nama atau No. WA..." value="${escapeHtml(state.memberSearch||'')}">
     </div>
+    <div id="memberListContainer"></div>
   `;
 }
 
-function memberRowHtml(m, kiloanLoyalty){
-  const ssPct = Math.min(100, (m.visits / LOYALTY_TARGET) * 100);
-  const ssReady = m.visits >= LOYALTY_TARGET;
-  const kBalance = m.kiloanBalance || 0;
-  const kThreshold = kiloanLoyalty?.thresholdKg || 20;
-  const kPct = Math.min(100, (kBalance / kThreshold) * 100);
-  const kReady = kiloanLoyalty?.enabled && kBalance >= kThreshold;
+async function renderMemberList(){
+  const container = document.getElementById("memberListContainer");
+  if(!container) return;
+  const kiloanLoyalty = await getKiloanLoyalty();
+  const ssLoyalty = await getSelfServiceLoyalty();
+  const ssTarget = ssLoyalty.visitTarget || 10;
+  const all = (await DB.getAllMembers()).sort((a,b)=> (b.visits+b.freeRedeemed*ssTarget) - (a.visits+a.freeRedeemed*ssTarget));
+  const q = (state.memberSearch||"").trim().toLowerCase();
+  const members = q
+    ? all.filter(m => (m.name||"").toLowerCase().includes(q) || (m.phone||"").includes(q))
+    : all;
+
+  container.innerHTML = `
+    <div class="card">
+      <div class="card-title">Daftar Member (${members.length}${q ? ` dari ${all.length}` : ""})</div>
+      ${members.length===0 ? emptyState(q ? "Tidak ditemukan." : "Belum ada member. Tambahkan manual, atau otomatis muncul saat transaksi cucian diisi nomor WA.") :
+        members.map(m=>memberRowHtml(m, kiloanLoyalty, ssLoyalty)).join("")}
+    </div>
+  `;
+  bindMemberRowEvents();
+}
+
+function bindMemberControls(){
+  const input = document.getElementById("memberListSearchInput");
+  if(!input) return;
+  let debounce = null;
+  input.addEventListener("input", ()=>{
+    clearTimeout(debounce);
+    debounce = setTimeout(()=>{
+      state.memberSearch = input.value;
+      renderMemberList();
+    }, 200);
+  });
+}
+
+function memberRowHtml(m, kiloanLoyalty, ssLoyalty){
+  const ssTarget = ssLoyalty?.visitTarget || 10;
+  const ssPct = Math.min(100, (m.visits / ssTarget) * 100);
+  const ssReady = ssLoyalty?.enabled && m.visits >= ssTarget;
+  const kBalances = (typeof m.kiloanBalance === "object" && m.kiloanBalance) || {};
+  const kTotals = (typeof m.kiloanTotalAll === "object" && m.kiloanTotalAll) || {};
+
+  const kiloanSections = Object.entries(KILOAN_LABELS).map(([key,label])=>{
+    const cfg = kiloanLoyalty?.[key];
+    const balance = kBalances[key] || 0;
+    const total = kTotals[key] || 0;
+    const threshold = cfg?.thresholdKg || 20;
+    const pct = Math.min(100, (balance / threshold) * 100);
+    const ready = cfg?.enabled && balance >= threshold;
+    return `
+      <div style="padding:10px 0; border-bottom:1px dashed var(--line);">
+        <div class="small muted">${label} (total ${total.toFixed(1)}kg)</div>
+        ${cfg?.enabled ? `
+          <div class="loyalty-bar" style="margin-top:4px;"><div class="loyalty-fill" style="width:${pct}%"></div></div>
+          <div class="small" style="margin-top:3px;">${ready ? "🎉 Siap promo!" : `${balance.toFixed(1)}/${threshold} kg`}</div>
+          ${ready ? `<button class="btn btn-primary btn-block" style="margin-top:8px; background:var(--coin);" data-action="claim-kiloan" data-phone="${m.phone}" data-subtype="${key}">Klaim Promo ${label}</button>` : ""}
+        ` : `<div class="small muted" style="margin-top:4px;">Promo belum aktif</div>`}
+      </div>
+    `;
+  }).join("");
 
   return `
     <div class="card" style="margin-bottom:10px; box-shadow:none; border:1px solid var(--line);">
@@ -2314,18 +2478,15 @@ function memberRowHtml(m, kiloanLoyalty){
           <button class="tx-del" data-action="wa-member" data-phone="${m.phone}" title="Chat WA">${ICONS.chat}</button>
         </div>
       </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px;">
-        <div>
-          <div class="small muted">Kiloan (total ${(m.kiloanTotalAll||0).toFixed(1)}kg)</div>
-          <div class="loyalty-bar" style="margin-top:4px;"><div class="loyalty-fill" style="width:${kPct}%"></div></div>
-          <div class="small" style="margin-top:3px;">${kReady ? "🎉 Siap promo!" : `${kBalance.toFixed(1)}/${kThreshold} kg`}</div>
-          ${kReady ? `<button class="btn btn-primary btn-block" style="margin-top:8px; background:var(--coin);" data-action="claim-kiloan" data-phone="${m.phone}">Klaim Promo Kiloan</button>` : ""}
-        </div>
-        <div>
+      <div style="margin-top:8px;">
+        ${kiloanSections}
+        <div style="padding-top:10px;">
           <div class="small muted">Self-Service</div>
-          <div class="loyalty-bar" style="margin-top:4px;"><div class="loyalty-fill" style="width:${ssPct}%"></div></div>
-          <div class="small" style="margin-top:3px;">${ssReady ? "🎉 Siap gratis!" : `${m.visits||0}/${LOYALTY_TARGET} kunjungan`}</div>
-          ${ssReady ? `<button class="btn btn-primary btn-block" style="margin-top:8px; background:var(--mint);" data-action="claim-selfservice" data-phone="${m.phone}">Klaim Gratis 1x</button>` : ""}
+          ${ssLoyalty?.enabled ? `
+            <div class="loyalty-bar" style="margin-top:4px;"><div class="loyalty-fill" style="width:${ssPct}%"></div></div>
+            <div class="small" style="margin-top:3px;">${ssReady ? "🎉 Siap gratis!" : `${m.visits||0}/${ssTarget} kunjungan`}</div>
+            ${ssReady ? `<button class="btn btn-primary btn-block" style="margin-top:8px; background:var(--mint);" data-action="claim-selfservice" data-phone="${m.phone}">Klaim Gratis 1x</button>` : ""}
+          ` : `<div class="small muted" style="margin-top:4px;">Promo belum aktif — atur di Atur → Promo Self-Service</div>`}
         </div>
       </div>
     </div>
@@ -2441,7 +2602,7 @@ async function getMemberStatus(phone){
   const p = normalizePhone(phone);
   if(!p) return null;
   const m = await DB.getMember(p);
-  return m || { phone: p, name: "", address: "", visits: 0, freeRedeemed: 0, kiloanBalance: 0, kiloanTotalAll: 0, kiloanFreeRedeemed: 0 };
+  return m || { phone: p, name: "", address: "", visits: 0, freeRedeemed: 0, kiloanBalance: {}, kiloanTotalAll: {}, kiloanFreeRedeemed: {} };
 }
 
 /** Keeps the member directory in sync for ANY service type (including Satuan,
@@ -2464,11 +2625,13 @@ async function ensureMemberIdentity(phone, name){
 async function recordSelfServiceVisit(phone, name){
   const p = normalizePhone(phone);
   if(!p) return null;
+  const ssLoyalty = await getSelfServiceLoyalty();
+  const target = ssLoyalty.visitTarget || 10;
   let m = await DB.getMember(p);
   if(!m) m = { phone: p, name: name || "", visits: 0, freeRedeemed: 0 };
   else if(!m.name && name) m.name = name;
 
-  const isFree = m.visits >= LOYALTY_TARGET;
+  const isFree = ssLoyalty.enabled && m.visits >= target;
   if(isFree){
     m.visits = 0;
     m.freeRedeemed = (m.freeRedeemed || 0) + 1;
@@ -2480,17 +2643,21 @@ async function recordSelfServiceVisit(phone, name){
   return { isFree, progress: m.visits, member: m };
 }
 
-function loyaltyNoteHtml(status){
+function loyaltyNoteHtml(status, ssLoyalty){
   if(!status) return "";
-  if(status.visits >= LOYALTY_TARGET){
+  const target = ssLoyalty?.visitTarget || 10;
+  if(!ssLoyalty?.enabled){
+    return `<div class="loyalty-note"><div class="small muted">Promo Self-Service belum aktif — atur di Atur → Promo Self-Service.</div></div>`;
+  }
+  if(status.visits >= target){
     return `<div class="loyalty-note free">🎉 GRATIS! Kunjungan ini adalah bonus member (cuci+kering gratis).</div>`;
   }
-  const remaining = LOYALTY_TARGET - status.visits;
-  const label = status.visits === 0 ? "Pelanggan baru — mulai kumpulkan poin kunjungan." : `Progress: ${status.visits}/${LOYALTY_TARGET} menuju gratis 1x cuci+kering.`;
+  const remaining = target - status.visits;
+  const label = status.visits === 0 ? "Pelanggan baru — mulai kumpulkan poin kunjungan." : `Progress: ${status.visits}/${target} menuju gratis 1x cuci+kering.`;
   return `
     <div class="loyalty-note">
       <div class="small">${label}</div>
-      <div class="loyalty-bar"><div class="loyalty-fill" style="width:${(status.visits/LOYALTY_TARGET)*100}%"></div></div>
+      <div class="loyalty-bar"><div class="loyalty-fill" style="width:${(status.visits/target)*100}%"></div></div>
       ${status.visits>0 ? `<div class="small muted">${remaining} kali lagi menuju gratis</div>` : ""}
     </div>
   `;
@@ -2499,50 +2666,72 @@ function loyaltyNoteHtml(status){
 /* ---------------- Kiloan loyalty (akumulasi kg -> promo) ---------------- */
 
 /** Called after saving a kiloan transaction. Accumulates weight and applies/reset promo. */
-async function recordKiloanAccumulation(phone, name, weightKg, kiloanLoyalty){
+/** kiloanCart: [{subType, weightKg, ...}]. kiloanLoyalty: per-subtype config from getKiloanLoyalty().
+ *  Accumulates weight separately per sub-type, and returns at most one qualifying promo
+ *  (the first sub-type in the cart that hits its own threshold). */
+async function recordKiloanAccumulation(phone, name, kiloanCart, kiloanLoyalty){
   const p = normalizePhone(phone);
   if(!p) return null;
   let m = await DB.getMember(p);
-  if(!m) m = { phone: p, name: name || "", visits: 0, freeRedeemed: 0, kiloanBalance: 0, kiloanTotalAll: 0, kiloanFreeRedeemed: 0 };
+  if(!m) m = { phone: p, name: name || "", visits: 0, freeRedeemed: 0 };
   else if(!m.name && name) m.name = name;
 
-  m.kiloanBalance = (m.kiloanBalance || 0) + weightKg;
-  m.kiloanTotalAll = (m.kiloanTotalAll || 0) + weightKg;
+  // Migrate legacy flat-number kiloan fields (pre per-subtype tracking) into the new per-subtype shape.
+  if(typeof m.kiloanBalance !== "object" || m.kiloanBalance === null) m.kiloanBalance = {};
+  if(typeof m.kiloanTotalAll !== "object" || m.kiloanTotalAll === null) m.kiloanTotalAll = {};
+  if(typeof m.kiloanFreeRedeemed !== "object" || m.kiloanFreeRedeemed === null) m.kiloanFreeRedeemed = {};
 
-  let promo = { applied: false };
-  if(kiloanLoyalty.enabled && m.kiloanBalance >= kiloanLoyalty.thresholdKg){
-    promo = {
-      applied: true,
-      promoType: kiloanLoyalty.promoType,
-      discountAmount: kiloanLoyalty.discountAmount,
-      freeKg: kiloanLoyalty.freeKg,
-      thresholdKg: kiloanLoyalty.thresholdKg
-    };
-    m.kiloanBalance -= kiloanLoyalty.thresholdKg; // carry-over remainder, not a hard reset
-    m.kiloanFreeRedeemed = (m.kiloanFreeRedeemed || 0) + 1;
+  const weightBySubtype = {};
+  for(const line of kiloanCart){
+    weightBySubtype[line.subType] = (weightBySubtype[line.subType]||0) + line.weightKg;
   }
+
+  let qualifyingPromo = null;
+  for(const [subType, weightKg] of Object.entries(weightBySubtype)){
+    m.kiloanBalance[subType] = (m.kiloanBalance[subType]||0) + weightKg;
+    m.kiloanTotalAll[subType] = (m.kiloanTotalAll[subType]||0) + weightKg;
+
+    const cfg = kiloanLoyalty?.[subType];
+    if(!qualifyingPromo && cfg?.enabled && m.kiloanBalance[subType] >= cfg.thresholdKg){
+      qualifyingPromo = {
+        applied: true, subType, subTypeLabel: KILOAN_LABELS[subType],
+        promoType: cfg.promoType, discountAmount: cfg.discountAmount,
+        freeKg: cfg.freeKg, thresholdKg: cfg.thresholdKg
+      };
+      m.kiloanBalance[subType] -= cfg.thresholdKg; // carry-over remainder, not a hard reset
+      m.kiloanFreeRedeemed[subType] = (m.kiloanFreeRedeemed[subType]||0) + 1;
+    }
+  }
+
   m.lastKiloanVisit = Reports.todayStr();
   await DB.upsertMember(m);
-  return { promo, member: m };
+  return { promo: qualifyingPromo || { applied: false }, member: m };
 }
 
+/** status: a member record (or getMemberStatus() result). kiloanLoyalty: per-subtype config. */
 function kiloanLoyaltyNoteHtml(status, kiloanLoyalty){
-  if(!kiloanLoyalty || !kiloanLoyalty.enabled) return "";
-  const balance = status?.kiloanBalance || 0;
-  if(balance >= kiloanLoyalty.thresholdKg){
-    const promoText = kiloanLoyalty.promoType === "discount"
-      ? `Potongan ${Reports.formatRupiah(kiloanLoyalty.discountAmount)}`
-      : `Gratis ${kiloanLoyalty.freeKg} kg`;
-    return `<div class="loyalty-note free">🎉 Promo aktif! ${promoText} akan otomatis diterapkan ke total.</div>`;
-  }
-  const remaining = kiloanLoyalty.thresholdKg - balance;
-  return `
-    <div class="loyalty-note">
-      <div class="small">Akumulasi kiloan: ${balance.toFixed(1)}/${kiloanLoyalty.thresholdKg} kg</div>
-      <div class="loyalty-bar"><div class="loyalty-fill" style="width:${Math.min(100,(balance/kiloanLoyalty.thresholdKg)*100)}%"></div></div>
-      <div class="small muted">${remaining.toFixed(1)} kg lagi menuju promo</div>
-    </div>
-  `;
+  if(!kiloanLoyalty) return "";
+  const balances = (typeof status?.kiloanBalance === "object" && status.kiloanBalance) || {};
+  const sections = Object.entries(KILOAN_LABELS).map(([key,label])=>{
+    const cfg = kiloanLoyalty[key];
+    if(!cfg?.enabled) return "";
+    const balance = balances[key] || 0;
+    if(balance >= cfg.thresholdKg){
+      const promoText = cfg.promoType === "discount"
+        ? `Potongan ${Reports.formatRupiah(cfg.discountAmount)}`
+        : `Gratis ${cfg.freeKg} kg`;
+      return `<div class="loyalty-note free">🎉 ${label}: promo aktif! ${promoText} akan otomatis diterapkan.</div>`;
+    }
+    const remaining = cfg.thresholdKg - balance;
+    return `
+      <div class="loyalty-note">
+        <div class="small">${label}: ${balance.toFixed(1)}/${cfg.thresholdKg} kg</div>
+        <div class="loyalty-bar"><div class="loyalty-fill" style="width:${Math.min(100,(balance/cfg.thresholdKg)*100)}%"></div></div>
+        <div class="small muted">${remaining.toFixed(1)} kg lagi menuju promo</div>
+      </div>
+    `;
+  }).filter(Boolean);
+  return sections.join("");
 }
 
 /* ---------------- Struk via WhatsApp ---------------- */
@@ -3296,37 +3485,6 @@ function bindPageEvents(){
   });
   const addMemberBtn = document.querySelector("[data-action='add-member']");
   if(addMemberBtn) addMemberBtn.addEventListener("click", ()=> openAddMemberModal(null));
-  document.querySelectorAll("[data-action='edit-member']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const m = await DB.getMember(btn.dataset.phone);
-      if(m) openAddMemberModal(m);
-    });
-  });
-  document.querySelectorAll("[data-action='claim-kiloan']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const m = await DB.getMember(btn.dataset.phone);
-      const kiloanLoyalty = await getKiloanLoyalty();
-      if(!m || (m.kiloanBalance||0) < kiloanLoyalty.thresholdKg){ toast("Belum memenuhi target", "warn"); return; }
-      if(!confirm(`Klaim promo kiloan untuk ${m.name || m.phone} sekarang?`)) return;
-      m.kiloanBalance -= kiloanLoyalty.thresholdKg;
-      m.kiloanFreeRedeemed = (m.kiloanFreeRedeemed||0) + 1;
-      await DB.upsertMember(m);
-      toast("Promo kiloan diklaim — progress mulai lagi dari awal");
-      render();
-    });
-  });
-  document.querySelectorAll("[data-action='claim-selfservice']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const m = await DB.getMember(btn.dataset.phone);
-      if(!m || (m.visits||0) < LOYALTY_TARGET){ toast("Belum memenuhi target", "warn"); return; }
-      if(!confirm(`Klaim gratis 1x self-service untuk ${m.name || m.phone} sekarang?`)) return;
-      m.visits = 0;
-      m.freeRedeemed = (m.freeRedeemed||0) + 1;
-      await DB.upsertMember(m);
-      toast("Gratis 1x diklaim — progress mulai lagi dari awal");
-      render();
-    });
-  });
   const addOrderBtn = document.querySelector("[data-action='add-order']");
   if(addOrderBtn) addOrderBtn.addEventListener("click", openAddOrderModal);
   document.querySelectorAll("[data-report-tab]").forEach(btn=>{
@@ -3426,22 +3584,36 @@ function bindPageEvents(){
   const openPriceBtn = document.querySelector("[data-action='open-price-settings']");
   if(openPriceBtn) openPriceBtn.addEventListener("click", openPriceSettingsModal);
 
-  const klType = document.getElementById("kl-type");
-  if(klType) klType.addEventListener("change", ()=>{
-    document.getElementById("kl-discount-field").style.display = klType.value === "discount" ? "block" : "none";
-    document.getElementById("kl-freekg-field").style.display = klType.value === "free-kg" ? "block" : "none";
+  Object.keys(KILOAN_LABELS).forEach(key=>{
+    const klType = document.getElementById(`kl-type-${key}`);
+    if(klType) klType.addEventListener("change", ()=>{
+      document.getElementById(`kl-discount-field-${key}`).style.display = klType.value === "discount" ? "block" : "none";
+      document.getElementById(`kl-freekg-field-${key}`).style.display = klType.value === "free-kg" ? "block" : "none";
+    });
   });
 
-  const saveKiloanLoyaltyBtn = document.querySelector("[data-action='save-kiloan-loyalty']");
-  if(saveKiloanLoyaltyBtn) saveKiloanLoyaltyBtn.addEventListener("click", async ()=>{
-    await setKiloanLoyalty({
-      enabled: document.getElementById("kl-enabled").value === "1",
-      thresholdKg: parseFloat(document.getElementById("kl-threshold").value) || 0,
-      promoType: document.getElementById("kl-type").value,
-      discountAmount: parseFloat(document.getElementById("kl-discount-amount").value) || 0,
-      freeKg: parseFloat(document.getElementById("kl-freekg").value) || 0
+  document.querySelectorAll("[data-action='save-kiloan-loyalty']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const key = btn.dataset.subtype;
+      await setKiloanLoyaltyFor(key, {
+        enabled: document.getElementById(`kl-enabled-${key}`).value === "1",
+        thresholdKg: parseFloat(document.getElementById(`kl-threshold-${key}`).value) || 0,
+        promoType: document.getElementById(`kl-type-${key}`).value,
+        discountAmount: parseFloat(document.getElementById(`kl-discount-amount-${key}`).value) || 0,
+        freeKg: parseFloat(document.getElementById(`kl-freekg-${key}`).value) || 0
+      });
+      toast(`Promo ${KILOAN_LABELS[key]} disimpan`);
+      render();
     });
-    toast("Promo kiloan disimpan");
+  });
+
+  const saveSsLoyaltyBtn = document.querySelector("[data-action='save-ss-loyalty']");
+  if(saveSsLoyaltyBtn) saveSsLoyaltyBtn.addEventListener("click", async ()=>{
+    await setSelfServiceLoyalty({
+      enabled: document.getElementById("ss-enabled").value === "1",
+      visitTarget: parseInt(document.getElementById("ss-target").value) || 10
+    });
+    toast("Promo self-service disimpan");
     render();
   });
 

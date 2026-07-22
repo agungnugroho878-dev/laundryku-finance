@@ -560,12 +560,17 @@ body.printing-receipt #receiptPrintArea{
 
 .service-stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .service-stat-tile{
-  border-radius:12px; padding:12px 14px; background:var(--foam-white);
+  border-radius:14px; padding:14px; background:var(--foam-white);
 }
+.service-stat-icon{
+  width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center;
+  margin-bottom:9px;
+}
+.service-stat-icon svg{ width:16px; height:16px; }
 .service-stat-tile.total{ background:var(--brand-grad); }
-.service-stat-tile.total .service-stat-label{ color:#9FB6BF; }
+.service-stat-tile.total .service-stat-label{ color:#B9CEEA; }
 .service-stat-tile.total .service-stat-amount{ color:#fff; }
-.service-stat-tile.total .service-stat-count{ color:#C7D6DB; }
+.service-stat-tile.total .service-stat-count{ color:#9FB6D6; }
 .service-stat-label{ font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
 .service-stat-amount{ font-size:17px; font-weight:700; margin-top:4px; }
 .service-stat-count{ font-size:11px; color:var(--text-muted); margin-top:2px; }
