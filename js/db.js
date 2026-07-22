@@ -214,6 +214,35 @@ const DB = {
     return list;
   },
 
+  /** Only 'belum-diproses' / 'sedang-diproses' orders — a real Firestore-level
+   *  filter that never touches historical 'selesai' orders, keeping the
+   *  Cucian tab's active-work view fast regardless of how much history exists. */
+  async getActiveOrders(){
+    const snap = await fs.collection("orders")
+      .where("businessId","==",_businessId)
+      .where("status","in",["belum-diproses","sedang-diproses"])
+      .get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    return list;
+  },
+
+  /** Most recent N orders (any status) — for activity feeds. Uses a real
+   *  Firestore orderBy+limit so it stays fast regardless of total history. */
+  async getOrderById(id){
+    const doc = await fs.collection("orders").doc(id).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+  },
+
+  async getRecentOrders(limitCount = 10){
+    const snap = await fs.collection("orders")
+      .where("businessId","==",_businessId)
+      .orderBy("createdAt","desc")
+      .limit(limitCount)
+      .get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+
   async addOrder(o, presetId){
     const payload = {
       ...o,
@@ -233,11 +262,25 @@ const DB = {
 
   async updateOrderStatus(id, status){
     const ref = fs.collection("orders").doc(id);
-    await ref.update({
+    const update = {
       status,
       statusHistory: firebase.firestore.FieldValue.arrayUnion({ status, at: Date.now() })
-    });
+    };
+    if(status === "selesai") update.completedAt = Date.now();
+    await ref.update(update);
     return true;
+  },
+
+  /** Orders with status 'selesai' completed on/after sinceTimestamp — a real
+   *  Firestore-level filter (not just client-side slicing), so the "Selesai"
+   *  tab stays fast even after years of accumulated history. */
+  async getRecentCompletedOrders(sinceTimestamp){
+    const snap = await fs.collection("orders")
+      .where("businessId","==",_businessId)
+      .where("status","==","selesai")
+      .where("completedAt",">=",sinceTimestamp)
+      .get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   },
 
   async deleteOrder(id){

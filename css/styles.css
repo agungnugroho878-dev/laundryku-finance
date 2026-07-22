@@ -185,6 +185,9 @@ a{ color:var(--suds-blue); }
   margin-bottom:14px;
   animation:fadeInUp .35s ease both;
 }
+.card[data-action]{ transition:transform .12s ease, box-shadow .15s ease; }
+.card[data-action]:hover{ box-shadow:0 4px 14px rgba(20,42,77,.1); }
+.card[data-action]:active{ transform:scale(.99); }
 .card-title{
   font-size:12.5px; text-transform:uppercase; letter-spacing:.06em;
   color:var(--text-muted); margin-bottom:6px; font-weight:600;
@@ -318,6 +321,22 @@ a{ color:var(--suds-blue); }
 .cucian-search input::placeholder{ color:var(--text-muted); }
 
 /* Status tabs with counts */
+/* Prominent 3-column status summary strip */
+.cucian-summary-strip{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:14px;
+}
+.cucian-summary-item{
+  border-radius:12px; padding:12px 8px; text-align:center;
+}
+.cucian-summary-num{ font-family:var(--font-mono); font-size:22px; font-weight:700; }
+.cucian-summary-label{ font-size:10.5px; font-weight:600; color:var(--text-muted); margin-top:2px; }
+.cucian-summary-item.status-belum-diproses{ background:#EAF2F9; }
+.cucian-summary-item.status-belum-diproses .cucian-summary-num{ color:var(--suds-blue-dark); }
+.cucian-summary-item.status-sedang-diproses{ background:var(--coin-bg); }
+.cucian-summary-item.status-sedang-diproses .cucian-summary-num{ color:var(--coin); }
+.cucian-summary-item.status-selesai{ background:var(--mint-bg); }
+.cucian-summary-item.status-selesai .cucian-summary-num{ color:var(--mint); }
+
 .cucian-tabs{
   display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;
 }

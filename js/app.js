@@ -51,7 +51,14 @@ const state = {
   dashboardPeriod: "month",
   currentBranchId: "all",
   branches: [],
-  memberSearch: ""
+  memberSearch: "",
+  memberPage: 1,
+  memberPageSize: 25,
+  txPage: 1,
+  txPageSize: 25,
+  cucianPage: 1,
+  cucianPageSize: 25,
+  cucianShowAllHistory: false
 };
 
 function el(html){
@@ -177,6 +184,18 @@ async function render(){
   }
   if(state.page === "cucian"){ bindCucianControls(); renderCucianList(); }
   if(state.page === "member"){ bindMemberControls(); renderMemberList(); }
+  if(state.page === "transaksi"){
+    const txPageSizeSelect = document.getElementById("txPageSizeSelect");
+    if(txPageSizeSelect) txPageSizeSelect.addEventListener("change", ()=>{
+      state.txPageSize = parseInt(txPageSizeSelect.value);
+      state.txPage = 1;
+      render();
+    });
+    const txPrevBtn = document.querySelector("[data-action='tx-prev-page']");
+    if(txPrevBtn) txPrevBtn.addEventListener("click", ()=>{ state.txPage--; render(); });
+    const txNextBtn = document.querySelector("[data-action='tx-next-page']");
+    if(txNextBtn) txNextBtn.addEventListener("click", ()=>{ state.txPage++; render(); });
+  }
 }
 
 /* ---------------- Dashboard ---------------- */
@@ -248,12 +267,12 @@ async function getServiceTrend(n = 6, branchId = null){
 }
 
 async function pagePegawaiDashboard(){
-  const orders = (await DB.getOrders()).filter(o=>o.branchId===state.currentBranchId);
-  const belumDiproses = orders.filter(o=>o.status==="belum-diproses").length;
-  const sedangDiproses = orders.filter(o=>o.status==="sedang-diproses").length;
+  const activeOrders = filterOrdersByBranch(await DB.getActiveOrders());
+  const belumDiproses = activeOrders.filter(o=>o.status==="belum-diproses").length;
+  const sedangDiproses = activeOrders.filter(o=>o.status==="sedang-diproses").length;
   const today = Reports.todayStr();
   const txToday = (await DB.getTransactions()).filter(t=>t.date===today && t.branchId===state.currentBranchId).length;
-  const recentOrders = orders.slice(0,5);
+  const recentOrders = filterOrdersByBranch(await DB.getRecentOrders(10)).slice(0,5);
   const branchName = state.branches.find(b=>b.id===state.currentBranchId)?.name || "";
 
   return `
@@ -453,6 +472,14 @@ async function pageTransaksi(){
   const activeBranchName = state.role === "pegawai"
     ? state.branches.find(b=>b.id===state.currentBranchId)?.name
     : (state.currentBranchId !== "all" ? state.branches.find(b=>b.id===state.currentBranchId)?.name : "Semua Cabang");
+
+  const pageSize = state.txPageSize || 25;
+  const totalPages = Math.max(1, Math.ceil(txs.length / pageSize));
+  if(state.txPage > totalPages) state.txPage = totalPages;
+  if(state.txPage < 1) state.txPage = 1;
+  const start = (state.txPage - 1) * pageSize;
+  const pageItems = txs.slice(start, start + pageSize);
+
   return `
     ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchName||'')}</p>` : ''}
     <div class="btn-row" style="margin-bottom:14px;">
@@ -460,9 +487,21 @@ async function pageTransaksi(){
       <button class="btn btn-outline btn-block" data-action="add" data-type="out">${ICONS.plus} Kas Keluar</button>
     </div>
     <div class="card">
-      <div class="card-title">Semua Transaksi (${txs.length})</div>
-      ${txs.length===0 ? emptyState("Belum ada transaksi tercatat.") :
-        txs.map(t=>txItemHtml(t, cats, state.role==='owner')).join("")}
+      <div class="row-between" style="margin-bottom:6px;">
+        <div class="card-title" style="margin-bottom:0;">Semua Transaksi (${txs.length})</div>
+        <select id="txPageSizeSelect" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px;">
+          ${[10,25,50,100].map(n=>`<option value="${n}" ${pageSize===n?'selected':''}>${n} / halaman</option>`).join("")}
+        </select>
+      </div>
+      ${pageItems.length===0 ? emptyState("Belum ada transaksi tercatat.") :
+        pageItems.map(t=>txItemHtml(t, cats, state.role==='owner')).join("")}
+      ${txs.length > pageSize ? `
+        <div class="row-between" style="margin-top:10px;">
+          <button class="btn btn-outline" data-action="tx-prev-page" ${state.txPage<=1?'disabled':''}>← Sebelumnya</button>
+          <span class="small muted">Halaman ${state.txPage} dari ${totalPages}</span>
+          <button class="btn btn-outline" data-action="tx-next-page" ${state.txPage>=totalPages?'disabled':''}>Selanjutnya →</button>
+        </div>
+      ` : ""}
     </div>
   `;
 }
@@ -1548,18 +1587,30 @@ function nextOrderStatus(current){
   return (i >= 0 && i < ORDER_FLOW.length - 1) ? ORDER_FLOW[i+1] : null;
 }
 
-async function pageCucian(){
-  let all = await DB.getOrders();
-  if(state.role === "pegawai"){
-    all = all.filter(o => o.branchId === state.currentBranchId);
-  } else if(state.currentBranchId !== "all"){
-    all = all.filter(o => o.branchId === state.currentBranchId);
+const SELESAI_WINDOW_DAYS = 30;
+
+function filterOrdersByBranch(orders){
+  if(state.role === "pegawai") return orders.filter(o => o.branchId === state.currentBranchId);
+  if(state.currentBranchId !== "all") return orders.filter(o => o.branchId === state.currentBranchId);
+  return orders;
+}
+
+async function getSelesaiOrdersForDisplay(){
+  if(state.cucianShowAllHistory){
+    return filterOrdersByBranch((await DB.getOrders()).filter(o=>o.status==="selesai"));
   }
+  const since = Date.now() - SELESAI_WINDOW_DAYS*24*3600*1000;
+  return filterOrdersByBranch(await DB.getRecentCompletedOrders(since));
+}
+
+async function pageCucian(){
+  const activeOrders = filterOrdersByBranch(await DB.getActiveOrders());
+  const selesaiOrders = await getSelesaiOrdersForDisplay();
   const filter = state.cucianFilter || "belum-diproses";
   const counts = {
-    "belum-diproses": all.filter(o=>o.status==="belum-diproses").length,
-    "sedang-diproses": all.filter(o=>o.status==="sedang-diproses").length,
-    "selesai": all.filter(o=>o.status==="selesai").length
+    "belum-diproses": activeOrders.filter(o=>o.status==="belum-diproses").length,
+    "sedang-diproses": activeOrders.filter(o=>o.status==="sedang-diproses").length,
+    "selesai": selesaiOrders.length
   };
   const isActiveTab = filter !== "selesai";
   const activeBranchName = state.role === "pegawai"
@@ -1585,6 +1636,21 @@ async function pageCucian(){
     ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchName||'')}</p>` : ''}
     <button class="btn btn-primary btn-block" data-action="add-order" style="margin-bottom:14px;">${ICONS.plus} Pesanan Cucian Baru</button>
 
+    <div class="cucian-summary-strip">
+      <div class="cucian-summary-item status-belum-diproses">
+        <div class="cucian-summary-num">${counts["belum-diproses"]}</div>
+        <div class="cucian-summary-label">Belum Diproses</div>
+      </div>
+      <div class="cucian-summary-item status-sedang-diproses">
+        <div class="cucian-summary-num">${counts["sedang-diproses"]}</div>
+        <div class="cucian-summary-label">Sedang Diproses</div>
+      </div>
+      <div class="cucian-summary-item status-selesai">
+        <div class="cucian-summary-num">${counts["selesai"]}</div>
+        <div class="cucian-summary-label">Selesai${!state.cucianShowAllHistory ? ` (${SELESAI_WINDOW_DAYS}hr)` : ''}</div>
+      </div>
+    </div>
+
     <div class="cucian-search">
       ${ICONS.search}
       <input type="text" id="cucianSearchInput" placeholder="Cari ID, nama, atau no. WA..." value="${escapeHtml(state.cucianSearch)}">
@@ -1595,6 +1661,13 @@ async function pageCucian(){
       ${tabBtn("sedang-diproses","Sedang Diproses")}
       ${tabBtn("selesai","Selesai")}
     </div>
+
+    ${filter === "selesai" ? `
+      <label class="small muted" style="display:flex; align-items:center; gap:8px; margin-bottom:10px; cursor:pointer;">
+        <input type="checkbox" id="cucianShowAllHistoryToggle" ${state.cucianShowAllHistory?'checked':''} style="width:auto; margin:0;">
+        Tampilkan semua riwayat (bukan cuma ${SELESAI_WINDOW_DAYS} hari terakhir) — mungkin lebih lambat kalau riwayatnya sudah banyak
+      </label>
+    ` : ""}
 
     <div class="cucian-sort-row">
       ${ICONS.sort}
@@ -1627,19 +1700,48 @@ function filterAndSortOrders(orders, status, search, sort){
 async function renderCucianList(){
   const container = document.getElementById("cucianListContainer");
   if(!container) return;
-  let all = await DB.getOrders();
-  if(state.role === "pegawai"){
-    all = all.filter(o => o.branchId === state.currentBranchId);
-  } else if(state.currentBranchId !== "all"){
-    all = all.filter(o => o.branchId === state.currentBranchId);
-  }
+  const all = state.cucianFilter === "selesai"
+    ? await getSelesaiOrdersForDisplay()
+    : filterOrdersByBranch(await DB.getActiveOrders());
   const list = filterAndSortOrders(all, state.cucianFilter, state.cucianSearch, state.cucianSort);
+
+  const pageSize = state.cucianPageSize || 25;
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  if(state.cucianPage > totalPages) state.cucianPage = totalPages;
+  if(state.cucianPage < 1) state.cucianPage = 1;
+  const start = (state.cucianPage - 1) * pageSize;
+  const pageItems = list.slice(start, start + pageSize);
+
   container.innerHTML = `
-    <div class="cucian-grid">
-      ${list.length === 0 ? emptyState("Tidak ada pesanan yang cocok di sini.") : list.map(orderCardHtml).join("")}
+    <div class="row-between no-print" style="margin-bottom:10px;">
+      <span class="small muted">${list.length} pesanan</span>
+      <select id="cucianPageSizeSelect" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px;">
+        ${[10,25,50,100].map(n=>`<option value="${n}" ${pageSize===n?'selected':''}>${n} / halaman</option>`).join("")}
+      </select>
     </div>
+    <div class="cucian-grid">
+      ${pageItems.length === 0 ? emptyState("Tidak ada pesanan yang cocok di sini.") : pageItems.map(orderCardHtml).join("")}
+    </div>
+    ${list.length > pageSize ? `
+      <div class="row-between no-print" style="margin-top:14px;">
+        <button class="btn btn-outline" id="cucianPrevPage" ${state.cucianPage<=1?'disabled':''}>← Sebelumnya</button>
+        <span class="small muted">Halaman ${state.cucianPage} dari ${totalPages}</span>
+        <button class="btn btn-outline" id="cucianNextPage" ${state.cucianPage>=totalPages?'disabled':''}>Selanjutnya →</button>
+      </div>
+    ` : ""}
   `;
   bindCucianCardEvents();
+
+  const pageSizeSelect = document.getElementById("cucianPageSizeSelect");
+  if(pageSizeSelect) pageSizeSelect.addEventListener("change", ()=>{
+    state.cucianPageSize = parseInt(pageSizeSelect.value);
+    state.cucianPage = 1;
+    renderCucianList();
+  });
+  const prevBtn = document.getElementById("cucianPrevPage");
+  if(prevBtn) prevBtn.addEventListener("click", ()=>{ state.cucianPage--; renderCucianList(); });
+  const nextBtn = document.getElementById("cucianNextPage");
+  if(nextBtn) nextBtn.addEventListener("click", ()=>{ state.cucianPage++; renderCucianList(); });
 }
 
 function serviceIconFor(o){
@@ -1760,6 +1862,7 @@ function bindCucianControls(){
     clearTimeout(_cucianSearchDebounce);
     _cucianSearchDebounce = setTimeout(()=>{
       state.cucianSearch = searchInput.value;
+      state.cucianPage = 1;
       renderCucianList();
     }, 250);
   });
@@ -1767,6 +1870,7 @@ function bindCucianControls(){
   const sortSelect = document.getElementById("cucianSortSelect");
   if(sortSelect) sortSelect.addEventListener("change", ()=>{
     state.cucianSort = sortSelect.value;
+    state.cucianPage = 1;
     renderCucianList();
   });
 
@@ -1774,8 +1878,16 @@ function bindCucianControls(){
     btn.addEventListener("click", ()=>{
       state.cucianFilter = btn.dataset.cucianTab;
       state.cucianSort = state.cucianFilter === "selesai" ? "created-desc" : "deadline-asc";
+      state.cucianPage = 1;
       render();
     });
+  });
+
+  const showAllHistoryToggle = document.getElementById("cucianShowAllHistoryToggle");
+  if(showAllHistoryToggle) showAllHistoryToggle.addEventListener("change", ()=>{
+    state.cucianShowAllHistory = showAllHistoryToggle.checked;
+    state.cucianPage = 1;
+    render();
   });
 }
 
@@ -1783,8 +1895,7 @@ function bindCucianCardEvents(){
   document.querySelectorAll("[data-action='view-order-detail']").forEach(card=>{
     card.addEventListener("click", async (e)=>{
       if(e.target.closest(".btn-row")) return; // don't open detail when clicking an action button
-      const orders = await DB.getOrders();
-      const o = orders.find(x => x.id === card.dataset.id);
+      const o = await DB.getOrderById(card.dataset.id);
       if(o) openOrderDetailModal(o);
     });
   });
@@ -1793,8 +1904,7 @@ function bindCucianCardEvents(){
       await DB.updateOrderStatus(btn.dataset.id, btn.dataset.next);
       toast(`Status diubah: ${STATUS_LABEL[btn.dataset.next]}`);
       if(btn.dataset.next === "selesai"){
-        const orders = await DB.getOrders();
-        const o = orders.find(x => x.id === btn.dataset.id);
+        const o = await DB.getOrderById(btn.dataset.id);
         if(o) offerPickupNotify(o);
       } else {
         renderCucianList();
@@ -1803,15 +1913,13 @@ function bindCucianCardEvents(){
   });
   document.querySelectorAll("[data-action='wa-order']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
-      const orders = await DB.getOrders();
-      const o = orders.find(x => x.id === btn.dataset.id);
+      const o = await DB.getOrderById(btn.dataset.id);
       if(o) sendOrderStatusWA(o);
     });
   });
   document.querySelectorAll("[data-action='send-tracking']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
-      const orders = await DB.getOrders();
-      const o = orders.find(x => x.id === btn.dataset.id);
+      const o = await DB.getOrderById(btn.dataset.id);
       if(!o) return;
       const url = trackingUrl(o.id);
       const msg = `Halo${o.customerName ? " "+o.customerName : ""}, pantau status cucianmu (termasuk foto barang) di link ini:\n${url}`;
@@ -2338,6 +2446,16 @@ async function openAddOrderModal(){
 }
 
 function bindMemberRowEvents(){
+  document.querySelectorAll("[data-action='view-member-detail']").forEach(card=>{
+    card.addEventListener("click", async (e)=>{
+      if(e.target.closest(".btn-row")) return; // don't open detail when clicking edit/WA
+      const m = await DB.getMember(card.dataset.phone);
+      if(!m) return;
+      const kiloanLoyalty = await getKiloanLoyalty();
+      const ssLoyalty = await getSelfServiceLoyalty();
+      openMemberDetailModal(m, kiloanLoyalty, ssLoyalty);
+    });
+  });
   document.querySelectorAll("[data-action='edit-member']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const m = await DB.getMember(btn.dataset.phone);
@@ -2350,36 +2468,40 @@ function bindMemberRowEvents(){
     });
   });
   document.querySelectorAll("[data-action='claim-kiloan']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const key = btn.dataset.subtype;
-      const m = await DB.getMember(btn.dataset.phone);
-      const kiloanLoyalty = await getKiloanLoyalty();
-      const cfg = kiloanLoyalty[key];
-      const balance = (typeof m?.kiloanBalance === "object" && m.kiloanBalance?.[key]) || 0;
-      if(!m || balance < cfg.thresholdKg){ toast("Belum memenuhi target", "warn"); return; }
-      if(!confirm(`Klaim promo ${KILOAN_LABELS[key]} untuk ${m.name || m.phone} sekarang?`)) return;
-      m.kiloanBalance[key] -= cfg.thresholdKg;
-      m.kiloanFreeRedeemed = m.kiloanFreeRedeemed || {};
-      m.kiloanFreeRedeemed[key] = (m.kiloanFreeRedeemed[key]||0) + 1;
-      await DB.upsertMember(m);
-      toast(`Promo ${KILOAN_LABELS[key]} diklaim — progress mulai lagi dari awal`);
-      renderMemberList();
-    });
+    btn.addEventListener("click", ()=> handleMemberClaimClick(btn));
   });
   document.querySelectorAll("[data-action='claim-selfservice']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const m = await DB.getMember(btn.dataset.phone);
-      const ssLoyalty = await getSelfServiceLoyalty();
-      const target = ssLoyalty.visitTarget || 10;
-      if(!m || (m.visits||0) < target){ toast("Belum memenuhi target", "warn"); return; }
-      if(!confirm(`Klaim gratis 1x self-service untuk ${m.name || m.phone} sekarang?`)) return;
-      m.visits = 0;
-      m.freeRedeemed = (m.freeRedeemed||0) + 1;
-      await DB.upsertMember(m);
-      toast("Gratis 1x diklaim — progress mulai lagi dari awal");
-      renderMemberList();
-    });
+    btn.addEventListener("click", ()=> handleMemberClaimClick(btn));
   });
+}
+
+async function handleMemberClaimClick(btn){
+  if(btn.dataset.action === "claim-kiloan"){
+    const key = btn.dataset.subtype;
+    const m = await DB.getMember(btn.dataset.phone);
+    const kiloanLoyalty = await getKiloanLoyalty();
+    const cfg = kiloanLoyalty[key];
+    const balance = (typeof m?.kiloanBalance === "object" && m.kiloanBalance?.[key]) || 0;
+    if(!m || balance < cfg.thresholdKg){ toast("Belum memenuhi target", "warn"); return; }
+    if(!confirm(`Klaim promo ${KILOAN_LABELS[key]} untuk ${m.name || m.phone} sekarang?`)) return;
+    m.kiloanBalance[key] -= cfg.thresholdKg;
+    m.kiloanFreeRedeemed = m.kiloanFreeRedeemed || {};
+    m.kiloanFreeRedeemed[key] = (m.kiloanFreeRedeemed[key]||0) + 1;
+    await DB.upsertMember(m);
+    toast(`Promo ${KILOAN_LABELS[key]} diklaim — progress mulai lagi dari awal`);
+    renderMemberList();
+  } else {
+    const m = await DB.getMember(btn.dataset.phone);
+    const ssLoyalty = await getSelfServiceLoyalty();
+    const target = ssLoyalty.visitTarget || 10;
+    if(!m || (m.visits||0) < target){ toast("Belum memenuhi target", "warn"); return; }
+    if(!confirm(`Klaim gratis 1x self-service untuk ${m.name || m.phone} sekarang?`)) return;
+    m.visits = 0;
+    m.freeRedeemed = (m.freeRedeemed||0) + 1;
+    await DB.upsertMember(m);
+    toast("Gratis 1x diklaim — progress mulai lagi dari awal");
+    renderMemberList();
+  }
 }
 
 async function pageMember(){
@@ -2417,14 +2539,44 @@ async function renderMemberList(){
     ? all.filter(m => (m.name||"").toLowerCase().includes(q) || (m.phone||"").includes(q))
     : all;
 
+  const pageSize = state.memberPageSize || 25;
+  const totalPages = Math.max(1, Math.ceil(members.length / pageSize));
+  if(state.memberPage > totalPages) state.memberPage = totalPages;
+  if(state.memberPage < 1) state.memberPage = 1;
+  const start = (state.memberPage - 1) * pageSize;
+  const pageItems = members.slice(start, start + pageSize);
+
   container.innerHTML = `
     <div class="card">
-      <div class="card-title">Daftar Member (${members.length}${q ? ` dari ${all.length}` : ""})</div>
-      ${members.length===0 ? emptyState(q ? "Tidak ditemukan." : "Belum ada member. Tambahkan manual, atau otomatis muncul saat transaksi cucian diisi nomor WA.") :
-        members.map(m=>memberRowHtml(m, kiloanLoyalty, ssLoyalty)).join("")}
+      <div class="row-between" style="margin-bottom:6px;">
+        <div class="card-title" style="margin-bottom:0;">Daftar Member (${members.length}${q ? ` dari ${all.length}` : ""})</div>
+        <select id="memberPageSizeSelect" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px;">
+          ${[10,25,50,100].map(n=>`<option value="${n}" ${pageSize===n?'selected':''}>${n} / halaman</option>`).join("")}
+        </select>
+      </div>
+      ${pageItems.length===0 ? emptyState(q ? "Tidak ditemukan." : "Belum ada member. Tambahkan manual, atau otomatis muncul saat transaksi cucian diisi nomor WA.") :
+        pageItems.map(m=>memberRowHtml(m, kiloanLoyalty, ssLoyalty)).join("")}
+      ${members.length > pageSize ? `
+        <div class="row-between" style="margin-top:10px;">
+          <button class="btn btn-outline" id="memberPrevPage" ${state.memberPage<=1?'disabled':''}>← Sebelumnya</button>
+          <span class="small muted">Halaman ${state.memberPage} dari ${totalPages}</span>
+          <button class="btn btn-outline" id="memberNextPage" ${state.memberPage>=totalPages?'disabled':''}>Selanjutnya →</button>
+        </div>
+      ` : ""}
     </div>
   `;
   bindMemberRowEvents();
+
+  const pageSizeSelect = document.getElementById("memberPageSizeSelect");
+  if(pageSizeSelect) pageSizeSelect.addEventListener("change", ()=>{
+    state.memberPageSize = parseInt(pageSizeSelect.value);
+    state.memberPage = 1;
+    renderMemberList();
+  });
+  const prevBtn = document.getElementById("memberPrevPage");
+  if(prevBtn) prevBtn.addEventListener("click", ()=>{ state.memberPage--; renderMemberList(); });
+  const nextBtn = document.getElementById("memberNextPage");
+  if(nextBtn) nextBtn.addEventListener("click", ()=>{ state.memberPage++; renderMemberList(); });
 }
 
 function bindMemberControls(){
@@ -2435,12 +2587,13 @@ function bindMemberControls(){
     clearTimeout(debounce);
     debounce = setTimeout(()=>{
       state.memberSearch = input.value;
+      state.memberPage = 1;
       renderMemberList();
     }, 200);
   });
 }
 
-function memberRowHtml(m, kiloanLoyalty, ssLoyalty){
+function renderMemberDetailBody(m, kiloanLoyalty, ssLoyalty){
   const ssTarget = ssLoyalty?.visitTarget || 10;
   const ssPct = Math.min(100, (m.visits / ssTarget) * 100);
   const ssReady = ssLoyalty?.enabled && m.visits >= ssTarget;
@@ -2467,26 +2620,59 @@ function memberRowHtml(m, kiloanLoyalty, ssLoyalty){
   }).join("");
 
   return `
-    <div class="card" style="margin-bottom:10px; box-shadow:none; border:1px solid var(--line);">
+    ${kiloanSections}
+    <div style="padding-top:10px;">
+      <div class="small muted">Self-Service</div>
+      ${ssLoyalty?.enabled ? `
+        <div class="loyalty-bar" style="margin-top:4px;"><div class="loyalty-fill" style="width:${ssPct}%"></div></div>
+        <div class="small" style="margin-top:3px;">${ssReady ? "🎉 Siap gratis!" : `${m.visits||0}/${ssTarget} kunjungan`}</div>
+        ${ssReady ? `<button class="btn btn-primary btn-block" style="margin-top:8px; background:var(--mint);" data-action="claim-selfservice" data-phone="${m.phone}">Klaim Gratis 1x</button>` : ""}
+      ` : `<div class="small muted" style="margin-top:4px;">Promo belum aktif — atur di Atur → Promo Self-Service</div>`}
+    </div>
+  `;
+}
+
+function isAnyPromoReady(m, kiloanLoyalty, ssLoyalty){
+  const ssTarget = ssLoyalty?.visitTarget || 10;
+  if(ssLoyalty?.enabled && (m.visits||0) >= ssTarget) return true;
+  const kBalances = (typeof m.kiloanBalance === "object" && m.kiloanBalance) || {};
+  for(const key of Object.keys(KILOAN_LABELS)){
+    const cfg = kiloanLoyalty?.[key];
+    if(cfg?.enabled && (kBalances[key]||0) >= (cfg.thresholdKg||20)) return true;
+  }
+  return false;
+}
+
+function openMemberDetailModal(m, kiloanLoyalty, ssLoyalty){
+  const modal = openModal(`
+    <h2>${escapeHtml(m.name || "Tanpa nama")}</h2>
+    <p class="small muted" style="margin-top:-8px;">${m.phone}${m.address ? " · " + escapeHtml(m.address) : ""}</p>
+    <div style="margin-top:10px;">
+      ${renderMemberDetailBody(m, kiloanLoyalty, ssLoyalty)}
+    </div>
+    <button class="btn btn-outline btn-block" data-action="detail-close" style="margin-top:16px;">Tutup</button>
+  `);
+  modal.querySelectorAll("[data-action='claim-kiloan'], [data-action='claim-selfservice']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      await handleMemberClaimClick(btn);
+      closeModal();
+    });
+  });
+  modal.querySelector("[data-action='detail-close']").addEventListener("click", closeModal);
+}
+
+function memberRowHtml(m, kiloanLoyalty, ssLoyalty){
+  const ready = isAnyPromoReady(m, kiloanLoyalty, ssLoyalty);
+  return `
+    <div class="card" data-action="view-member-detail" data-phone="${m.phone}" style="margin-bottom:10px; box-shadow:none; border:1px solid var(--line); cursor:pointer;">
       <div class="row-between">
         <div>
-          <div style="font-weight:700;">${m.name || "Tanpa nama"}</div>
+          <div style="font-weight:700; display:flex; align-items:center; gap:6px;">${escapeHtml(m.name || "Tanpa nama")}${ready ? `<span class="tag" style="background:var(--coin-bg); color:var(--coin); font-size:10.5px;">🎉 Siap klaim</span>` : ""}</div>
           <div class="small muted">${m.phone}${m.address ? " · " + escapeHtml(m.address) : ""}</div>
         </div>
-        <div style="display:flex; gap:6px;">
+        <div class="btn-row" style="gap:6px;">
           <button class="tx-del" data-action="edit-member" data-phone="${m.phone}" title="Edit">${ICONS.edit}</button>
           <button class="tx-del" data-action="wa-member" data-phone="${m.phone}" title="Chat WA">${ICONS.chat}</button>
-        </div>
-      </div>
-      <div style="margin-top:8px;">
-        ${kiloanSections}
-        <div style="padding-top:10px;">
-          <div class="small muted">Self-Service</div>
-          ${ssLoyalty?.enabled ? `
-            <div class="loyalty-bar" style="margin-top:4px;"><div class="loyalty-fill" style="width:${ssPct}%"></div></div>
-            <div class="small" style="margin-top:3px;">${ssReady ? "🎉 Siap gratis!" : `${m.visits||0}/${ssTarget} kunjungan`}</div>
-            ${ssReady ? `<button class="btn btn-primary btn-block" style="margin-top:8px; background:var(--mint);" data-action="claim-selfservice" data-phone="${m.phone}">Klaim Gratis 1x</button>` : ""}
-          ` : `<div class="small muted" style="margin-top:4px;">Promo belum aktif — atur di Atur → Promo Self-Service</div>`}
         </div>
       </div>
     </div>
