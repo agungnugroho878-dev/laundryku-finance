@@ -66,7 +66,7 @@ async function loadOrder(){
     const settingsDoc = await fs.collection("businessSettings").doc(o.businessId).get();
     const settings = settingsDoc.exists ? settingsDoc.data() : {};
     document.getElementById("bizName").textContent = settings.businessName || "LaundryKu";
-    const contactBits = [settings.businessTagline, settings.businessAddress, settings.businessPhone ? `📱 ${settings.businessPhone}` : null, settings.businessInstagram ? `📷 ${settings.businessInstagram}` : null].filter(Boolean);
+    const contactBits = [settings.businessTagline, settings.businessAddress, settings.businessPhone ? `WhatsApp: ${settings.businessPhone}` : null, settings.businessInstagram ? `Instagram: ${settings.businessInstagram}` : null].filter(Boolean);
     document.getElementById("bizTagline").textContent = contactBits.join(" · ");
     if(settings.businessLogo){
       const logoEl = document.getElementById("bizLogo");
@@ -86,7 +86,7 @@ function renderOrder(o, content, settings = {}){
     const cls = i < currentIdx ? "done" : i === currentIdx ? "current" : "";
     return `
       <div class="status-step ${cls}">
-        <div class="status-line"></div>
+        <div class="status-line"><div class="status-line-fill"></div></div>
         <div class="status-dot">${i < currentIdx ? "✓" : i+1}</div>
         <div class="status-label">${STATUS_LABEL[s]}</div>
       </div>

@@ -2961,8 +2961,8 @@ function buildReceiptText(t){
   lines.push(`*${state.businessName}*`);
   if(state.businessTagline) lines.push(state.businessTagline);
   if(state.businessAddress) lines.push(`📍 ${state.businessAddress}`);
-  if(state.businessPhone) lines.push(`📱 ${state.businessPhone}`);
-  if(state.businessInstagram) lines.push(`📷 ${state.businessInstagram}`);
+  if(state.businessPhone) lines.push(`WhatsApp: ${state.businessPhone}`);
+  if(state.businessInstagram) lines.push(`Instagram: ${state.businessInstagram}`);
   lines.push("--------------------------------");
   lines.push(`Tgl        : ${fmtDate(t.date)}`);
   if(t.receiptNo) lines.push(`Struk No.  : ${t.receiptNo}`);
@@ -3074,8 +3074,8 @@ function buildEscPos(t, width){
   raw(ESC,0x45,0);         // bold off
   if(state.businessTagline) text(state.businessTagline + "\n");
   if(state.businessAddress) text(state.businessAddress + "\n");
-  if(state.businessPhone) text(`WA: ${state.businessPhone}\n`);
-  if(state.businessInstagram) text(`IG: ${state.businessInstagram}\n`);
+  if(state.businessPhone) text(`WhatsApp: ${state.businessPhone}\n`);
+  if(state.businessInstagram) text(`Instagram: ${state.businessInstagram}\n`);
   text("-".repeat(width) + "\n");
 
   raw(ESC,0x61,0);         // left align
@@ -3187,8 +3187,8 @@ function printReceiptSystemDialog(t){
       <div class="pr-biz">${state.businessName}</div>
       ${state.businessTagline ? `<div class="pr-tagline">${escapeHtml(state.businessTagline)}</div>` : ""}
       ${state.businessAddress ? `<div class="pr-tagline">${escapeHtml(state.businessAddress)}</div>` : ""}
-      ${state.businessPhone ? `<div class="pr-tagline">📱 ${escapeHtml(state.businessPhone)}</div>` : ""}
-      ${state.businessInstagram ? `<div class="pr-tagline">📷 ${escapeHtml(state.businessInstagram)}</div>` : ""}
+      ${state.businessPhone ? `<div class="pr-tagline">WhatsApp: ${escapeHtml(state.businessPhone)}</div>` : ""}
+      ${state.businessInstagram ? `<div class="pr-tagline">Instagram: ${escapeHtml(state.businessInstagram)}</div>` : ""}
       <div class="pr-divider"></div>
       <div class="pr-row"><span>Tgl</span><span>${fmtDate(t.date)}</span></div>
       ${t.receiptNo ? `<div class="pr-row"><span>Struk No.</span><span>${t.receiptNo}</span></div>` : ""}
@@ -3328,13 +3328,13 @@ async function generateReceiptCanvas(t){
   if(state.businessPhone){
     ctx.fillStyle = "#5C6B70";
     ctx.font = "400 11px -apple-system, sans-serif";
-    ctx.fillText(`📱 ${state.businessPhone}`, width/2, y);
+    ctx.fillText(`WhatsApp: ${state.businessPhone}`, width/2, y);
     y += 15;
   }
   if(state.businessInstagram){
     ctx.fillStyle = "#5C6B70";
     ctx.font = "400 11px -apple-system, sans-serif";
-    ctx.fillText(`📷 ${state.businessInstagram}`, width/2, y);
+    ctx.fillText(`Instagram: ${state.businessInstagram}`, width/2, y);
     y += 15;
   }
   y += 8;
