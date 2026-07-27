@@ -25,6 +25,7 @@ const ICONS = {
   droplet: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.7s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>`,
   shirt: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 2 7l3 4 2-1.5V21h10V9.5L19 11l3-4-6-4-2 2h-4z"/></svg>`,
   hash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h14M5 15h14M11 4 8 20M16 4l-3 16"/></svg>`,
+  pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
   alertTriangle: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>`
 };
 
@@ -598,23 +599,50 @@ async function renderAsetTetapSection(){
 
 function openBranchModal(existing){
   const isEdit = !!existing;
+  const ds = existing?.deliverySettings || {};
   const modal = openModal(`
     <h2>${isEdit ? 'Edit' : 'Tambah'} Cabang</h2>
     <div class="field"><label>Nama Cabang</label><input type="text" id="branchName" placeholder="Contoh: Cabang Sanur" value="${escapeHtml(existing?.name||'')}"></div>
     <div class="field"><label>Alamat (opsional)</label><textarea id="branchAddress" placeholder="Contoh: Jl. Danau Tamblingan No. 5">${escapeHtml(existing?.address||'')}</textarea></div>
-    <button class="btn btn-primary btn-block" data-action="save-branch">Simpan</button>
+
+    <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px;">
+      <p class="small" style="font-weight:700; margin-bottom:8px;">🚚 Ongkir Otomatis (opsional)</p>
+      <p class="small muted" style="margin-bottom:10px;">Set lokasi cabang ini di peta, lalu tentukan radius gratis ongkir — jarak lebih dari itu otomatis kena tarif per km.</p>
+      <div id="branchLocationStatus" class="small muted" style="margin-bottom:8px;">${ds.lat ? `📍 Lokasi tersimpan: ${ds.lat.toFixed(5)}, ${ds.lng.toFixed(5)}` : 'Lokasi belum diset'}</div>
+      <button type="button" class="btn btn-outline btn-block" id="setBranchLocationBtn" style="margin-bottom:10px;">${ICONS.pin} Set Lokasi Cabang di Peta</button>
+      <div class="field"><label>Radius Gratis Ongkir (km)</label><input type="number" id="branchFreeRadius" value="${ds.freeRadiusKm||3}" step="0.5"></div>
+      <div class="field" style="margin-bottom:0;"><label>Tarif per KM di Luar Radius (Rp)</label><input type="number" id="branchPerKmRate" value="${ds.perKmRate||2000}"></div>
+    </div>
+
+    <button class="btn btn-primary btn-block" data-action="save-branch" style="margin-top:14px;">Simpan</button>
   `);
+
+  let pickedLat = ds.lat || null;
+  let pickedLng = ds.lng || null;
+
+  modal.querySelector("#setBranchLocationBtn").addEventListener("click", ()=>{
+    openMapPickerModal(pickedLat, pickedLng, (lat,lng)=>{
+      pickedLat = lat; pickedLng = lng;
+      modal.querySelector("#branchLocationStatus").textContent = `📍 Lokasi tersimpan: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    });
+  });
 
   modal.querySelector("[data-action='save-branch']").addEventListener("click", async ()=>{
     const name = modal.querySelector("#branchName").value.trim();
     const address = modal.querySelector("#branchAddress").value.trim();
     if(!name){ toast("Isi nama cabang", "warn"); return; }
 
+    const deliverySettings = {
+      lat: pickedLat, lng: pickedLng,
+      freeRadiusKm: parseFloat(modal.querySelector("#branchFreeRadius").value) || 0,
+      perKmRate: parseFloat(modal.querySelector("#branchPerKmRate").value) || 0
+    };
+
     if(isEdit){
-      await DB.updateBranch(existing.id, { name, address });
+      await DB.updateBranch(existing.id, { name, address, deliverySettings });
       toast("Cabang diperbarui");
     } else {
-      await DB.addBranch({ name, address });
+      await DB.addBranch({ name, address, deliverySettings });
       toast("Cabang ditambahkan");
     }
     closeModal();
@@ -1787,6 +1815,31 @@ function openOrderDetailModal(o){
       </div>
     ` : ""}
 
+    ${(o.needsPickup || o.needsDelivery) ? `
+      <div style="margin-top:14px; padding:12px; background:var(--foam-white); border-radius:10px;">
+        <p class="small" style="font-weight:700; margin-bottom:8px;">🚚 Jemput & Antar</p>
+        ${o.courierName ? `<div class="small" style="margin-bottom:8px;">Kurir: <b>${escapeHtml(o.courierName)}</b>${o.deliveryFee ? ` · Ongkir: ${Reports.formatRupiah(o.deliveryFee)}` : ''}${o.distanceKm ? ` · Jarak: ${o.distanceKm} km` : ''}</div>` : ''}
+        ${o.needsPickup ? `
+          <div class="row-between" style="padding:8px 0; border-bottom:1px dashed var(--line);">
+            <div>
+              <div class="small" style="font-weight:600;">${o.pickupDone ? '✓ Sudah Dijemput' : 'Belum Dijemput'}</div>
+              ${o.pickupAddress ? `<div class="small muted">${escapeHtml(o.pickupAddress)}</div>` : ''}
+            </div>
+            ${!o.pickupDone ? `<button class="btn btn-outline" data-action="mark-pickup-done" data-id="${o.id}">Tandai Selesai</button>` : ''}
+          </div>
+        ` : ''}
+        ${o.needsDelivery ? `
+          <div class="row-between" style="padding:8px 0;">
+            <div>
+              <div class="small" style="font-weight:600;">${o.deliveryDone ? '✓ Sudah Diantar' : 'Belum Diantar'}</div>
+              ${o.deliveryAddress ? `<div class="small muted">${escapeHtml(o.deliveryAddress)}</div>` : ''}
+            </div>
+            ${!o.deliveryDone ? `<button class="btn btn-outline" data-action="mark-delivery-done" data-id="${o.id}">Tandai Selesai</button>` : ''}
+          </div>
+        ` : ''}
+      </div>
+    ` : ""}
+
     ${o.customerPhone ? `<button class="btn btn-outline btn-block" data-action="detail-send-tracking" style="margin-top:16px;">${ICONS.star} Kirim Link Pantau</button>` : ""}
     <button class="btn btn-outline btn-block" data-action="detail-close" style="margin-top:10px;">Tutup</button>
   `);
@@ -1795,6 +1848,21 @@ function openOrderDetailModal(o){
     img.addEventListener("click", ()=>{
       window.open(img.dataset.full, "_blank");
     });
+  });
+
+  const markPickupBtn = modal.querySelector("[data-action='mark-pickup-done']");
+  if(markPickupBtn) markPickupBtn.addEventListener("click", async ()=>{
+    await DB.updateOrderFields(o.id, { pickupDone: true });
+    toast("Ditandai sudah dijemput");
+    closeModal();
+    renderCucianList();
+  });
+  const markDeliveryBtn = modal.querySelector("[data-action='mark-delivery-done']");
+  if(markDeliveryBtn) markDeliveryBtn.addEventListener("click", async ()=>{
+    await DB.updateOrderFields(o.id, { deliveryDone: true });
+    toast("Ditandai sudah diantar");
+    closeModal();
+    renderCucianList();
   });
 
   const trackBtn = modal.querySelector("[data-action='detail-send-tracking']");
@@ -1837,6 +1905,13 @@ function orderCardHtml(o){
       ${o.photos?.length ? `<div class="small muted" style="margin-top:2px;">📷 ${o.photos.length} pcs pakaian difoto</div>` : ""}
       ${o.discountAmount ? `<div class="small" style="color:var(--coin); margin-top:2px;">🎁 ${escapeHtml(o.discountReason || 'Diskon promo')}</div>` : ""}
       ${o.note ? `<div class="small muted" style="margin-top:4px;">${escapeHtml(o.note)}</div>` : ""}
+      ${(o.needsPickup || o.needsDelivery) ? `
+        <div class="small" style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
+          ${o.needsPickup ? `<span class="tag" style="font-size:10.5px; padding:4px 9px; background:${o.pickupDone?'var(--mint-bg)':'var(--coin-bg)'}; color:${o.pickupDone?'var(--mint)':'var(--coin)'};">${o.pickupDone?'✓':''} Jemput</span>` : ""}
+          ${o.needsDelivery ? `<span class="tag" style="font-size:10.5px; padding:4px 9px; background:${o.deliveryDone?'var(--mint-bg)':'var(--coin-bg)'}; color:${o.deliveryDone?'var(--mint)':'var(--coin)'};">${o.deliveryDone?'✓':''} Antar</span>` : ""}
+          ${o.courierName ? `<span class="tag" style="font-size:10.5px; padding:4px 9px;">🚚 ${escapeHtml(o.courierName)}</span>` : ""}
+        </div>
+      ` : ""}
 
       <div class="order-card-meta">
         <span>Diterima ${dateLabel}</span>
@@ -2007,6 +2082,10 @@ async function openAddOrderModal(){
   const kiloanJenisOptions = Object.entries(KILOAN_LABELS).map(([id,label])=>`<option value="${id}">${label}</option>`).join("");
   const selfServiceOptions = Object.entries(SELF_SERVICE_LABELS).map(([id,label])=>`<option value="${id}">${label} (Rp${pricing.selfService[id].toLocaleString('id-ID')})</option>`).join("");
   const satuanOptions = pricing.satuan.map(s=>`<option value="${s.id}">${s.name} (${Reports.formatRupiah(s.price)})</option>`).join("");
+  const staffList = await DB.getBusinessStaff();
+  const currentBranch = await DB.getBranchById(branchId);
+  const branchDeliverySettings = currentBranch?.deliverySettings || null;
+  const courierOptions = `<option value="">— Pilih kurir —</option>` + staffList.map(s=>`<option value="${s.uid}">${escapeHtml(s.name||s.email)}</option>`).join("");
 
   const modal = openModal(`
     <h2>Pesanan Cucian Baru</h2>
@@ -2057,6 +2136,47 @@ async function openAddOrderModal(){
     <div class="field"><label>No. WhatsApp Pelanggan (opsional)</label><input type="tel" inputmode="numeric" id="ordCustPhone" placeholder="08xxxxxxxxxx"></div>
     <div id="memberMatchNote"></div>
     <div class="field"><label>Catatan (opsional)</label><textarea id="ordNote" placeholder="Contoh: Jangan pakai pewangi"></textarea></div>
+
+    <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+        <input type="checkbox" id="ordCourierToggle" style="width:auto; margin:0;">
+        <span>🚚 Perlu Jemput/Antar?</span>
+      </label>
+      <div id="courierFields" style="display:none; margin-top:12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:10px;">
+          <input type="checkbox" id="ordNeedsPickup" style="width:auto; margin:0;">
+          <span class="small">Perlu Jemput (ambil cucian kotor dari pelanggan)</span>
+        </label>
+        <div class="field" id="pickupAddressField" style="display:none;">
+          <label>Alamat Jemput</label>
+          <textarea id="ordPickupAddress" placeholder="Alamat lengkap untuk dijemput"></textarea>
+          <button type="button" class="btn btn-outline btn-block" id="setPickupLocationBtn" style="margin-top:8px;">${ICONS.pin} Set Lokasi Jemput di Peta</button>
+          <div id="pickupLocationStatus" class="small muted" style="margin-top:6px;"></div>
+        </div>
+
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:10px;">
+          <input type="checkbox" id="ordNeedsDelivery" style="width:auto; margin:0;">
+          <span class="small">Perlu Antar (kirim cucian bersih ke pelanggan)</span>
+        </label>
+        <div class="field" id="deliveryAddressField" style="display:none;">
+          <label style="display:flex; align-items:center; gap:8px; font-weight:400;">
+            <input type="checkbox" id="ordSameAddress" style="width:auto; margin:0;">
+            <span class="small" style="font-weight:400;">Sama seperti alamat jemput</span>
+          </label>
+          <label style="margin-top:8px;">Alamat Antar</label>
+          <textarea id="ordDeliveryAddress" placeholder="Alamat lengkap untuk diantar"></textarea>
+          <button type="button" class="btn btn-outline btn-block" id="setDeliveryLocationBtn" style="margin-top:8px;">${ICONS.pin} Set Lokasi Antar di Peta</button>
+          <div id="deliveryLocationStatus" class="small muted" style="margin-top:6px;"></div>
+        </div>
+
+        <div class="field"><label>Kurir Bertugas</label><select id="ordCourier">${courierOptions}</select></div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Ongkos Kirim (Rp)</label>
+          <input type="number" id="ordDeliveryFee" placeholder="0">
+          <div id="deliveryFeeHint" class="small muted" style="margin-top:6px;"></div>
+        </div>
+      </div>
+    </div>
 
     <div class="field">
       <label>Foto Pakaian (opsional)</label>
@@ -2218,6 +2338,8 @@ async function openAddOrderModal(){
       const subType = modal.querySelector("#ordSubTypeSelf").value;
       total = computeTotal(pricing, "self-service", subType, 0);
     }
+    const deliveryFee = parseFloat(modal.querySelector("#ordDeliveryFee")?.value) || 0;
+    total += deliveryFee;
     modal.querySelector("#ordTotal").value = Math.round(total);
     recalcKembalian();
   }
@@ -2275,6 +2397,74 @@ async function openAddOrderModal(){
   modal.querySelector("#ordSubTypeSelf").addEventListener("change", recalcTotal);
   modal.querySelector("#ordBayar").addEventListener("input", recalcKembalian);
 
+  const courierToggle = modal.querySelector("#ordCourierToggle");
+  const courierFields = modal.querySelector("#courierFields");
+  courierToggle.addEventListener("change", ()=>{
+    courierFields.style.display = courierToggle.checked ? "block" : "none";
+  });
+  const needsPickup = modal.querySelector("#ordNeedsPickup");
+  const pickupAddressField = modal.querySelector("#pickupAddressField");
+  needsPickup.addEventListener("change", ()=>{
+    pickupAddressField.style.display = needsPickup.checked ? "block" : "none";
+  });
+  const needsDelivery = modal.querySelector("#ordNeedsDelivery");
+  const deliveryAddressField = modal.querySelector("#deliveryAddressField");
+  needsDelivery.addEventListener("change", ()=>{
+    deliveryAddressField.style.display = needsDelivery.checked ? "block" : "none";
+  });
+  const sameAddress = modal.querySelector("#ordSameAddress");
+  const deliveryAddressInput = modal.querySelector("#ordDeliveryAddress");
+  sameAddress.addEventListener("change", ()=>{
+    if(sameAddress.checked){
+      deliveryAddressInput.value = modal.querySelector("#ordPickupAddress").value;
+      deliveryAddressInput.disabled = true;
+      if(pickupLoc){
+        deliveryLoc = pickupLoc;
+        modal.querySelector("#deliveryLocationStatus").textContent = modal.querySelector("#pickupLocationStatus").textContent;
+        applyAutoFee();
+      }
+    } else {
+      deliveryAddressInput.disabled = false;
+    }
+  });
+  modal.querySelector("#ordDeliveryFee").addEventListener("input", recalcTotal);
+
+  let pickupLoc = null;
+  let deliveryLoc = null;
+
+  function applyAutoFee(){
+    const loc = deliveryLoc || pickupLoc;
+    if(!loc || !branchDeliverySettings?.lat){ return; }
+    const distanceKm = haversineKm(branchDeliverySettings.lat, branchDeliverySettings.lng, loc.lat, loc.lng);
+    const fee = computeAutoDeliveryFee(distanceKm, branchDeliverySettings);
+    modal.querySelector("#ordDeliveryFee").value = fee;
+    const hint = modal.querySelector("#deliveryFeeHint");
+    hint.textContent = fee > 0
+      ? `Jarak ${distanceKm.toFixed(1)} km dari cabang (radius gratis ${branchDeliverySettings.freeRadiusKm}km) — ongkir otomatis: ${Reports.formatRupiah(fee)}`
+      : `Jarak ${distanceKm.toFixed(1)} km dari cabang — masih dalam radius gratis (${branchDeliverySettings.freeRadiusKm}km)`;
+    recalcTotal();
+  }
+
+  modal.querySelector("#setPickupLocationBtn").addEventListener("click", ()=>{
+    openMapPickerModal(pickupLoc?.lat, pickupLoc?.lng, (lat,lng)=>{
+      pickupLoc = { lat, lng };
+      modal.querySelector("#pickupLocationStatus").textContent = `📍 Lokasi tersimpan: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      if(sameAddress.checked){ deliveryLoc = pickupLoc; modal.querySelector("#deliveryLocationStatus").textContent = modal.querySelector("#pickupLocationStatus").textContent; }
+      applyAutoFee();
+    });
+  });
+  modal.querySelector("#setDeliveryLocationBtn").addEventListener("click", ()=>{
+    openMapPickerModal(deliveryLoc?.lat, deliveryLoc?.lng, (lat,lng)=>{
+      deliveryLoc = { lat, lng };
+      modal.querySelector("#deliveryLocationStatus").textContent = `📍 Lokasi tersimpan: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      applyAutoFee();
+    });
+  });
+
+  if(!branchDeliverySettings?.lat){
+    modal.querySelector("#deliveryFeeHint").textContent = "Cabang ini belum di-set lokasinya — ongkir tidak bisa dihitung otomatis, isi manual. Atur di Atur → Cabang.";
+  }
+
   const custNameInput = modal.querySelector("#ordCustName");
   const custPhoneInput = modal.querySelector("#ordCustPhone");
   const matchNoteBox = modal.querySelector("#memberMatchNote");
@@ -2285,6 +2475,22 @@ async function openAddOrderModal(){
       custNameInput.readOnly = true;
       custNameInput.style.background = "var(--foam-white)";
       matchNoteBox.innerHTML = `<p class="small" style="color:var(--mint); margin:-6px 0 14px;">✓ Nomor ini terdaftar sebagai <b>${escapeHtml(member.name)}</b>. Nama terkunci — kalau ada kesalahan nama, ubah lewat menu Member.</p>`;
+
+      if(member.address){
+        modal.querySelector("#ordPickupAddress").value = member.address;
+        if(!modal.querySelector("#ordSameAddress").checked && !modal.querySelector("#ordDeliveryAddress").value){
+          modal.querySelector("#ordDeliveryAddress").value = member.address;
+        }
+      }
+      if(member.savedLocation){
+        pickupLoc = member.savedLocation;
+        modal.querySelector("#pickupLocationStatus").textContent = `📍 Lokasi member tersimpan: ${member.savedLocation.lat.toFixed(5)}, ${member.savedLocation.lng.toFixed(5)}`;
+        if(!deliveryLoc){
+          deliveryLoc = member.savedLocation;
+          modal.querySelector("#deliveryLocationStatus").textContent = modal.querySelector("#pickupLocationStatus").textContent;
+        }
+        applyAutoFee();
+      }
     } else {
       custNameInput.readOnly = false;
       custNameInput.style.background = "";
@@ -2422,6 +2628,10 @@ async function openAddOrderModal(){
     if(discountAmount > 0){ txRecord.discountAmount = discountAmount; txRecord.discountReason = discountReason; }
     if(estimatedReadyAt){ txRecord.estimatedReadyAt = estimatedReadyAt; txRecord.durationLabel = durationLabel; }
     if(photoUrls.length > 0){ txRecord.hasPhotos = true; txRecord.photoCount = photoUrls.length; }
+    if(modal.querySelector("#ordCourierToggle").checked){
+      const fee = parseFloat(modal.querySelector("#ordDeliveryFee").value) || 0;
+      if(fee > 0) txRecord.deliveryFee = fee;
+    }
 
     const txId = await DB.addTransaction(txRecord);
 
@@ -2434,6 +2644,45 @@ async function openAddOrderModal(){
     if(estimatedReadyAt){ orderPayload.estimatedReadyAt = estimatedReadyAt; orderPayload.durationLabel = durationLabel; }
     if(discountAmount > 0){ orderPayload.discountAmount = discountAmount; orderPayload.discountReason = discountReason; }
     if(photoUrls.length > 0) orderPayload.photos = photoUrls;
+
+    if(modal.querySelector("#ordCourierToggle").checked){
+      const needsPickupChecked = modal.querySelector("#ordNeedsPickup").checked;
+      const needsDeliveryChecked = modal.querySelector("#ordNeedsDelivery").checked;
+      const courierUid = modal.querySelector("#ordCourier").value;
+      const courierStaff = staffList.find(s=>s.uid===courierUid);
+      const deliveryFee = parseFloat(modal.querySelector("#ordDeliveryFee").value) || 0;
+      if(needsPickupChecked){
+        orderPayload.needsPickup = true;
+        orderPayload.pickupAddress = modal.querySelector("#ordPickupAddress").value.trim();
+        orderPayload.pickupDone = false;
+        if(pickupLoc){
+          orderPayload.pickupLocation = pickupLoc;
+          if(customerPhone){
+            const m = await DB.getMember(customerPhone);
+            if(m){
+              m.savedLocation = pickupLoc;
+              if(orderPayload.pickupAddress) m.address = orderPayload.pickupAddress;
+              await DB.upsertMember(m);
+            }
+          }
+        }
+      }
+      if(needsDeliveryChecked){
+        orderPayload.needsDelivery = true;
+        orderPayload.deliveryAddress = modal.querySelector("#ordDeliveryAddress").value.trim();
+        orderPayload.deliveryDone = false;
+        if(deliveryLoc) orderPayload.deliveryLocation = deliveryLoc;
+      }
+      const distLoc = deliveryLoc || pickupLoc;
+      if(distLoc && branchDeliverySettings?.lat){
+        orderPayload.distanceKm = Math.round(haversineKm(branchDeliverySettings.lat, branchDeliverySettings.lng, distLoc.lat, distLoc.lng) * 10) / 10;
+      }
+      if(courierUid){
+        orderPayload.courierId = courierUid;
+        orderPayload.courierName = courierStaff?.name || courierStaff?.email || "";
+      }
+      if(deliveryFee > 0) orderPayload.deliveryFee = deliveryFee;
+    }
     orderPayload.transactionId = txId;
 
     await DB.addOrder(orderPayload, orderId);
@@ -2647,6 +2896,7 @@ function openMemberDetailModal(m, kiloanLoyalty, ssLoyalty){
   const modal = openModal(`
     <h2>${escapeHtml(m.name || "Tanpa nama")}</h2>
     <p class="small muted" style="margin-top:-8px;">${m.phone}${m.address ? " · " + escapeHtml(m.address) : ""}</p>
+    ${m.savedLocation ? `<p class="small" style="color:var(--mint); margin-top:4px;">${ICONS.pin} Lokasi peta tersimpan</p>` : ""}
     <div style="margin-top:10px;">
       ${renderMemberDetailBody(m, kiloanLoyalty, ssLoyalty)}
     </div>
@@ -2739,10 +2989,23 @@ function openAddMemberModal(existing){
     <h2>${isEdit ? "Edit Member" : "Tambah Member"}</h2>
     <div class="field"><label>No. HP (ID Member)</label><input type="tel" inputmode="numeric" id="memPhone" placeholder="08xxxxxxxxxx" value="${existing?.phone ? existing.phone.replace(/^62/,'0') : ''}" ${isEdit?'disabled':''}></div>
     <div class="field"><label>Nama</label><input type="text" id="memName" placeholder="Contoh: Budi" value="${existing?.name||''}"></div>
-    <div class="field"><label>Alamat (opsional)</label><textarea id="memAddress" placeholder="Contoh: Jl. Mawar No. 5">${existing?.address||''}</textarea></div>
+    <div class="field">
+      <label>Alamat Pengiriman (opsional)</label>
+      <textarea id="memAddress" placeholder="Contoh: Jl. Mawar No. 5">${existing?.address||''}</textarea>
+      <button type="button" class="btn btn-outline btn-block" id="setMemberLocationBtn" style="margin-top:8px;">${ICONS.pin} Set Lokasi di Peta</button>
+      <div id="memberLocationStatus" class="small muted" style="margin-top:6px;">${existing?.savedLocation ? `📍 Lokasi tersimpan: ${existing.savedLocation.lat.toFixed(5)}, ${existing.savedLocation.lng.toFixed(5)}` : 'Belum ada lokasi tersimpan.'}</div>
+    </div>
     <button class="btn btn-primary btn-block" data-action="save-member">${isEdit ? "Simpan Perubahan" : "Tambah Member"}</button>
     ${isEdit ? `<button class="btn btn-danger btn-block" data-action="delete-member" style="margin-top:10px;">Hapus Member</button>` : ""}
   `);
+
+  let savedLocation = existing?.savedLocation || null;
+  modal.querySelector("#setMemberLocationBtn").addEventListener("click", ()=>{
+    openMapPickerModal(savedLocation?.lat, savedLocation?.lng, (lat,lng)=>{
+      savedLocation = { lat, lng };
+      modal.querySelector("#memberLocationStatus").textContent = `📍 Lokasi tersimpan: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    });
+  });
 
   modal.querySelector("[data-action='save-member']").addEventListener("click", async ()=>{
     const phone = normalizePhone(modal.querySelector("#memPhone").value.trim());
@@ -2763,6 +3026,7 @@ function openAddMemberModal(existing){
     rec.phone = phone;
     rec.name = name;
     rec.address = address;
+    if(savedLocation) rec.savedLocation = savedLocation;
     await DB.upsertMember(rec);
     closeModal();
     toast(isEdit ? "Member diperbarui" : "Member ditambahkan");
@@ -2922,6 +3186,88 @@ function kiloanLoyaltyNoteHtml(status, kiloanLoyalty){
 
 /* ---------------- Struk via WhatsApp ---------------- */
 
+/* ---------------- Peta & Ongkir Otomatis ---------------- */
+
+function haversineKm(lat1, lng1, lat2, lng2){
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function computeAutoDeliveryFee(distanceKm, deliverySettings){
+  if(!deliverySettings || !deliverySettings.freeRadiusKm) return 0;
+  const excess = distanceKm - deliverySettings.freeRadiusKm;
+  if(excess <= 0) return 0;
+  return Math.ceil(excess * (deliverySettings.perKmRate||0));
+}
+
+/** Standalone map picker overlay (own class, doesn't disturb any modal open behind it).
+ *  onConfirm(lat, lng) is called when the user confirms a location. */
+function openMapPickerModal(initialLat, initialLng, onConfirm){
+  const overlay = el(`
+    <div class="camera-overlay" style="z-index:80;">
+      <div class="modal-sheet">
+        <h2>Pilih Lokasi</h2>
+        <p class="small muted" style="margin-bottom:10px;">Ketuk/klik di peta untuk taruh titik lokasi, atau pakai lokasi GPS saat ini.</p>
+        <div id="mapPickerEl" style="height:320px; border-radius:12px; overflow:hidden; margin-bottom:10px;"></div>
+        <div id="mapPickerCoords" class="small muted" style="margin-bottom:10px;">Belum ada titik dipilih.</div>
+        <button type="button" class="btn btn-outline btn-block" id="mapUseGpsBtn" style="margin-bottom:10px;">${ICONS.pin} Gunakan Lokasi GPS Saat Ini</button>
+        <button type="button" class="btn btn-primary btn-block" id="mapConfirmBtn" style="margin-bottom:10px;" disabled>Konfirmasi Lokasi</button>
+        <button type="button" class="btn btn-outline btn-block" id="mapCancelBtn">Batal</button>
+      </div>
+    </div>
+  `);
+  document.body.appendChild(overlay);
+
+  let picked = (initialLat && initialLng) ? { lat: initialLat, lng: initialLng } : null;
+  const startLat = initialLat || -6.2;
+  const startLng = initialLng || 106.8;
+
+  const map = L.map(overlay.querySelector("#mapPickerEl")).setView([startLat, startLng], picked ? 15 : 12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap"
+  }).addTo(map);
+
+  let marker = picked ? L.marker([picked.lat, picked.lng]).addTo(map) : null;
+  const coordsBox = overlay.querySelector("#mapPickerCoords");
+  const confirmBtn = overlay.querySelector("#mapConfirmBtn");
+
+  function setPoint(lat, lng){
+    picked = { lat, lng };
+    if(marker) marker.setLatLng([lat,lng]);
+    else marker = L.marker([lat,lng]).addTo(map);
+    coordsBox.textContent = `Titik dipilih: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    confirmBtn.disabled = false;
+  }
+  if(picked) coordsBox.textContent = `Titik dipilih: ${picked.lat.toFixed(5)}, ${picked.lng.toFixed(5)}`;
+
+  map.on("click", (e)=> setPoint(e.latlng.lat, e.latlng.lng));
+
+  overlay.querySelector("#mapUseGpsBtn").addEventListener("click", ()=>{
+    if(!navigator.geolocation){ toast("Perangkat/browser ini tidak mendukung GPS", "warn"); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{
+        map.setView([pos.coords.latitude, pos.coords.longitude], 16);
+        setPoint(pos.coords.latitude, pos.coords.longitude);
+      },
+      ()=> toast("Gagal ambil lokasi GPS — pastikan izin lokasi diizinkan", "warn")
+    );
+  });
+
+  function closeOverlay(){ overlay.remove(); }
+
+  overlay.querySelector("#mapConfirmBtn").addEventListener("click", ()=>{
+    if(!picked) return;
+    onConfirm(picked.lat, picked.lng);
+    closeOverlay();
+  });
+  overlay.querySelector("#mapCancelBtn").addEventListener("click", closeOverlay);
+
+  setTimeout(()=> map.invalidateSize(), 100);
+}
+
 function normalizePhone(raw){
   if(!raw) return "";
   let digits = raw.replace(/[^\d]/g, "");
@@ -2981,6 +3327,7 @@ function buildReceiptText(t){
     lines.push(`Diskon     : -${Reports.formatRupiah(t.discountAmount)}`);
     if(t.discountReason) lines.push(`(${t.discountReason})`);
   }
+  if(t.deliveryFee > 0) lines.push(`Ongkos Kirim: ${Reports.formatRupiah(t.deliveryFee)}`);
   lines.push(`Total      : ${Reports.formatRupiah(t.amount)}`);
   if(typeof t.amountPaid === "number"){
     lines.push(`Bayar      : ${Reports.formatRupiah(t.amountPaid)}`);
@@ -3118,6 +3465,7 @@ function buildEscPos(t, width){
     text(padRow("Diskon", `-${Reports.formatRupiah(t.discountAmount)}`, width) + "\n");
     text("\n");
   }
+  if(t.deliveryFee > 0) text(padRow("Ongkos Kirim", Reports.formatRupiah(t.deliveryFee), width) + "\n");
 
   raw(ESC,0x45,1);
   raw(GS,0x21,0x01); // taller total
@@ -3270,6 +3618,7 @@ async function generateReceiptCanvas(t){
     footRows.push(["Subtotal", Reports.formatRupiah(subtotal), false]);
     footRows.push(["Diskon", `-${Reports.formatRupiah(t.discountAmount)}`, true]);
   }
+  if(t.deliveryFee > 0) footRows.push(["Ongkos Kirim", Reports.formatRupiah(t.deliveryFee), false]);
   const payRows = [];
   if(typeof t.amountPaid === "number"){
     payRows.push(["Bayar", Reports.formatRupiah(t.amountPaid)]);

@@ -260,6 +260,11 @@ const DB = {
     return ref.id;
   },
 
+  async updateOrderFields(id, fields){
+    await fs.collection("orders").doc(id).update(fields);
+    return true;
+  },
+
   async updateOrderStatus(id, status){
     const ref = fs.collection("orders").doc(id);
     const update = {
