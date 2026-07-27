@@ -194,12 +194,18 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
     - Status jemput/antar muncul sebagai badge di kartu pesanan (Cucian tab) dan bisa ditandai selesai satu-satu lewat popup detail pesanan (klik kartunya)
 
 9c. **Ongkir Otomatis Berdasarkan Jarak (peta, gratis — tidak pakai Google Maps berbayar)**:
-    - **Setup 1x per cabang**: buka **Atur → Cabang → Edit** salah satu cabang → klik **"Set Lokasi Cabang di Peta"** → tandai titik lokasi cabang di peta (klik langsung di peta, atau tombol "Gunakan Lokasi GPS Saat Ini" kalau sedang berada di lokasi cabang) → isi **Radius Gratis Ongkir (km)** dan **Tarif per KM di Luar Radius (Rp)** → Simpan
-    - **Saat catat pesanan**: setelah centang Perlu Jemput/Antar dan isi alamat, klik **"Set Lokasi ... di Peta"** → tandai titik lokasi pelanggan (klik di peta, atau GPS kalau HP kurir/pelanggan sedang di lokasi itu) → **jarak & ongkir otomatis terhitung** dan mengisi kolom Ongkos Kirim (masih bisa diedit manual kalau perlu)
+    - Setiap kali muncul popup peta ("Set Lokasi..."), sekarang ada 3 cara tandai titik: **ketik alamat di kolom cari** (otomatis muncul saran, klik salah satu → peta pindah ke situ dengan pin), **klik langsung di peta**, atau **"Gunakan Lokasi GPS Saat Ini"**. Pin yang sudah muncul juga **bisa digeser** langsung untuk pas-kan posisinya kalau hasil pencarian kurang tepat
+    - **Setup 1x per cabang**: buka **Atur → Cabang → Edit** salah satu cabang → klik **"Set Lokasi Cabang di Peta"** → tandai titik lokasi cabang → isi **Radius Gratis Ongkir (km)** dan **Tarif per KM di Luar Radius (Rp)** → Simpan
+    - **Saat catat pesanan**: setelah centang Perlu Jemput/Antar dan isi alamat, klik **"Set Lokasi ... di Peta"** → tandai titik lokasi pelanggan → **jarak & ongkir otomatis terhitung** dan mengisi kolom Ongkos Kirim (masih bisa diedit manual kalau perlu)
     - Kalau cabang belum di-set lokasinya, kolom Ongkos Kirim tetap bisa diisi manual seperti biasa — fitur peta ini murni opsional
-    - Peta pakai **OpenStreetMap** (gratis, tanpa API key, tanpa biaya berlangganan apa pun)
+    - Peta pakai **OpenStreetMap**, pencarian alamat pakai **Nominatim** (layanan pencarian alamat resmi OpenStreetMap) — keduanya gratis, tanpa API key, tanpa biaya berlangganan apa pun
 
-10. **Foto barang (opsional, maksimal 20 foto per pesanan)**: saat isi pesanan, ada 2 cara ambil foto:
+9d. **Menu "Tugas Saya"** — khusus untuk kurir/pegawai yang ditugaskan Jemput/Antar. Cocok dipakai kurir dari **HP-nya sendiri** (login sebagai akun pegawai-nya) saat sedang di jalan, tidak perlu buka daftar pesanan lengkap:
+    - Menampilkan **hanya pesanan yang jadi tugas dia** (berdasarkan "Kurir Bertugas" yang dipilih saat pesanan dibuat), dipisah jadi 2 daftar: **Perlu Dijemput** dan **Perlu Diantar**
+    - Tiap kartu ada tombol **"Navigasi"** (buka rute langsung di Google Maps, kalau lokasi sudah ditandai di peta) dan **"Tandai Selesai"**
+    - Begitu ditandai selesai, otomatis hilang dari daftar tugas — tidak perlu buka detail pesanan lengkap segala
+
+10. **Foto barang (opsional, tidak ada batas jumlah)**: saat isi pesanan, ada 2 cara ambil foto:
     - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup
     - **"Galeri/File"** — cara lama, buka galeri atau file manager biasa
 
@@ -210,6 +216,8 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
     > Catatan: fitur "Kamera (pilih perangkat)" butuh izin akses kamera dari browser (akan muncul pop-up izin saat pertama kali dipakai). Nama kamera eksternal baru muncul jelas (misal "USB Webcam") setelah izin diberikan — sebelum itu mungkin cuma tertulis "Kamera 1", "Kamera 2".
 
     > Catatan penyimpanan: foto disimpan di Cloudinary (kuota gratis 25 credit/bulan). Ada fitur **pembersihan otomatis** (lihat bagian "0c. Setup Pembersihan Foto Otomatis") — foto dari pesanan yang sudah Selesai lebih dari 10 hari otomatis dihapus, supaya kuota tidak terus menumpuk seiring usaha berkembang.
+
+10b. **Tambah foto SETELAH pesanan dibuat**: tidak perlu foto semua barang di depan pelanggan sebelum cetak struk (supaya pelanggan tidak menunggu lama) — cukup catat pesanan & cetak struk seperti biasa, lalu **klik kartu pesanan** kapan saja setelahnya (di tab Belum Diproses/Sedang Diproses/Selesai, tidak masalah) untuk buka detail, dan foto barang **satu-satu santai** di situ sambil pakaian disortir/dicuci. Foto yang sudah ada juga bisa dihapus satu-satu dari popup yang sama kalau salah ambil.
 
 > Catatan teknis: untuk pengiriman **struk gambar**, link pantau disertakan sebagai "keterangan/caption" lewat fitur share bawaan HP. Beberapa versi WhatsApp menampilkan caption ini otomatis di bawah gambar, sebagian lain mungkin tidak menampilkannya. Kalau linknya tidak muncul di WA, gunakan opsi **"Kirim sebagai Teks Saja"** sebagai cadangan — di situ link selalu ikut karena bagian dari teks pesan biasa.
 

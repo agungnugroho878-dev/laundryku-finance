@@ -94,6 +94,7 @@ const NAV_ITEMS = [
   { id:"dashboard", label:"Beranda", icon:ICONS.home },
   { id:"transaksi", label:"Transaksi", icon:ICONS.list },
   { id:"cucian", label:"Cucian", icon:ICONS.clock },
+  { id:"tugas-saya", label:"Tugas Saya", icon:ICONS.pin },
   { id:"member", label:"Member", icon:ICONS.star },
   { id:"laporan", label:"Laporan", icon:ICONS.report },
   { id:"pengaturan", label:"Atur", icon:ICONS.settings }
@@ -164,6 +165,7 @@ async function render(){
   if(state.page === "dashboard") main.innerHTML = await pageDashboard();
   if(state.page === "transaksi") main.innerHTML = await pageTransaksi();
   if(state.page === "cucian") main.innerHTML = await pageCucian();
+  if(state.page === "tugas-saya") main.innerHTML = await pageTugasSaya();
   if(state.page === "member") main.innerHTML = await pageMember();
   if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
   if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
@@ -184,6 +186,16 @@ async function render(){
     });
   }
   if(state.page === "cucian"){ bindCucianControls(); renderCucianList(); }
+  if(state.page === "tugas-saya"){
+    document.querySelectorAll("[data-action='task-mark-done']").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const field = btn.dataset.type === "pickup" ? { pickupDone: true } : { deliveryDone: true };
+        await DB.updateOrderFields(btn.dataset.id, field);
+        toast(btn.dataset.type === "pickup" ? "Ditandai sudah dijemput" : "Ditandai sudah diantar");
+        render();
+      });
+    });
+  }
   if(state.page === "member"){ bindMemberControls(); renderMemberList(); }
   if(state.page === "transaksi"){
     const txPageSizeSelect = document.getElementById("txPageSizeSelect");
@@ -1631,6 +1643,52 @@ async function getSelesaiOrdersForDisplay(){
   return filterOrdersByBranch(await DB.getRecentCompletedOrders(since));
 }
 
+async function pageTugasSaya(){
+  const uid = state.user?.uid;
+  const activeOrders = await DB.getActiveOrders();
+  const recentSelesai = await getSelesaiOrdersForDisplay();
+  const seen = new Set();
+  const allRelevant = [...activeOrders, ...recentSelesai].filter(o=>{
+    if(seen.has(o.id)) return false;
+    seen.add(o.id);
+    return true;
+  });
+
+  const myTasks = allRelevant.filter(o => o.courierId === uid);
+  const pickupTasks = myTasks.filter(o => o.needsPickup && !o.pickupDone);
+  const deliveryTasks = myTasks.filter(o => o.needsDelivery && !o.deliveryDone);
+
+  function taskCardHtml(o, type){
+    const address = type === "pickup" ? o.pickupAddress : o.deliveryAddress;
+    const location = type === "pickup" ? o.pickupLocation : o.deliveryLocation;
+    const mapsUrl = location ? `https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}` : null;
+    return `
+      <div class="card" style="margin-bottom:12px;">
+        <div class="row-between">
+          <div>
+            <div style="font-weight:700;">${escapeHtml(o.customerName || "Tanpa nama")}</div>
+            <div class="small muted">${escapeHtml(o.customerPhone || "")}</div>
+          </div>
+          <span class="order-id-badge">${ICONS.hash}${o.receiptNo || "------"}</span>
+        </div>
+        ${address ? `<div class="small" style="margin-top:8px;">📍 ${escapeHtml(address)}</div>` : `<div class="small muted" style="margin-top:8px;">Alamat belum diisi</div>`}
+        <div class="btn-row" style="margin-top:10px;">
+          ${mapsUrl ? `<a href="${mapsUrl}" target="_blank" rel="noopener" class="btn btn-outline btn-block" style="text-decoration:none;">${ICONS.pin} Navigasi</a>` : ""}
+          <button class="btn btn-primary btn-block" data-action="task-mark-done" data-id="${o.id}" data-type="${type}">Tandai Selesai</button>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <p class="small muted" style="margin-bottom:14px;">Daftar pesanan yang jadi tugas jemput/antar Anda. Tandai selesai begitu sudah dikerjakan.</p>
+    <h3 class="section-title">🚗 Perlu Dijemput (${pickupTasks.length})</h3>
+    ${pickupTasks.length===0 ? emptyState("Tidak ada tugas jemput saat ini.") : pickupTasks.map(o=>taskCardHtml(o,"pickup")).join("")}
+    <h3 class="section-title" style="margin-top:20px;">📦 Perlu Diantar (${deliveryTasks.length})</h3>
+    ${deliveryTasks.length===0 ? emptyState("Tidak ada tugas antar saat ini.") : deliveryTasks.map(o=>taskCardHtml(o,"delivery")).join("")}
+  `;
+}
+
 async function pageCucian(){
   const activeOrders = filterOrdersByBranch(await DB.getActiveOrders());
   const selesaiOrders = await getSelesaiOrdersForDisplay();
@@ -1806,14 +1864,7 @@ function openOrderDetailModal(o){
 
     ${o.note ? `<div class="small muted" style="margin-top:10px;">📝 ${escapeHtml(o.note)}</div>` : ""}
 
-    ${o.photos?.length ? `
-      <div style="margin-top:14px;">
-        <p class="small" style="font-weight:700; margin-bottom:8px;">📷 Foto Pakaian (${o.photos.length})</p>
-        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
-          ${o.photos.map(p=>`<img src="${photoUrl(p)}" data-full="${photoUrl(p)}" class="order-detail-photo" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; cursor:pointer;">`).join("")}
-        </div>
-      </div>
-    ` : ""}
+    <div id="orderDetailPhotoSection" style="margin-top:14px;"></div>
 
     ${(o.needsPickup || o.needsDelivery) ? `
       <div style="margin-top:14px; padding:12px; background:var(--foam-white); border-radius:10px;">
@@ -1844,11 +1895,73 @@ function openOrderDetailModal(o){
     <button class="btn btn-outline btn-block" data-action="detail-close" style="margin-top:10px;">Tutup</button>
   `);
 
-  modal.querySelectorAll(".order-detail-photo").forEach(img=>{
-    img.addEventListener("click", ()=>{
-      window.open(img.dataset.full, "_blank");
+  let photos = o.photos ? [...o.photos] : [];
+  const photoSection = modal.querySelector("#orderDetailPhotoSection");
+
+  function renderPhotoSection(){
+    photoSection.innerHTML = `
+      <p class="small" style="font-weight:700; margin-bottom:8px;">📷 Foto Pakaian (${photos.length})</p>
+      ${photos.length ? `
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:10px;">
+          ${photos.map((p,i)=>`
+            <div style="position:relative;">
+              <img src="${photoUrl(p)}" data-full="${photoUrl(p)}" class="order-detail-photo" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; cursor:pointer;">
+              <button type="button" data-remove-detail-photo="${i}" style="position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; background:var(--rose); color:#fff; border:none; font-size:12px; line-height:1; cursor:pointer;">✕</button>
+            </div>
+          `).join("")}
+        </div>
+      ` : `<p class="small muted" style="margin-bottom:10px;">Belum ada foto.</p>`}
+      <div class="btn-row">
+        <button type="button" class="btn btn-outline btn-block" id="detailAddCameraBtn">${ICONS.camera} Kamera</button>
+        <button type="button" class="btn btn-outline btn-block" id="detailAddGalleryBtn">${ICONS.chat} Galeri/File</button>
+      </div>
+      <input type="file" id="detailPhotoInput" accept="image/*" multiple style="display:none;">
+    `;
+
+    photoSection.querySelectorAll(".order-detail-photo").forEach(img=>{
+      img.addEventListener("click", ()=> window.open(img.dataset.full, "_blank"));
     });
-  });
+    photoSection.querySelectorAll("[data-remove-detail-photo]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        photos.splice(parseInt(btn.dataset.removeDetailPhoto), 1);
+        await DB.updateOrderFields(o.id, { photos });
+        renderPhotoSection();
+        renderCucianList();
+      });
+    });
+    photoSection.querySelector("#detailAddCameraBtn").addEventListener("click", ()=>{
+      openCameraCaptureModal(async (photo)=>{
+        photos.push(photo);
+        await DB.updateOrderFields(o.id, { photos });
+        renderPhotoSection();
+        renderCucianList();
+      });
+    });
+    photoSection.querySelector("#detailAddGalleryBtn").addEventListener("click", ()=>{
+      photoSection.querySelector("#detailPhotoInput").click();
+    });
+    photoSection.querySelector("#detailPhotoInput").addEventListener("change", async (e)=>{
+      const files = Array.from(e.target.files || []);
+      if(files.length === 0) return;
+      const btn = photoSection.querySelector("#detailAddGalleryBtn");
+      btn.textContent = "Mengunggah...";
+      btn.disabled = true;
+      try{
+        for(const file of files){
+          const photo = await uploadPhotoToCloudinary(file);
+          photos.push(photo);
+        }
+        await DB.updateOrderFields(o.id, { photos });
+        renderPhotoSection();
+        renderCucianList();
+      }catch(err){
+        toast("Gagal unggah foto — cek koneksi internet", "warn");
+        renderPhotoSection();
+      }
+      e.target.value = "";
+    });
+  }
+  renderPhotoSection();
 
   const markPickupBtn = modal.querySelector("[data-action='mark-pickup-done']");
   if(markPickupBtn) markPickupBtn.addEventListener("click", async ()=>{
@@ -3210,7 +3323,12 @@ function openMapPickerModal(initialLat, initialLng, onConfirm){
     <div class="camera-overlay" style="z-index:80;">
       <div class="modal-sheet">
         <h2>Pilih Lokasi</h2>
-        <p class="small muted" style="margin-bottom:10px;">Ketuk/klik di peta untuk taruh titik lokasi, atau pakai lokasi GPS saat ini.</p>
+        <p class="small muted" style="margin-bottom:10px;">Ketik alamat untuk cari, lalu geser pin di peta untuk pas-kan titiknya — atau langsung ketuk/klik di peta, atau pakai lokasi GPS saat ini.</p>
+        <div class="cucian-search" style="margin-bottom:10px;">
+          ${ICONS.search}
+          <input type="text" id="mapSearchInput" placeholder="Ketik alamat, misal: Jl. Pemuda No. 27 Mataram">
+        </div>
+        <div id="mapSearchResults" style="margin-bottom:10px;"></div>
         <div id="mapPickerEl" style="height:320px; border-radius:12px; overflow:hidden; margin-bottom:10px;"></div>
         <div id="mapPickerCoords" class="small muted" style="margin-bottom:10px;">Belum ada titik dipilih.</div>
         <button type="button" class="btn btn-outline btn-block" id="mapUseGpsBtn" style="margin-bottom:10px;">${ICONS.pin} Gunakan Lokasi GPS Saat Ini</button>
@@ -3230,28 +3348,64 @@ function openMapPickerModal(initialLat, initialLng, onConfirm){
     attribution: "&copy; OpenStreetMap"
   }).addTo(map);
 
-  let marker = picked ? L.marker([picked.lat, picked.lng]).addTo(map) : null;
+  let marker = picked ? L.marker([picked.lat, picked.lng], { draggable: true }).addTo(map) : null;
+  if(marker) marker.on("dragend", ()=>{ const p = marker.getLatLng(); setPoint(p.lat, p.lng, false); });
   const coordsBox = overlay.querySelector("#mapPickerCoords");
   const confirmBtn = overlay.querySelector("#mapConfirmBtn");
 
-  function setPoint(lat, lng){
+  function setPoint(lat, lng, recenter){
     picked = { lat, lng };
-    if(marker) marker.setLatLng([lat,lng]);
-    else marker = L.marker([lat,lng]).addTo(map);
-    coordsBox.textContent = `Titik dipilih: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    if(marker){
+      marker.setLatLng([lat,lng]);
+    } else {
+      marker = L.marker([lat,lng], { draggable: true }).addTo(map);
+      marker.on("dragend", ()=>{ const p = marker.getLatLng(); setPoint(p.lat, p.lng, false); });
+    }
+    if(recenter) map.setView([lat,lng], 16);
+    coordsBox.textContent = `Titik dipilih: ${lat.toFixed(5)}, ${lng.toFixed(5)} — geser pin kalau perlu digeser`;
     confirmBtn.disabled = false;
   }
-  if(picked) coordsBox.textContent = `Titik dipilih: ${picked.lat.toFixed(5)}, ${picked.lng.toFixed(5)}`;
+  if(picked) coordsBox.textContent = `Titik dipilih: ${picked.lat.toFixed(5)}, ${picked.lng.toFixed(5)} — geser pin kalau perlu digeser`;
 
-  map.on("click", (e)=> setPoint(e.latlng.lat, e.latlng.lng));
+  map.on("click", (e)=> setPoint(e.latlng.lat, e.latlng.lng, false));
+
+  const searchInput = overlay.querySelector("#mapSearchInput");
+  const searchResults = overlay.querySelector("#mapSearchResults");
+  let searchDebounce = null;
+  searchInput.addEventListener("input", ()=>{
+    clearTimeout(searchDebounce);
+    const q = searchInput.value.trim();
+    if(q.length < 4){ searchResults.innerHTML = ""; return; }
+    searchDebounce = setTimeout(async ()=>{
+      searchResults.innerHTML = `<p class="small muted">Mencari...</p>`;
+      try{
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=id&q=${encodeURIComponent(q)}`);
+        const results = await res.json();
+        if(!results.length){ searchResults.innerHTML = `<p class="small muted">Alamat tidak ditemukan — coba ketik lebih detail, atau taruh pin manual di peta.</p>`; return; }
+        searchResults.innerHTML = results.map((r,i)=>`
+          <div class="tx-item" data-search-result="${i}" style="cursor:pointer;">
+            <div class="tx-dot in">${ICONS.pin}</div>
+            <div class="tx-info"><div class="cat" style="font-size:13px;">${escapeHtml(r.display_name)}</div></div>
+          </div>
+        `).join("");
+        searchResults.querySelectorAll("[data-search-result]").forEach(row=>{
+          row.addEventListener("click", ()=>{
+            const r = results[parseInt(row.dataset.searchResult)];
+            setPoint(parseFloat(r.lat), parseFloat(r.lon), true);
+            searchResults.innerHTML = "";
+            searchInput.value = r.display_name;
+          });
+        });
+      }catch(err){
+        searchResults.innerHTML = `<p class="small muted">Gagal mencari — cek koneksi internet, atau taruh pin manual di peta.</p>`;
+      }
+    }, 600);
+  });
 
   overlay.querySelector("#mapUseGpsBtn").addEventListener("click", ()=>{
     if(!navigator.geolocation){ toast("Perangkat/browser ini tidak mendukung GPS", "warn"); return; }
     navigator.geolocation.getCurrentPosition(
-      (pos)=>{
-        map.setView([pos.coords.latitude, pos.coords.longitude], 16);
-        setPoint(pos.coords.latitude, pos.coords.longitude);
-      },
+      (pos)=> setPoint(pos.coords.latitude, pos.coords.longitude, true),
       ()=> toast("Gagal ambil lokasi GPS — pastikan izin lokasi diizinkan", "warn")
     );
   });
