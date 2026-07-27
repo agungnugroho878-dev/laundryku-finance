@@ -3323,12 +3323,22 @@ function openMapPickerModal(initialLat, initialLng, onConfirm){
     <div class="camera-overlay" style="z-index:80;">
       <div class="modal-sheet">
         <h2>Pilih Lokasi</h2>
-        <p class="small muted" style="margin-bottom:10px;">Ketik alamat untuk cari, lalu geser pin di peta untuk pas-kan titiknya — atau langsung ketuk/klik di peta, atau pakai lokasi GPS saat ini.</p>
+        <p class="small muted" style="margin-bottom:10px;">Ketik alamat untuk cari, tempel koordinat/link Google Maps, geser pin untuk pas-kan titiknya, ketuk/klik langsung di peta, atau pakai lokasi GPS saat ini.</p>
         <div class="cucian-search" style="margin-bottom:10px;">
           ${ICONS.search}
           <input type="text" id="mapSearchInput" placeholder="Ketik alamat, misal: Jl. Pemuda No. 27 Mataram">
         </div>
         <div id="mapSearchResults" style="margin-bottom:10px;"></div>
+
+        <div class="field" style="background:var(--foam-white); border-radius:10px; padding:10px; margin-bottom:10px;">
+          <label class="small" style="font-weight:600;">Atau tempel koordinat / link Google Maps</label>
+          <p class="small muted" style="margin:2px 0 8px;">Kalau pelanggan share lokasi lewat WhatsApp: buka lokasinya di Google Maps → salin link atau koordinat → tempel di sini</p>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="mapPasteInput" placeholder="Contoh: -8.5715, 116.1033 atau link maps.google.com" style="flex:1;">
+            <button type="button" class="btn btn-outline" id="mapPasteBtn">Pakai</button>
+          </div>
+        </div>
+
         <div id="mapPickerEl" style="height:320px; border-radius:12px; overflow:hidden; margin-bottom:10px;"></div>
         <div id="mapPickerCoords" class="small muted" style="margin-bottom:10px;">Belum ada titik dipilih.</div>
         <button type="button" class="btn btn-outline btn-block" id="mapUseGpsBtn" style="margin-bottom:10px;">${ICONS.pin} Gunakan Lokasi GPS Saat Ini</button>
@@ -3400,6 +3410,28 @@ function openMapPickerModal(initialLat, initialLng, onConfirm){
         searchResults.innerHTML = `<p class="small muted">Gagal mencari — cek koneksi internet, atau taruh pin manual di peta.</p>`;
       }
     }, 600);
+  });
+
+  overlay.querySelector("#mapPasteBtn").addEventListener("click", ()=>{
+    const raw = overlay.querySelector("#mapPasteInput").value.trim();
+    if(!raw){ toast("Tempel koordinat atau link dulu", "warn"); return; }
+    // Try: plain "lat, lng" or "lat lng"
+    let match = raw.match(/(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+    // Try: Google Maps URL patterns like /@lat,lng, or ?q=lat,lng, or !3dlat!4dlng
+    if(!match) match = raw.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/);
+    if(!match) match = raw.match(/[?&]q=(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/);
+    if(!match) match = raw.match(/!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/);
+    if(!match){
+      toast("Format tidak dikenali — pastikan ada angka koordinat (lat, lng) di teks/link itu", "warn");
+      return;
+    }
+    const lat = parseFloat(match[1]), lng = parseFloat(match[2]);
+    if(Math.abs(lat) > 90 || Math.abs(lng) > 180){
+      toast("Angka koordinat tidak valid", "warn");
+      return;
+    }
+    setPoint(lat, lng, true);
+    toast("Titik lokasi diterapkan dari koordinat yang ditempel");
   });
 
   overlay.querySelector("#mapUseGpsBtn").addEventListener("click", ()=>{
