@@ -3046,7 +3046,9 @@ async function setPrinterSettings(v){
 
 function stripForPrinter(str){
   // Thermal printers can't render emoji/unicode reliably — keep it plain ASCII.
-  return (str||"").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").trim();
+  // (No .trim() here — these strings often end in an intentional "\n" line break,
+  // which .trim() would silently delete, causing every line to run together.)
+  return (str||"").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "");
 }
 
 function padRow(label, value, width){
@@ -3076,6 +3078,7 @@ function buildEscPos(t, width){
   if(state.businessAddress) text(state.businessAddress + "\n");
   if(state.businessPhone) text(`WhatsApp: ${state.businessPhone}\n`);
   if(state.businessInstagram) text(`Instagram: ${state.businessInstagram}\n`);
+  text("\n");
   text("-".repeat(width) + "\n");
 
   raw(ESC,0x61,0);         // left align
@@ -3084,29 +3087,36 @@ function buildEscPos(t, width){
   if(t.customerName) text(padRow("Pelanggan", t.customerName, width) + "\n");
   if(t.customerPhone) text(padRow("No. Telp", t.customerPhone, width) + "\n");
   text("-".repeat(width) + "\n");
+  text("\n");
 
   items.forEach(i=>{
     text(i.desc + "\n");
     text(padRow(i.detail ? "  "+i.detail : "", Reports.formatRupiah(i.subtotal), width) + "\n");
+    text("\n");
   });
   if(t.isFreeVisit){
     raw(ESC,0x61,1); raw(ESC,0x45,1);
     text("*** GRATIS REWARD MEMBER ***\n");
     raw(ESC,0x45,0); raw(ESC,0x61,0);
+    text("\n");
   }
   if(t.estimatedReadyAt){
     raw(ESC,0x61,0);
     text(`Estimasi Selesai:\n${fmtDateTime(t.estimatedReadyAt)}\n`);
+    text("\n");
   }
   if(t.photoCount){
     raw(ESC,0x61,0);
     text(`Total ${t.photoCount} pcs pakaian difoto\n`);
+    text("\n");
   }
 
   text("-".repeat(width) + "\n");
+  text("\n");
   if(t.discountAmount > 0){
     text(padRow("Subtotal", Reports.formatRupiah(subtotal), width) + "\n");
     text(padRow("Diskon", `-${Reports.formatRupiah(t.discountAmount)}`, width) + "\n");
+    text("\n");
   }
 
   raw(ESC,0x45,1);
@@ -3114,13 +3124,16 @@ function buildEscPos(t, width){
   text(padRow("TOTAL", Reports.formatRupiah(t.amount), width) + "\n");
   raw(GS,0x21,0x00);
   raw(ESC,0x45,0);
+  text("\n");
 
   if(typeof t.amountPaid === "number"){
     text(padRow("Bayar", Reports.formatRupiah(t.amountPaid), width) + "\n");
     text(padRow("Kembalian", Reports.formatRupiah(t.changeAmount||0), width) + "\n");
+    text("\n");
   }
 
   text("-".repeat(width) + "\n");
+  text("\n");
   raw(ESC,0x61,1);
   text("Terima kasih sudah\nmencuci di tempat kami\n");
   text("\n\n\n");
