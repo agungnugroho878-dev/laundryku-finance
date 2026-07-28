@@ -109,8 +109,73 @@ const DB = {
     return true;
   },
 
+  async getTodayAttendance(userId, dateStr){
+    const snap = await fs.collection("attendance")
+      .where("businessId","==",_businessId)
+      .where("userId","==",userId)
+      .where("date","==",dateStr)
+      .limit(1)
+      .get();
+    return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+  },
+
+  async addAttendance(record){
+    const payload = { ...record, businessId: _businessId };
+    const ref = await fs.collection("attendance").add(payload);
+    return ref.id;
+  },
+
+  async updateAttendance(id, fields){
+    await fs.collection("attendance").doc(id).update(fields);
+    return true;
+  },
+
+  async getAttendanceInRange(startDate, endDate){
+    const snap = await fs.collection("attendance")
+      .where("businessId","==",_businessId)
+      .where("date",">=",startDate)
+      .where("date","<=",endDate)
+      .get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => a.date.localeCompare(b.date) || (a.checkInTime||0)-(b.checkInTime||0));
+    return list;
+  },
+
   async setStaffRole(uid, role){
     await fs.collection("users").doc(uid).update({ role });
+    return true;
+  },
+
+  async setSalaryConfig(uid, config){
+    await fs.collection("users").doc(uid).update({ salaryConfig: config });
+    return true;
+  },
+
+  async addPayslip(payslip){
+    const payload = { ...payslip, businessId: _businessId, generatedAt: Date.now() };
+    const ref = await fs.collection("payslips").add(payload);
+    return ref.id;
+  },
+
+  async getPayslipsForUser(userId){
+    const snap = await fs.collection("payslips")
+      .where("businessId","==",_businessId)
+      .where("userId","==",userId)
+      .get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.generatedAt||0)-(a.generatedAt||0));
+    return list;
+  },
+
+  async getAllPayslips(){
+    const snap = await fs.collection("payslips").where("businessId","==",_businessId).get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.generatedAt||0)-(a.generatedAt||0));
+    return list;
+  },
+
+  async deletePayslip(id){
+    await fs.collection("payslips").doc(id).delete();
     return true;
   },
 

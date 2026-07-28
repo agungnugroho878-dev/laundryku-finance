@@ -1,6 +1,7 @@
 /* LaundryKu Finance — app shell & UI */
 
 const ICONS = {
+  calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
   report: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M9 13h6M9 17h6M9 9h2"/></svg>`,
@@ -59,7 +60,9 @@ const state = {
   txPageSize: 25,
   cucianPage: 1,
   cucianPageSize: 25,
-  cucianShowAllHistory: false
+  cucianShowAllHistory: false,
+  absensiReportRange: null,
+  viewingPayslipId: null
 };
 
 function el(html){
@@ -95,6 +98,7 @@ const NAV_ITEMS = [
   { id:"transaksi", label:"Transaksi", icon:ICONS.list },
   { id:"cucian", label:"Cucian", icon:ICONS.clock },
   { id:"tugas-saya", label:"Tugas Saya", icon:ICONS.pin },
+  { id:"absensi", label:"Absensi", icon:ICONS.calendar },
   { id:"member", label:"Member", icon:ICONS.star },
   { id:"laporan", label:"Laporan", icon:ICONS.report },
   { id:"pengaturan", label:"Atur", icon:ICONS.settings }
@@ -167,6 +171,7 @@ async function render(){
   if(state.page === "cucian") main.innerHTML = await pageCucian();
   if(state.page === "tugas-saya") main.innerHTML = await pageTugasSaya();
   if(state.page === "member") main.innerHTML = await pageMember();
+  if(state.page === "absensi") main.innerHTML = await pageAbsensi();
   if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
   if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
   bindPageEvents();
@@ -197,6 +202,109 @@ async function render(){
     });
   }
   if(state.page === "member"){ bindMemberControls(); renderMemberList(); }
+  if(state.page === "absensi"){
+    const checkInBtn = document.getElementById("checkInBtn");
+    if(checkInBtn) checkInBtn.addEventListener("click", async ()=>{
+      if(!navigator.geolocation){ toast("Perangkat ini tidak mendukung GPS", "warn"); return; }
+      checkInBtn.disabled = true; checkInBtn.textContent = "Mengambil lokasi...";
+      const branchId = resolveActionBranchId();
+      const branch = await DB.getBranchById(branchId);
+      const as = branch.attendanceSettings;
+      navigator.geolocation.getCurrentPosition(async (pos)=>{
+        const lat = pos.coords.latitude, lng = pos.coords.longitude;
+        const distM = haversineKm(as.lat, as.lng, lat, lng) * 1000;
+        if(distM > (as.radiusMeters||100)){
+          toast(`Anda ${Math.round(distM)}m dari cabang — di luar radius absen (${as.radiusMeters}m)`, "warn");
+          checkInBtn.disabled = false; checkInBtn.textContent = `${ICONS.pin} Absen Masuk`;
+          return;
+        }
+        const now = Date.now();
+        const today = Reports.todayStr();
+        const late = minutesLate(now, today, as.workStart);
+        await DB.addAttendance({
+          userId: state.user.uid, userName: state.userName || state.user.email,
+          branchId, date: today, checkInTime: now, checkInLocation: { lat, lng },
+          lateMinutes: late, checkOutTime: null
+        });
+        toast(late>0 ? `Absen masuk berhasil — terlambat ${late} menit` : "Absen masuk berhasil — tepat waktu");
+        render();
+      }, ()=>{
+        toast("Gagal ambil lokasi GPS — pastikan izin lokasi diizinkan", "warn");
+        checkInBtn.disabled = false; checkInBtn.textContent = `${ICONS.pin} Absen Masuk`;
+      });
+    });
+
+    const checkOutBtn = document.getElementById("checkOutBtn");
+    if(checkOutBtn) checkOutBtn.addEventListener("click", async ()=>{
+      if(!navigator.geolocation){ toast("Perangkat ini tidak mendukung GPS", "warn"); return; }
+      checkOutBtn.disabled = true; checkOutBtn.textContent = "Mengambil lokasi...";
+      const today = Reports.todayStr();
+      const record = await DB.getTodayAttendance(state.user.uid, today);
+      navigator.geolocation.getCurrentPosition(async (pos)=>{
+        await DB.updateAttendance(record.id, {
+          checkOutTime: Date.now(),
+          checkOutLocation: { lat: pos.coords.latitude, lng: pos.coords.longitude }
+        });
+        toast("Absen pulang berhasil");
+        render();
+      }, async ()=>{
+        // GPS optional for checkout — still allow it without location if it fails
+        await DB.updateAttendance(record.id, { checkOutTime: Date.now() });
+        toast("Absen pulang berhasil (tanpa lokasi)");
+        render();
+      });
+    });
+
+    const absStart = document.getElementById("absStart");
+    const absEnd = document.getElementById("absEnd");
+    if(absStart) absStart.addEventListener("change", ()=>{ state.absensiReportRange.start = absStart.value; render(); });
+    if(absEnd) absEnd.addEventListener("change", ()=>{ state.absensiReportRange.end = absEnd.value; render(); });
+
+    const exportAbsBtn = document.querySelector("[data-action='export-absensi-csv']");
+    if(exportAbsBtn) exportAbsBtn.addEventListener("click", async ()=>{
+      const range = state.absensiReportRange;
+      const records = await DB.getAttendanceInRange(range.start, range.end);
+      const staffList = await DB.getBusinessStaff();
+      const staffMap = Object.fromEntries(staffList.map(s=>[s.uid, s.name||s.email]));
+      const branchMap = Object.fromEntries(state.branches.map(b=>[b.id,b.name]));
+      exportAbsensiCsv(records, staffMap, branchMap);
+    });
+
+    const genPayslipBtn = document.getElementById("generatePayslipBtn");
+    if(genPayslipBtn) genPayslipBtn.addEventListener("click", async ()=>{
+      const uid = document.getElementById("payslipStaffSelect").value;
+      if(!uid){ toast("Pilih pegawai dulu", "warn"); return; }
+      const staffList = await DB.getBusinessStaff();
+      const staffMember = staffList.find(s=>s.uid===uid);
+      const range = state.absensiReportRange;
+      const allRecords = await DB.getAttendanceInRange(range.start, range.end);
+      const myRecords = allRecords.filter(r=>r.userId===uid);
+      const slip = calculatePayslip(staffMember, myRecords, range.start, range.end);
+      if(!slip){ toast("Pegawai ini belum diatur gajinya", "warn"); return; }
+      const id = await DB.addPayslip(slip);
+      toast("Slip gaji dibuat");
+      state.viewingPayslipId = id;
+      render();
+    });
+
+    document.querySelectorAll("[data-action='view-payslip']").forEach(card=>{
+      card.addEventListener("click", ()=>{
+        state.viewingPayslipId = card.dataset.id;
+        render();
+      });
+    });
+    const backBtn = document.querySelector("[data-action='back-to-absensi']");
+    if(backBtn) backBtn.addEventListener("click", ()=>{ state.viewingPayslipId = null; render(); });
+
+    const delPayslipBtn = document.querySelector("[data-action='delete-payslip']");
+    if(delPayslipBtn) delPayslipBtn.addEventListener("click", async ()=>{
+      if(!confirm("Hapus slip gaji ini?")) return;
+      await DB.deletePayslip(delPayslipBtn.dataset.id);
+      toast("Slip gaji dihapus");
+      state.viewingPayslipId = null;
+      render();
+    });
+  }
   if(state.page === "transaksi"){
     const txPageSizeSelect = document.getElementById("txPageSizeSelect");
     if(txPageSizeSelect) txPageSizeSelect.addEventListener("change", ()=>{
@@ -609,9 +717,106 @@ async function renderAsetTetapSection(){
   `;
 }
 
+function openSalaryConfigModal(staffMember){
+  const cfg = staffMember.salaryConfig || {
+    type: "harian", baseAmount: 0,
+    allowances: [{ label: "Tunjangan Makan", amount: 0, enabled: false }, { label: "Tunjangan Transport", amount: 0, enabled: false }],
+    lateDeduction: { enabled: false, perMinutes: 15, amountPerInterval: 5000 }
+  };
+
+  const modal = openModal(`
+    <h2>Atur Gaji — ${escapeHtml(staffMember.name || staffMember.email)}</h2>
+    <div class="field">
+      <label>Jenis Gaji Pokok</label>
+      <select id="salType">
+        <option value="harian" ${cfg.type==='harian'?'selected':''}>Harian (dihitung dari jumlah hari absen masuk)</option>
+        <option value="mingguan" ${cfg.type==='mingguan'?'selected':''}>Mingguan (nominal tetap per periode)</option>
+        <option value="bulanan" ${cfg.type==='bulanan'?'selected':''}>Bulanan (nominal tetap per periode)</option>
+      </select>
+    </div>
+    <div class="field"><label id="salBaseLabel">Nominal Gaji Pokok (Rp)</label><input type="number" id="salBase" value="${cfg.baseAmount}"></div>
+
+    <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px;">
+      <p class="small" style="font-weight:700; margin-bottom:8px;">Tunjangan (opsional, bisa pilih beberapa)</p>
+      <div id="salAllowanceList"></div>
+      <button type="button" class="btn btn-outline btn-block" id="addAllowanceBtn" style="margin-top:8px;">${ICONS.plus} Tambah Tunjangan</button>
+    </div>
+
+    <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+        <input type="checkbox" id="salLateEnabled" ${cfg.lateDeduction.enabled?'checked':''} style="width:auto; margin:0;">
+        <span class="small" style="font-weight:700;">Potongan Keterlambatan</span>
+      </label>
+      <div id="salLateFields" style="display:${cfg.lateDeduction.enabled?'block':'none'}; margin-top:10px;">
+        <p class="small muted" style="margin-bottom:8px;">Setiap kelipatan menit ini terlambat, potongan sekian rupiah (dihitung per hari absen).</p>
+        <div style="display:flex; gap:10px; align-items:flex-end;">
+          <div class="field" style="flex:1;"><label>Tiap berapa menit</label><input type="number" id="salLatePerMin" value="${cfg.lateDeduction.perMinutes}"></div>
+          <div class="field" style="flex:1;"><label>Potongan (Rp)</label><input type="number" id="salLateAmount" value="${cfg.lateDeduction.amountPerInterval}"></div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-block" data-action="save-salary-config">Simpan Pengaturan Gaji</button>
+  `);
+
+  const salType = modal.querySelector("#salType");
+  const salBaseLabel = modal.querySelector("#salBaseLabel");
+  function updateBaseLabel(){
+    const map = { harian: "Nominal Gaji Pokok per Hari (Rp)", mingguan: "Nominal Gaji Pokok per Minggu (Rp)", bulanan: "Nominal Gaji Pokok per Bulan (Rp)" };
+    salBaseLabel.textContent = map[salType.value];
+  }
+  salType.addEventListener("change", updateBaseLabel);
+  updateBaseLabel();
+
+  let allowances = cfg.allowances.map(a=>({...a}));
+  const allowanceList = modal.querySelector("#salAllowanceList");
+  function renderAllowances(){
+    allowanceList.innerHTML = allowances.map((a,i)=>`
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+        <input type="checkbox" class="allow-enabled" data-i="${i}" ${a.enabled?'checked':''} style="width:auto; margin:0;">
+        <input type="text" class="allow-label" data-i="${i}" value="${escapeHtml(a.label)}" placeholder="Nama tunjangan" style="flex:2;">
+        <input type="number" class="allow-amount" data-i="${i}" value="${a.amount}" placeholder="Rp" style="flex:1;">
+        <button type="button" class="tx-del allow-remove" data-i="${i}">${ICONS.trash}</button>
+      </div>
+    `).join("");
+    allowanceList.querySelectorAll(".allow-enabled").forEach(el=> el.addEventListener("change", ()=>{ allowances[el.dataset.i].enabled = el.checked; }));
+    allowanceList.querySelectorAll(".allow-label").forEach(el=> el.addEventListener("input", ()=>{ allowances[el.dataset.i].label = el.value; }));
+    allowanceList.querySelectorAll(".allow-amount").forEach(el=> el.addEventListener("input", ()=>{ allowances[el.dataset.i].amount = parseFloat(el.value)||0; }));
+    allowanceList.querySelectorAll(".allow-remove").forEach(el=> el.addEventListener("click", ()=>{ allowances.splice(parseInt(el.dataset.i),1); renderAllowances(); }));
+  }
+  renderAllowances();
+
+  modal.querySelector("#addAllowanceBtn").addEventListener("click", ()=>{
+    allowances.push({ label: "", amount: 0, enabled: true });
+    renderAllowances();
+  });
+
+  modal.querySelector("#salLateEnabled").addEventListener("change", (e)=>{
+    modal.querySelector("#salLateFields").style.display = e.target.checked ? "block" : "none";
+  });
+
+  modal.querySelector("[data-action='save-salary-config']").addEventListener("click", async ()=>{
+    const salaryConfig = {
+      type: salType.value,
+      baseAmount: parseFloat(modal.querySelector("#salBase").value) || 0,
+      allowances: allowances.filter(a=>a.label.trim()),
+      lateDeduction: {
+        enabled: modal.querySelector("#salLateEnabled").checked,
+        perMinutes: parseFloat(modal.querySelector("#salLatePerMin").value) || 15,
+        amountPerInterval: parseFloat(modal.querySelector("#salLateAmount").value) || 0
+      }
+    };
+    await DB.setSalaryConfig(staffMember.uid, salaryConfig);
+    toast("Pengaturan gaji disimpan");
+    closeModal();
+    render();
+  });
+}
+
 function openBranchModal(existing){
   const isEdit = !!existing;
   const ds = existing?.deliverySettings || {};
+  const as = existing?.attendanceSettings || {};
   const modal = openModal(`
     <h2>${isEdit ? 'Edit' : 'Tambah'} Cabang</h2>
     <div class="field"><label>Nama Cabang</label><input type="text" id="branchName" placeholder="Contoh: Cabang Sanur" value="${escapeHtml(existing?.name||'')}"></div>
@@ -624,6 +829,25 @@ function openBranchModal(existing){
       <button type="button" class="btn btn-outline btn-block" id="setBranchLocationBtn" style="margin-bottom:10px;">${ICONS.pin} Set Lokasi Cabang di Peta</button>
       <div class="field"><label>Radius Gratis Ongkir (km)</label><input type="number" id="branchFreeRadius" value="${ds.freeRadiusKm||3}" step="0.5"></div>
       <div class="field" style="margin-bottom:0;"><label>Tarif per KM di Luar Radius (Rp)</label><input type="number" id="branchPerKmRate" value="${ds.perKmRate||2000}"></div>
+    </div>
+
+    <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px;">
+      <p class="small" style="font-weight:700; margin-bottom:8px;">🕐 Absensi Pegawai (opsional)</p>
+      <p class="small muted" style="margin-bottom:10px;">Pakai lokasi cabang yang sama di atas — pegawai cuma bisa absen kalau HP-nya berada dalam radius ini dari cabang.</p>
+      <div class="field"><label>Radius Absen (meter)</label><input type="number" id="attRadius" value="${as.radiusMeters||100}"></div>
+      <div style="display:flex; gap:10px;">
+        <div class="field" style="flex:1;"><label>Jam Masuk</label><input type="time" id="attWorkStart" value="${as.workStart||'08:00'}"></div>
+        <div class="field" style="flex:1;"><label>Jam Pulang</label><input type="time" id="attWorkEnd" value="${as.workEnd||'17:00'}"></div>
+      </div>
+      <label class="small" style="font-weight:600; display:block; margin-bottom:6px;">Hari Libur Mingguan</label>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;">
+        ${["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"].map((d,i)=>`
+          <label style="display:flex; align-items:center; gap:5px; background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer;">
+            <input type="checkbox" class="att-off-day" value="${i}" ${(as.offDays||[0]).includes(i)?'checked':''} style="width:auto; margin:0;">
+            <span class="small">${d}</span>
+          </label>
+        `).join("")}
+      </div>
     </div>
 
     <button class="btn btn-primary btn-block" data-action="save-branch" style="margin-top:14px;">Simpan</button>
@@ -649,12 +873,18 @@ function openBranchModal(existing){
       freeRadiusKm: parseFloat(modal.querySelector("#branchFreeRadius").value) || 0,
       perKmRate: parseFloat(modal.querySelector("#branchPerKmRate").value) || 0
     };
+    const attendanceSettings = {
+      radiusMeters: parseFloat(modal.querySelector("#attRadius").value) || 100,
+      workStart: modal.querySelector("#attWorkStart").value || "08:00",
+      workEnd: modal.querySelector("#attWorkEnd").value || "17:00",
+      offDays: Array.from(modal.querySelectorAll(".att-off-day:checked")).map(el=>parseInt(el.value))
+    };
 
     if(isEdit){
-      await DB.updateBranch(existing.id, { name, address, deliverySettings });
+      await DB.updateBranch(existing.id, { name, address, deliverySettings, attendanceSettings });
       toast("Cabang diperbarui");
     } else {
-      await DB.addBranch({ name, address, deliverySettings });
+      await DB.addBranch({ name, address, deliverySettings, attendanceSettings });
       toast("Cabang ditambahkan");
     }
     closeModal();
@@ -1074,15 +1304,18 @@ async function pagePengaturan(){
       <p class="small muted">Bisa lebih dari 1 Owner untuk usaha yang sama — misalnya Anda dan pasangan, masing-masing pakai email sendiri, akses penuh berdua. Naikkan akun Pegawai jadi Owner di sini.</p>
       <div style="margin-top:10px;">
         ${staff.map(s => `
-          <div class="row-between" style="padding:10px 0; border-bottom:1px dashed var(--line);">
-            <div>
-              <div class="small" style="font-weight:700;">${escapeHtml(s.name || s.email)}${s.uid === state.user?.uid ? ' <span class="muted">(Anda)</span>' : ''}</div>
-              <div class="small muted">${escapeHtml(s.email || '')}${s.role==='pegawai' ? ` · ${escapeHtml(branchList.find(b=>b.id===s.branchId)?.name || 'Cabang tidak diketahui')}` : ''}</div>
+          <div style="padding:10px 0; border-bottom:1px dashed var(--line);">
+            <div class="row-between">
+              <div>
+                <div class="small" style="font-weight:700;">${escapeHtml(s.name || s.email)}${s.uid === state.user?.uid ? ' <span class="muted">(Anda)</span>' : ''}</div>
+                <div class="small muted">${escapeHtml(s.email || '')}${s.role==='pegawai' ? ` · ${escapeHtml(branchList.find(b=>b.id===s.branchId)?.name || 'Cabang tidak diketahui')}` : ''}</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="status-badge ${s.role==='owner' ? 'status-selesai' : 'status-belum-diproses'}">${s.role === 'owner' ? 'Owner' : 'Pegawai'}</span>
+                ${s.uid !== state.user?.uid ? `<button class="btn btn-outline" data-action="toggle-role" data-uid="${s.uid}" data-role="${s.role}">${s.role === 'owner' ? 'Turunkan' : 'Jadikan Owner'}</button>` : ''}
+              </div>
             </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span class="status-badge ${s.role==='owner' ? 'status-selesai' : 'status-belum-diproses'}">${s.role === 'owner' ? 'Owner' : 'Pegawai'}</span>
-              ${s.uid !== state.user?.uid ? `<button class="btn btn-outline" data-action="toggle-role" data-uid="${s.uid}" data-role="${s.role}">${s.role === 'owner' ? 'Turunkan' : 'Jadikan Owner'}</button>` : ''}
-            </div>
+            <button class="btn btn-outline btn-block" data-action="set-salary-config" data-uid="${s.uid}" style="margin-top:8px;">${ICONS.report} Atur Gaji${s.salaryConfig ? ' (sudah diatur)' : ''}</button>
           </div>
         `).join("")}
       </div>
@@ -1641,6 +1874,240 @@ async function getSelesaiOrdersForDisplay(){
   }
   const since = Date.now() - SELESAI_WINDOW_DAYS*24*3600*1000;
   return filterOrdersByBranch(await DB.getRecentCompletedOrders(since));
+}
+
+function fmtHM(ms){
+  if(!ms) return "—";
+  return new Date(ms).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
+}
+
+function minutesLate(checkInTimeMs, dateStr, workStart){
+  const [h,m] = (workStart||"08:00").split(":").map(Number);
+  const workStartMs = new Date(dateStr+"T00:00:00").getTime() + (h*60+m)*60000;
+  return Math.max(0, Math.round((checkInTimeMs - workStartMs) / 60000));
+}
+
+async function pageAbsensi(){
+  if(state.viewingPayslipId){
+    const slips = state.role === "owner" ? await DB.getAllPayslips() : await DB.getPayslipsForUser(state.user.uid);
+    const slip = slips.find(s=>s.id===state.viewingPayslipId);
+    if(slip) return payslipDetailHtml(slip);
+    state.viewingPayslipId = null;
+  }
+
+  const branchId = resolveActionBranchId();
+  const branch = branchId ? await DB.getBranchById(branchId) : null;
+  const attSettings = branch?.attendanceSettings || null;
+  const today = Reports.todayStr();
+  const todayRecord = state.user ? await DB.getTodayAttendance(state.user.uid, today) : null;
+  const todayLabel = new Date().toLocaleDateString("id-ID",{weekday:'long', day:'numeric', month:'long', year:'numeric'});
+
+  let actionArea;
+  if(!branchId){
+    actionArea = `<p class="small muted">Pilih cabang spesifik dulu di Beranda untuk bisa absen.</p>`;
+  } else if(!attSettings?.lat){
+    actionArea = `<p class="small muted">Cabang ini belum diset lokasi absensinya — Owner perlu atur dulu di Atur → Cabang.</p>`;
+  } else if(!todayRecord){
+    actionArea = `<button class="btn btn-primary btn-block" id="checkInBtn">${ICONS.pin} Absen Masuk</button>`;
+  } else if(!todayRecord.checkOutTime){
+    actionArea = `<button class="btn btn-primary btn-block" id="checkOutBtn">${ICONS.pin} Absen Pulang</button>`;
+  } else {
+    actionArea = `<p class="small" style="color:var(--mint); font-weight:600;">✓ Absensi hari ini sudah lengkap</p>`;
+  }
+
+  const staffSection = `
+    <div class="hero-balance">
+      <div class="card-title">Absensi Hari Ini</div>
+      <div class="amount" style="font-family:var(--font-display); font-size:19px;">${todayLabel}</div>
+      <div class="sub">
+        <span>Masuk: <b>${fmtHM(todayRecord?.checkInTime)}</b>${todayRecord ? (todayRecord.lateMinutes>0 ? ` (terlambat ${todayRecord.lateMinutes} menit)` : ' (tepat waktu)') : ''}</span>
+        <span>Pulang: <b>${fmtHM(todayRecord?.checkOutTime)}</b></span>
+      </div>
+    </div>
+    ${actionArea}
+  `;
+
+  const ownerSection = state.role === "owner" ? await renderAbsensiOwnerReport() : "";
+  const myPayslipsSection = (state.role === "pegawai" && state.user) ? await renderMyPayslipsSection(state.user.uid) : "";
+
+  return `${staffSection}${ownerSection}${myPayslipsSection}`;
+}
+
+function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd){
+  const cfg = staffMember.salaryConfig;
+  if(!cfg) return null;
+  const attendanceCount = attendanceRecords.length;
+
+  const basePay = cfg.type === "harian" ? cfg.baseAmount * attendanceCount : cfg.baseAmount;
+
+  const allowanceDetails = (cfg.allowances||[]).filter(a=>a.enabled).map(a=>({
+    label: a.label,
+    amount: cfg.type === "harian" ? a.amount * attendanceCount : a.amount
+  }));
+  const totalAllowances = allowanceDetails.reduce((s,a)=>s+a.amount, 0);
+
+  const deductionDetails = [];
+  let totalDeduction = 0;
+  if(cfg.lateDeduction?.enabled){
+    for(const rec of attendanceRecords){
+      if(rec.lateMinutes > 0){
+        const intervals = Math.floor(rec.lateMinutes / cfg.lateDeduction.perMinutes);
+        const deduction = intervals * cfg.lateDeduction.amountPerInterval;
+        if(deduction > 0){
+          totalDeduction += deduction;
+          deductionDetails.push({ date: rec.date, lateMinutes: rec.lateMinutes, deduction });
+        }
+      }
+    }
+  }
+
+  return {
+    userId: staffMember.uid, userName: staffMember.name || staffMember.email,
+    periodStart, periodEnd,
+    salaryType: cfg.type, baseAmount: cfg.baseAmount, attendanceCount,
+    basePay, allowanceDetails, totalAllowances,
+    deductionDetails, totalDeduction,
+    totalPay: basePay + totalAllowances - totalDeduction
+  };
+}
+
+function payslipDetailHtml(s){
+  return `
+    <div class="card no-print" style="margin-bottom:14px;">
+      <button class="btn btn-outline" data-action="back-to-absensi">${ICONS.arrowUp} Kembali</button>
+    </div>
+    <div class="receipt">
+      <h2 style="text-align:center;">SLIP GAJI</h2>
+      <p class="small muted" style="text-align:center; margin-top:-8px;">${escapeHtml(state.businessName)}</p>
+      <div class="r-row"><span>Nama</span><span class="val">${escapeHtml(s.userName)}</span></div>
+      <div class="r-row"><span>Periode</span><span class="val">${fmtDate(s.periodStart)} — ${fmtDate(s.periodEnd)}</span></div>
+      <div class="r-row"><span>Jenis Gaji Pokok</span><span class="val">${s.salaryType === 'harian' ? 'Harian' : s.salaryType === 'mingguan' ? 'Mingguan' : 'Bulanan'}</span></div>
+      ${s.salaryType === "harian" ? `<div class="r-row"><span>Jumlah Hari Masuk</span><span class="val">${s.attendanceCount} hari</span></div>` : ""}
+      <div class="r-row" style="margin-top:10px;"><span>Gaji Pokok</span><span class="val num">${Reports.formatRupiah(s.basePay)}</span></div>
+      ${s.allowanceDetails.map(a=>`<div class="r-row"><span>${escapeHtml(a.label)}</span><span class="val num">${Reports.formatRupiah(a.amount)}</span></div>`).join("")}
+      ${s.deductionDetails.length ? `
+        <div class="r-row" style="margin-top:6px;"><span style="font-weight:700;">Potongan Keterlambatan</span><span></span></div>
+        ${s.deductionDetails.map(d=>`<div class="r-row"><span style="padding-left:12px;">${fmtDate(d.date)} (telat ${d.lateMinutes} menit)</span><span class="val num">-${Reports.formatRupiah(d.deduction)}</span></div>`).join("")}
+      ` : ""}
+      <div class="r-row total" style="margin-top:10px;"><span>TOTAL GAJI DITERIMA</span><span class="val num">${Reports.formatRupiah(s.totalPay)}</span></div>
+    </div>
+    <div class="btn-row no-print" style="margin-top:14px;">
+      <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
+      ${state.role === "owner" ? `<button class="btn btn-danger btn-block" data-action="delete-payslip" data-id="${s.id}">Hapus</button>` : ""}
+    </div>
+  `;
+}
+
+async function renderMyPayslipsSection(userId){
+  const slips = await DB.getPayslipsForUser(userId);
+  return `
+    <h3 class="section-title" style="margin-top:24px;">Slip Gaji Saya</h3>
+    ${slips.length===0 ? emptyState("Belum ada slip gaji.") : slips.map(s=>`
+      <div class="card" data-action="view-payslip" data-id="${s.id}" style="cursor:pointer; margin-bottom:10px;">
+        <div class="row-between">
+          <div>
+            <div style="font-weight:700;">${fmtDate(s.periodStart)} — ${fmtDate(s.periodEnd)}</div>
+            <div class="small muted">${s.attendanceCount} hari masuk</div>
+          </div>
+          <div class="small" style="font-weight:700; color:var(--mint);">${Reports.formatRupiah(s.totalPay)}</div>
+        </div>
+      </div>
+    `).join("")}
+  `;
+}
+
+async function renderAbsensiOwnerReport(){
+  const range = state.absensiReportRange || { start: Reports.startOfMonth(), end: Reports.todayStr() };
+  state.absensiReportRange = range;
+  const records = await DB.getAttendanceInRange(range.start, range.end);
+  const staffList = await DB.getBusinessStaff();
+  const staffMap = Object.fromEntries(staffList.map(s=>[s.uid, s.name||s.email]));
+  const branchMap = Object.fromEntries(state.branches.map(b=>[b.id,b.name]));
+  const lateCount = records.filter(r=>r.lateMinutes>0).length;
+
+  return `
+    <h3 class="section-title" style="margin-top:24px;">Rekap Absensi Semua Pegawai</h3>
+    <div class="card no-print">
+      <div class="card-title">Periode</div>
+      <div class="date-range">
+        <input type="date" id="absStart" value="${range.start}">
+        <span class="muted small">s/d</span>
+        <input type="date" id="absEnd" value="${range.end}">
+      </div>
+      ${lateCount>0 ? `<p class="small" style="color:var(--rose); margin-top:8px;">⚠ ${lateCount} catatan terlambat di periode ini</p>` : ''}
+    </div>
+    <div class="card">
+      ${records.length===0 ? emptyState("Belum ada data absensi di periode ini.") : `
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+            <thead><tr style="text-align:left; border-bottom:2px solid var(--line);">
+              <th style="padding:8px 6px;">Tanggal</th><th style="padding:8px 6px;">Nama</th><th style="padding:8px 6px;">Cabang</th>
+              <th style="padding:8px 6px;">Masuk</th><th style="padding:8px 6px;">Pulang</th><th style="padding:8px 6px;">Terlambat</th>
+            </tr></thead>
+            <tbody>
+              ${records.map(r=>`
+                <tr style="border-bottom:1px solid var(--line);">
+                  <td style="padding:8px 6px;">${fmtDate(r.date)}</td>
+                  <td style="padding:8px 6px;">${escapeHtml(staffMap[r.userId]||r.userName||'-')}</td>
+                  <td style="padding:8px 6px;">${escapeHtml(branchMap[r.branchId]||'-')}</td>
+                  <td style="padding:8px 6px;" class="num">${fmtHM(r.checkInTime)}</td>
+                  <td style="padding:8px 6px;" class="num">${fmtHM(r.checkOutTime)}</td>
+                  <td style="padding:8px 6px;" class="num">${r.lateMinutes>0 ? `<span style="color:var(--rose); font-weight:700;">${r.lateMinutes} menit</span>` : '-'}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+    <div class="btn-row no-print">
+      <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
+      <button class="btn btn-outline btn-block" data-action="export-absensi-csv">${ICONS.download} Unduh Excel (CSV)</button>
+    </div>
+
+    <h3 class="section-title" style="margin-top:24px;">Buat Slip Gaji</h3>
+    <div class="card no-print">
+      <div class="field">
+        <label>Pegawai</label>
+        <select id="payslipStaffSelect">
+          <option value="">— Pilih pegawai —</option>
+          ${staffList.filter(s=>s.salaryConfig).map(s=>`<option value="${s.uid}">${escapeHtml(s.name||s.email)}</option>`).join("")}
+        </select>
+      </div>
+      ${staffList.filter(s=>!s.salaryConfig).length > 0 ? `<p class="small muted">${staffList.filter(s=>!s.salaryConfig).length} pegawai belum diatur gajinya (atur dulu di Atur → Anggota Tim).</p>` : ""}
+      <p class="small muted" style="margin:8px 0;">Pakai periode yang sama dengan filter tanggal rekap absensi di atas (${fmtDate(range.start)} — ${fmtDate(range.end)}).</p>
+      <button class="btn btn-primary btn-block" id="generatePayslipBtn">Buat Slip Gaji</button>
+    </div>
+
+    <h3 class="section-title" style="margin-top:24px;">Riwayat Slip Gaji (Semua Pegawai)</h3>
+    ${await renderAllPayslipsList()}
+  `;
+}
+
+async function renderAllPayslipsList(){
+  const slips = await DB.getAllPayslips();
+  if(slips.length === 0) return emptyState("Belum ada slip gaji dibuat.");
+  return slips.map(s=>`
+    <div class="card" data-action="view-payslip" data-id="${s.id}" style="cursor:pointer; margin-bottom:10px;">
+      <div class="row-between">
+        <div>
+          <div style="font-weight:700;">${escapeHtml(s.userName)}</div>
+          <div class="small muted">${fmtDate(s.periodStart)} — ${fmtDate(s.periodEnd)}</div>
+        </div>
+        <div class="small" style="font-weight:700; color:var(--mint);">${Reports.formatRupiah(s.totalPay)}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function exportAbsensiCsv(records, staffMap, branchMap){
+  const header = "Tanggal,Nama,Cabang,Jam Masuk,Jam Pulang,Terlambat (menit)\n";
+  const rows = records.map(r=>{
+    const name = (staffMap[r.userId]||r.userName||"").replace(/"/g,'""');
+    const branch = (branchMap[r.branchId]||"").replace(/"/g,'""');
+    return `${r.date},"${name}","${branch}",${fmtHM(r.checkInTime)},${fmtHM(r.checkOutTime)},${r.lateMinutes||0}`;
+  }).join("\n");
+  downloadFile(`absensi-${Reports.todayStr()}.csv`, header + rows, "text/csv");
 }
 
 async function pageTugasSaya(){
@@ -3584,6 +4051,28 @@ function stripForPrinter(str){
   return (str||"").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "");
 }
 
+/** Wraps text to fit `width` characters per line, breaking at word boundaries
+ *  (spaces) instead of mid-word — thermal printers auto-wrap at a fixed
+ *  character count with no regard for word breaks, which can split a word
+ *  like "Selaparang" into "Selap" + "arang" across two lines. */
+function wordWrap(str, width){
+  const words = (str||"").split(" ");
+  const lines = [];
+  let current = "";
+  for(const word of words){
+    if(current === ""){
+      current = word;
+    } else if((current + " " + word).length <= width){
+      current += " " + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if(current) lines.push(current);
+  return lines.join("\n");
+}
+
 function padRow(label, value, width){
   label = stripForPrinter(label); value = stripForPrinter(value);
   const space = width - label.length - value.length;
@@ -3604,11 +4093,11 @@ function buildEscPos(t, width){
   raw(ESC,0x61,1);         // center
   raw(ESC,0x45,1);         // bold on
   raw(GS,0x21,0x11);       // double width+height
-  text(state.businessName + "\n");
+  text(wordWrap(state.businessName, Math.floor(width/2)) + "\n");
   raw(GS,0x21,0x00);       // normal size
   raw(ESC,0x45,0);         // bold off
-  if(state.businessTagline) text(state.businessTagline + "\n");
-  if(state.businessAddress) text(state.businessAddress + "\n");
+  if(state.businessTagline) text(wordWrap(state.businessTagline, width) + "\n");
+  if(state.businessAddress) text(wordWrap(state.businessAddress, width) + "\n");
   if(state.businessPhone) text(`WhatsApp: ${state.businessPhone}\n`);
   if(state.businessInstagram) text(`Instagram: ${state.businessInstagram}\n`);
   text("\n");
@@ -4421,6 +4910,13 @@ function bindPageEvents(){
       await DB.setStaffRole(uid, newRole);
       toast(newRole === "owner" ? "Akun dijadikan Owner" : "Akun diturunkan jadi Pegawai");
       render();
+    });
+  });
+  document.querySelectorAll("[data-action='set-salary-config']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const staff = await DB.getBusinessStaff();
+      const s = staff.find(x=>x.uid===btn.dataset.uid);
+      if(s) openSalaryConfigModal(s);
     });
   });
 }

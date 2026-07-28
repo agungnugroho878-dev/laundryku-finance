@@ -92,6 +92,22 @@ service cloud.firestore {
       allow create, update: if isOwner() && sameBusiness(request.resource.data.businessId);
       allow delete: if isOwner() && sameBusiness(resource.data.businessId);
     }
+
+    match /attendance/{id} {
+      allow read: if isOwner() && sameBusiness(resource.data.businessId)
+                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId));
+      allow list: if isOwner() && sameBusiness(resource.data.businessId)
+                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId));
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && sameBusiness(request.resource.data.businessId);
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId);
+    }
+
+    match /payslips/{id} {
+      allow read, list: if isOwner() && sameBusiness(resource.data.businessId)
+                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId));
+      allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
+      allow delete: if isOwner() && sameBusiness(resource.data.businessId);
+    }
   }
 }
 ```
@@ -205,6 +221,22 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
     - Menampilkan **hanya pesanan yang jadi tugas dia** (berdasarkan "Kurir Bertugas" yang dipilih saat pesanan dibuat), dipisah jadi 2 daftar: **Perlu Dijemput** dan **Perlu Diantar**
     - Tiap kartu ada tombol **"Navigasi"** (buka rute langsung di Google Maps, kalau lokasi sudah ditandai di peta) dan **"Tandai Selesai"**
     - Begitu ditandai selesai, otomatis hilang dari daftar tugas — tidak perlu buka detail pesanan lengkap segala
+
+9e. **Menu "Absensi" (Absensi Pegawai dengan Geotagging)**:
+    - **Setup 1x oleh Owner** (di **Atur → Cabang → Edit**, bagian "🕐 Absensi Pegawai" — pakai lokasi cabang yang sama dengan yang di-set untuk ongkir): isi **Radius Absen (meter)** — pegawai cuma bisa absen kalau HP-nya benar-benar berada dalam radius ini dari cabang, **Jam Masuk/Jam Pulang**, dan **Hari Libur Mingguan** (centang hari yang libur)
+    - **Pegawai**: buka menu **Absensi** → tombol **"Absen Masuk"** (minta izin lokasi GPS browser saat pertama kali) → kalau di luar radius, ditolak dengan keterangan jaraknya; kalau berhasil, otomatis dihitung **terlambat berapa menit** kalau lewat dari Jam Masuk yang di-set. Sore harinya, tombol berubah jadi **"Absen Pulang"**
+    - **Owner**: di menu yang sama, muncul tambahan **Rekap Absensi Semua Pegawai** — bisa pilih rentang tanggal, tabel lengkap (nama, cabang, jam masuk/pulang, keterlambatan disorot merah), dan tombol **"Unduh Excel (CSV)"** atau **"Cetak/Simpan PDF"** — cocok jadi pedoman hitung gaji
+    - Catatan: absen pulang tetap bisa dilakukan meski GPS gagal/ditolak (supaya pegawai tidak "terkunci" kalau ada kendala teknis saat pulang), tapi absen masuk **wajib** GPS valid dalam radius
+
+    > ⚠️ Sama seperti fitur "Selesai 30 hari" sebelumnya, query rekap absensi ini kemungkinan butuh Firestore membuat index baru saat pertama kali dipakai — kalau muncul error "The query requires an index" di Console, klik link birunya, tunggu status "Enabled", lalu coba lagi.
+
+9f. **Hitung Gaji & Slip Gaji**:
+    - **Setup per pegawai** (Atur → Anggota Tim → tombol "Atur Gaji" di tiap pegawai):
+      - **Jenis Gaji Pokok**: Harian (otomatis dihitung dari jumlah hari absen masuk di periode slip), Mingguan, atau Bulanan (nominal tetap per periode)
+      - **Tunjangan** (opsional, bisa tambah beberapa) — misal Tunjangan Makan, Tunjangan Transport, atau nama bebas lainnya. Kalau gaji pokoknya Harian, tunjangan juga otomatis dikali jumlah hari masuk; kalau Mingguan/Bulanan, tunjangan flat per periode
+      - **Potongan Keterlambatan** (opsional) — atur "setiap berapa menit terlambat, potongan berapa rupiah" (misal tiap 15 menit = Rp5.000), dihitung otomatis per hari dari data Absensi
+    - **Buat Slip Gaji** (Owner, di menu Absensi bagian bawah): pilih pegawai (yang sudah diatur gajinya) → pakai periode yang sama dengan filter rekap absensi di atasnya → klik "Buat Slip Gaji" → sistem otomatis menghitung semuanya (gaji pokok + tunjangan − potongan telat) berdasarkan data Absensi periode itu
+    - Slip yang sudah dibuat **tersimpan permanen** dan bisa dilihat lagi kapan saja — **baik oleh Owner (semua pegawai) maupun pegawai yang bersangkutan (cuma miliknya sendiri)**, lewat menu Absensi masing-masing. Tiap slip ada tombol **Cetak/Simpan PDF**
 
 10. **Foto barang (opsional, tidak ada batas jumlah)**: saat isi pesanan, ada 2 cara ambil foto:
     - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup
