@@ -151,6 +151,11 @@ const DB = {
     return true;
   },
 
+  async updateStaffWorkSchedule(uid, workSchedule){
+    await fs.collection("users").doc(uid).update({ workSchedule });
+    return true;
+  },
+
   async addPayslip(payslip){
     const payload = { ...payslip, businessId: _businessId, generatedAt: Date.now() };
     const ref = await fs.collection("payslips").add(payload);

@@ -173,6 +173,8 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 ## 1. Cara pakai cepat
 
 1. Buka aplikasinya → login (atau daftar kalau belum punya akun)
+
+> **Navigasi disederhanakan**: menu bawah sekarang **Beranda, Cucian, Laporan (khusus Owner), Akun** + tombol **"+"** mengambang untuk aksi cepat (Pesanan Baru, Catat Kas Masuk, Catat Kas Keluar). Menu **Riwayat Transaksi, Member, Tugas Saya, Absensi (termasuk gaji), serta Atur** sekarang dikumpulkan jadi satu di tab **Akun**, tampil sebagai kartu-kartu berwarna yang tinggal diketuk.
 1b. **Multi-Cabang**: setiap usaha otomatis punya 1 cabang ("Cabang Utama") sejak awal. Kalau usaha Anda lebih dari 1 lokasi:
    - **Owner**: buka **Atur → Cabang** → **"+ Tambah Cabang"** → isi nama & alamat cabang baru
    - Tiap cabang punya **kode undangan sendiri**, **harga layanan sendiri**, dan **kas/laporan sendiri** — tapi tetap ada tampilan **gabungan (Semua Cabang)** untuk Owner
@@ -230,12 +232,17 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 
     > ⚠️ Sama seperti fitur "Selesai 30 hari" sebelumnya, query rekap absensi ini kemungkinan butuh Firestore membuat index baru saat pertama kali dipakai — kalau muncul error "The query requires an index" di Console, klik link birunya, tunggu status "Enabled", lalu coba lagi.
 
-9f. **Hitung Gaji & Slip Gaji**:
-    - **Setup per pegawai** (Atur → Anggota Tim → tombol "Atur Gaji" di tiap pegawai):
-      - **Jenis Gaji Pokok**: Harian (otomatis dihitung dari jumlah hari absen masuk di periode slip), Mingguan, atau Bulanan (nominal tetap per periode)
-      - **Tunjangan** (opsional, bisa tambah beberapa) — misal Tunjangan Makan, Tunjangan Transport, atau nama bebas lainnya. Kalau gaji pokoknya Harian, tunjangan juga otomatis dikali jumlah hari masuk; kalau Mingguan/Bulanan, tunjangan flat per periode
-      - **Potongan Keterlambatan** (opsional) — atur "setiap berapa menit terlambat, potongan berapa rupiah" (misal tiap 15 menit = Rp5.000), dihitung otomatis per hari dari data Absensi
-    - **Buat Slip Gaji** (Owner, di menu Absensi bagian bawah): pilih pegawai (yang sudah diatur gajinya) → pakai periode yang sama dengan filter rekap absensi di atasnya → klik "Buat Slip Gaji" → sistem otomatis menghitung semuanya (gaji pokok + tunjangan − potongan telat) berdasarkan data Absensi periode itu
+9f. **Kelola Pegawai (satu tempat untuk semua pengaturan per pegawai)**:
+    - Buka **Atur → Anggota Tim → tombol "Kelola Pegawai"** di tiap pegawai — semuanya jadi satu di sini:
+      - **Jam Kerja & Hari Libur Mingguan** — per pegawai (bukan per cabang lagi), jadi tiap pegawai bisa punya jadwal beda-beda
+      - **Jenis Gaji Pokok**: Harian (otomatis dihitung dari jumlah hari absen masuk di periode slip), Mingguan, atau Bulanan (nominal tetap)
+      - **Tunjangan** (opsional, bisa tambah beberapa) — misal Tunjangan Makan, Tunjangan Transport, atau nama bebas. Kalau gaji pokoknya Harian, tunjangan ikut dikali jumlah hari masuk
+      - **Potongan Keterlambatan** — atur "setiap berapa menit terlambat, potongan berapa rupiah"
+      - **Potongan Tanpa Izin (Alpa)** — atur nominal potongan per hari kerja yang **sama sekali tidak ada absen masuk** (bukan hari libur, bukan hari yang belum terjadi) — dihitung otomatis dari jadwal kerja & data Absensi pegawai itu
+    - Radius lokasi absen (meter) tetap diatur per **cabang** (Atur → Cabang, karena terkait lokasi fisik cabang), tapi jam kerja/hari libur/gaji sekarang murni per **pegawai**
+
+    > Catatan migrasi: kalau sebelumnya sudah pernah atur Jam Kerja/Hari Libur di level Cabang, itu **tidak otomatis pindah** ke pengaturan per pegawai yang baru ini — tolong buka "Kelola Pegawai" untuk tiap pegawai dan atur ulang jam kerja & hari liburnya (default sementara: masuk 08:00, pulang 17:00, libur Minggu, sampai diatur ulang).
+    - **Buat Slip Gaji** (Owner, di menu Absensi bagian bawah): pilih pegawai (yang sudah dikelola) → pakai periode yang sama dengan filter rekap absensi di atasnya → klik "Buat Slip Gaji" → sistem otomatis menghitung semuanya (gaji pokok + tunjangan − potongan telat − potongan alpa) berdasarkan data Absensi periode itu
     - Slip yang sudah dibuat **tersimpan permanen** dan bisa dilihat lagi kapan saja — **baik oleh Owner (semua pegawai) maupun pegawai yang bersangkutan (cuma miliknya sendiri)**, lewat menu Absensi masing-masing. Tiap slip ada tombol **Cetak/Simpan PDF**
 
 10. **Foto barang (opsional, tidak ada batas jumlah)**: saat isi pesanan, ada 2 cara ambil foto:

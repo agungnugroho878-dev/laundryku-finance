@@ -1,6 +1,7 @@
 /* LaundryKu Finance — app shell & UI */
 
 const ICONS = {
+  user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
   calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -95,18 +96,14 @@ function openModal(innerHtml){
 
 const NAV_ITEMS = [
   { id:"dashboard", label:"Beranda", icon:ICONS.home },
-  { id:"transaksi", label:"Transaksi", icon:ICONS.list },
   { id:"cucian", label:"Cucian", icon:ICONS.clock },
-  { id:"tugas-saya", label:"Tugas Saya", icon:ICONS.pin },
-  { id:"absensi", label:"Absensi", icon:ICONS.calendar },
-  { id:"member", label:"Member", icon:ICONS.star },
-  { id:"laporan", label:"Laporan", icon:ICONS.report },
-  { id:"pengaturan", label:"Atur", icon:ICONS.settings }
+  { id:"laporan", label:"Laporan", icon:ICONS.report, ownerOnly:true },
+  { id:"akun", label:"Akun", icon:ICONS.user }
 ];
 
 function visibleNavItems(){
   if(state.role === "owner") return NAV_ITEMS;
-  return NAV_ITEMS.filter(i => i.id !== "laporan");
+  return NAV_ITEMS.filter(i => !i.ownerOnly);
 }
 
 function initFabQuickAction(){
@@ -172,6 +169,7 @@ async function render(){
   if(state.page === "tugas-saya") main.innerHTML = await pageTugasSaya();
   if(state.page === "member") main.innerHTML = await pageMember();
   if(state.page === "absensi") main.innerHTML = await pageAbsensi();
+  if(state.page === "akun") main.innerHTML = await pageAkun();
   if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
   if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
   bindPageEvents();
@@ -202,6 +200,11 @@ async function render(){
     });
   }
   if(state.page === "member"){ bindMemberControls(); renderMemberList(); }
+  if(state.page === "akun"){
+    document.querySelectorAll("[data-action='goto-page']").forEach(el=>{
+      el.addEventListener("click", ()=>{ state.page = el.dataset.page; render(); });
+    });
+  }
   if(state.page === "absensi"){
     const checkInBtn = document.getElementById("checkInBtn");
     if(checkInBtn) checkInBtn.addEventListener("click", async ()=>{
@@ -210,6 +213,9 @@ async function render(){
       const branchId = resolveActionBranchId();
       const branch = await DB.getBranchById(branchId);
       const as = branch.attendanceSettings;
+      const staffList = await DB.getBusinessStaff();
+      const me = staffList.find(s=>s.uid===state.user.uid);
+      const ws = me?.workSchedule || { workStart: "08:00" };
       navigator.geolocation.getCurrentPosition(async (pos)=>{
         const lat = pos.coords.latitude, lng = pos.coords.longitude;
         const distM = haversineKm(as.lat, as.lng, lat, lng) * 1000;
@@ -220,7 +226,7 @@ async function render(){
         }
         const now = Date.now();
         const today = Reports.todayStr();
-        const late = minutesLate(now, today, as.workStart);
+        const late = minutesLate(now, today, ws.workStart);
         await DB.addAttendance({
           userId: state.user.uid, userName: state.userName || state.user.email,
           branchId, date: today, checkInTime: now, checkInLocation: { lat, lng },
@@ -721,11 +727,32 @@ function openSalaryConfigModal(staffMember){
   const cfg = staffMember.salaryConfig || {
     type: "harian", baseAmount: 0,
     allowances: [{ label: "Tunjangan Makan", amount: 0, enabled: false }, { label: "Tunjangan Transport", amount: 0, enabled: false }],
-    lateDeduction: { enabled: false, perMinutes: 15, amountPerInterval: 5000 }
+    lateDeduction: { enabled: false, perMinutes: 15, amountPerInterval: 5000 },
+    absenceDeduction: { enabled: false, amountPerDay: 0 }
   };
+  if(!cfg.absenceDeduction) cfg.absenceDeduction = { enabled: false, amountPerDay: 0 };
+  const ws = staffMember.workSchedule || { workStart: "08:00", workEnd: "17:00", offDays: [0] };
 
   const modal = openModal(`
-    <h2>Atur Gaji — ${escapeHtml(staffMember.name || staffMember.email)}</h2>
+    <h2>Kelola Pegawai — ${escapeHtml(staffMember.name || staffMember.email)}</h2>
+
+    <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px;">
+      <p class="small" style="font-weight:700; margin-bottom:8px;">🕐 Jam Kerja & Hari Libur</p>
+      <div style="display:flex; gap:10px;">
+        <div class="field" style="flex:1;"><label>Jam Masuk</label><input type="time" id="wsStart" value="${ws.workStart}"></div>
+        <div class="field" style="flex:1;"><label>Jam Pulang</label><input type="time" id="wsEnd" value="${ws.workEnd}"></div>
+      </div>
+      <label class="small" style="font-weight:600; display:block; margin-bottom:6px;">Hari Libur Mingguan</label>
+      <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        ${["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"].map((d,i)=>`
+          <label style="display:flex; align-items:center; gap:5px; background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer;">
+            <input type="checkbox" class="ws-off-day" value="${i}" ${(ws.offDays||[0]).includes(i)?'checked':''} style="width:auto; margin:0;">
+            <span class="small">${d}</span>
+          </label>
+        `).join("")}
+      </div>
+    </div>
+
     <div class="field">
       <label>Jenis Gaji Pokok</label>
       <select id="salType">
@@ -756,7 +783,18 @@ function openSalaryConfigModal(staffMember){
       </div>
     </div>
 
-    <button class="btn btn-primary btn-block" data-action="save-salary-config">Simpan Pengaturan Gaji</button>
+    <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px; margin-bottom:0;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+        <input type="checkbox" id="salAbsenceEnabled" ${cfg.absenceDeduction.enabled?'checked':''} style="width:auto; margin:0;">
+        <span class="small" style="font-weight:700;">Potongan Tanpa Izin (Alpa)</span>
+      </label>
+      <div id="salAbsenceFields" style="display:${cfg.absenceDeduction.enabled?'block':'none'}; margin-top:10px;">
+        <p class="small muted" style="margin-bottom:8px;">Berlaku untuk hari kerja (bukan hari libur) yang sama sekali tidak ada absen masuk.</p>
+        <div class="field" style="margin-bottom:0;"><label>Potongan per Hari Alpa (Rp)</label><input type="number" id="salAbsenceAmount" value="${cfg.absenceDeduction.amountPerDay}"></div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-block" data-action="save-salary-config" style="margin-top:14px;">Simpan Pengaturan Pegawai</button>
   `);
 
   const salType = modal.querySelector("#salType");
@@ -794,8 +832,16 @@ function openSalaryConfigModal(staffMember){
   modal.querySelector("#salLateEnabled").addEventListener("change", (e)=>{
     modal.querySelector("#salLateFields").style.display = e.target.checked ? "block" : "none";
   });
+  modal.querySelector("#salAbsenceEnabled").addEventListener("change", (e)=>{
+    modal.querySelector("#salAbsenceFields").style.display = e.target.checked ? "block" : "none";
+  });
 
   modal.querySelector("[data-action='save-salary-config']").addEventListener("click", async ()=>{
+    const workSchedule = {
+      workStart: modal.querySelector("#wsStart").value || "08:00",
+      workEnd: modal.querySelector("#wsEnd").value || "17:00",
+      offDays: Array.from(modal.querySelectorAll(".ws-off-day:checked")).map(el=>parseInt(el.value))
+    };
     const salaryConfig = {
       type: salType.value,
       baseAmount: parseFloat(modal.querySelector("#salBase").value) || 0,
@@ -804,10 +850,15 @@ function openSalaryConfigModal(staffMember){
         enabled: modal.querySelector("#salLateEnabled").checked,
         perMinutes: parseFloat(modal.querySelector("#salLatePerMin").value) || 15,
         amountPerInterval: parseFloat(modal.querySelector("#salLateAmount").value) || 0
+      },
+      absenceDeduction: {
+        enabled: modal.querySelector("#salAbsenceEnabled").checked,
+        amountPerDay: parseFloat(modal.querySelector("#salAbsenceAmount").value) || 0
       }
     };
     await DB.setSalaryConfig(staffMember.uid, salaryConfig);
-    toast("Pengaturan gaji disimpan");
+    await DB.updateStaffWorkSchedule(staffMember.uid, workSchedule);
+    toast("Pengaturan pegawai disimpan");
     closeModal();
     render();
   });
@@ -833,21 +884,8 @@ function openBranchModal(existing){
 
     <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px;">
       <p class="small" style="font-weight:700; margin-bottom:8px;">🕐 Absensi Pegawai (opsional)</p>
-      <p class="small muted" style="margin-bottom:10px;">Pakai lokasi cabang yang sama di atas — pegawai cuma bisa absen kalau HP-nya berada dalam radius ini dari cabang.</p>
-      <div class="field"><label>Radius Absen (meter)</label><input type="number" id="attRadius" value="${as.radiusMeters||100}"></div>
-      <div style="display:flex; gap:10px;">
-        <div class="field" style="flex:1;"><label>Jam Masuk</label><input type="time" id="attWorkStart" value="${as.workStart||'08:00'}"></div>
-        <div class="field" style="flex:1;"><label>Jam Pulang</label><input type="time" id="attWorkEnd" value="${as.workEnd||'17:00'}"></div>
-      </div>
-      <label class="small" style="font-weight:600; display:block; margin-bottom:6px;">Hari Libur Mingguan</label>
-      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;">
-        ${["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"].map((d,i)=>`
-          <label style="display:flex; align-items:center; gap:5px; background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer;">
-            <input type="checkbox" class="att-off-day" value="${i}" ${(as.offDays||[0]).includes(i)?'checked':''} style="width:auto; margin:0;">
-            <span class="small">${d}</span>
-          </label>
-        `).join("")}
-      </div>
+      <p class="small muted" style="margin-bottom:10px;">Pakai lokasi cabang yang sama di atas — pegawai cuma bisa absen kalau HP-nya berada dalam radius ini dari cabang. Jam kerja & hari libur diatur per pegawai di Atur → Anggota Tim → Kelola Pegawai.</p>
+      <div class="field" style="margin-bottom:0;"><label>Radius Absen (meter)</label><input type="number" id="attRadius" value="${as.radiusMeters||100}"></div>
     </div>
 
     <button class="btn btn-primary btn-block" data-action="save-branch" style="margin-top:14px;">Simpan</button>
@@ -874,10 +912,7 @@ function openBranchModal(existing){
       perKmRate: parseFloat(modal.querySelector("#branchPerKmRate").value) || 0
     };
     const attendanceSettings = {
-      radiusMeters: parseFloat(modal.querySelector("#attRadius").value) || 100,
-      workStart: modal.querySelector("#attWorkStart").value || "08:00",
-      workEnd: modal.querySelector("#attWorkEnd").value || "17:00",
-      offDays: Array.from(modal.querySelectorAll(".att-off-day:checked")).map(el=>parseInt(el.value))
+      radiusMeters: parseFloat(modal.querySelector("#attRadius").value) || 100
     };
 
     if(isEdit){
@@ -1315,7 +1350,7 @@ async function pagePengaturan(){
                 ${s.uid !== state.user?.uid ? `<button class="btn btn-outline" data-action="toggle-role" data-uid="${s.uid}" data-role="${s.role}">${s.role === 'owner' ? 'Turunkan' : 'Jadikan Owner'}</button>` : ''}
               </div>
             </div>
-            <button class="btn btn-outline btn-block" data-action="set-salary-config" data-uid="${s.uid}" style="margin-top:8px;">${ICONS.report} Atur Gaji${s.salaryConfig ? ' (sudah diatur)' : ''}</button>
+            <button class="btn btn-outline btn-block" data-action="set-salary-config" data-uid="${s.uid}" style="margin-top:8px;">${ICONS.report} Kelola Pegawai${s.salaryConfig ? ' (sudah diatur)' : ''}</button>
           </div>
         `).join("")}
       </div>
@@ -1961,12 +1996,32 @@ function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd
     }
   }
 
+  const absenceDetails = [];
+  let totalAbsenceDeduction = 0;
+  if(cfg.absenceDeduction?.enabled){
+    const attendedDates = new Set(attendanceRecords.map(r=>r.date));
+    const offDays = staffMember.workSchedule?.offDays ?? [0];
+    const cursor = new Date(periodStart+"T00:00:00");
+    const end = new Date(periodEnd+"T00:00:00");
+    while(cursor <= end){
+      const dateStr = localDateStr(cursor);
+      const isOffDay = offDays.includes(cursor.getDay());
+      const isFuture = dateStr > Reports.todayStr();
+      if(!isOffDay && !isFuture && !attendedDates.has(dateStr)){
+        absenceDetails.push({ date: dateStr, deduction: cfg.absenceDeduction.amountPerDay });
+        totalAbsenceDeduction += cfg.absenceDeduction.amountPerDay;
+      }
+      cursor.setDate(cursor.getDate()+1);
+    }
+  }
+  totalDeduction += totalAbsenceDeduction;
+
   return {
     userId: staffMember.uid, userName: staffMember.name || staffMember.email,
     periodStart, periodEnd,
     salaryType: cfg.type, baseAmount: cfg.baseAmount, attendanceCount,
     basePay, allowanceDetails, totalAllowances,
-    deductionDetails, totalDeduction,
+    deductionDetails, absenceDetails, totalAbsenceDeduction, totalDeduction,
     totalPay: basePay + totalAllowances - totalDeduction
   };
 }
@@ -1988,6 +2043,10 @@ function payslipDetailHtml(s){
       ${s.deductionDetails.length ? `
         <div class="r-row" style="margin-top:6px;"><span style="font-weight:700;">Potongan Keterlambatan</span><span></span></div>
         ${s.deductionDetails.map(d=>`<div class="r-row"><span style="padding-left:12px;">${fmtDate(d.date)} (telat ${d.lateMinutes} menit)</span><span class="val num">-${Reports.formatRupiah(d.deduction)}</span></div>`).join("")}
+      ` : ""}
+      ${s.absenceDetails?.length ? `
+        <div class="r-row" style="margin-top:6px;"><span style="font-weight:700;">Potongan Tanpa Izin (Alpa)</span><span></span></div>
+        ${s.absenceDetails.map(d=>`<div class="r-row"><span style="padding-left:12px;">${fmtDate(d.date)}</span><span class="val num">-${Reports.formatRupiah(d.deduction)}</span></div>`).join("")}
       ` : ""}
       <div class="r-row total" style="margin-top:10px;"><span>TOTAL GAJI DITERIMA</span><span class="val num">${Reports.formatRupiah(s.totalPay)}</span></div>
     </div>
@@ -2108,6 +2167,43 @@ function exportAbsensiCsv(records, staffMap, branchMap){
     return `${r.date},"${name}","${branch}",${fmtHM(r.checkInTime)},${fmtHM(r.checkOutTime)},${r.lateMinutes||0}`;
   }).join("\n");
   downloadFile(`absensi-${Reports.todayStr()}.csv`, header + rows, "text/csv");
+}
+
+const AKUN_MENU_META = {
+  transaksi:   { label: "Riwayat Transaksi", desc: "Semua catatan kas masuk/keluar", icon: ICONS.list, color: "var(--suds-blue)", bg: "#EAF2F9" },
+  member:      { label: "Member",     desc: "Pelanggan & promo loyalty",     icon: ICONS.star,     color: "var(--coin)",      bg: "var(--coin-bg)" },
+  "tugas-saya":{ label: "Tugas Saya", desc: "Tugas jemput & antar Anda",     icon: ICONS.pin,      color: "var(--suds-blue)", bg: "#EAF2F9" },
+  absensi:     { label: "Absensi",    desc: "Absen masuk/pulang & gaji",     icon: ICONS.calendar, color: "var(--mint)",      bg: "var(--mint-bg)" },
+  laporan:     { label: "Laporan",    desc: "Laba Rugi, Neraca, Aset Tetap", icon: ICONS.report,   color: "var(--rose)",      bg: "var(--rose-bg)" },
+  pengaturan:  { label: "Atur",       desc: "Profil usaha, harga, cabang",   icon: ICONS.settings, color: "var(--ink-navy)",  bg: "var(--foam-white)" }
+};
+
+async function pageAkun(){
+  const menuIds = ["transaksi", "member", "tugas-saya", "absensi"];
+  menuIds.push("pengaturan");
+
+  return `
+    <div class="hero-balance">
+      <div class="card-title">Akun</div>
+      <div class="amount" style="font-family:var(--font-display); font-size:20px;">${escapeHtml(state.userName || state.user?.email || "")}</div>
+      <div class="sub"><span>${state.role === "owner" ? "Owner" : "Pegawai"} · ${escapeHtml(state.businessName)}</span></div>
+    </div>
+
+    <div class="akun-menu-grid">
+      ${menuIds.map(id=>{
+        const m = AKUN_MENU_META[id];
+        return `
+          <div class="akun-menu-item" data-action="goto-page" data-page="${id}">
+            <div class="akun-menu-icon" style="background:${m.bg}; color:${m.color};">${m.icon}</div>
+            <div class="akun-menu-label">${m.label}</div>
+            <div class="akun-menu-desc">${m.desc}</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+
+    <button class="btn btn-outline btn-block" data-action="logout" style="margin-top:18px;">Keluar</button>
+  `;
 }
 
 async function pageTugasSaya(){
