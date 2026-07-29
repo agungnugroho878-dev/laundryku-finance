@@ -201,15 +201,13 @@ async function render(){
     });
   }
   if(state.page === "member"){ bindMemberControls(); renderMemberList(); }
-  if(state.page === "akun"){
-    document.querySelectorAll("[data-action='goto-page']").forEach(el=>{
-      el.addEventListener("click", ()=>{
-        state.page = el.dataset.page;
-        if(state.page === "pengaturan") state.settingsSection = null;
-        render();
-      });
+  document.querySelectorAll("[data-action='goto-page']").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      state.page = el.dataset.page;
+      if(state.page === "pengaturan") state.settingsSection = null;
+      render();
     });
-  }
+  });
   if(state.page === "pengaturan"){
     document.querySelectorAll("[data-action='goto-settings-section']").forEach(el=>{
       el.addEventListener("click", ()=>{ state.settingsSection = el.dataset.section; render(); });
@@ -533,8 +531,48 @@ async function pageDashboard(){
     </div>
   ` : "";
 
+  let opActiveOrders = await DB.getActiveOrders();
+  let opSelesaiOrders = await getSelesaiOrdersForDisplay();
+  if(activeBranchId){
+    opActiveOrders = opActiveOrders.filter(o=>o.branchId===activeBranchId);
+    opSelesaiOrders = opSelesaiOrders.filter(o=>o.branchId===activeBranchId);
+  }
+  const opStats = {
+    perluDijemput: opActiveOrders.filter(o=>o.needsPickup && !o.pickupDone).length,
+    belumDiproses: opActiveOrders.filter(o=>o.status==="belum-diproses").length,
+    sedangDiproses: opActiveOrders.filter(o=>o.status==="sedang-diproses").length,
+    siapDiambilAntar: opSelesaiOrders.filter(o=>!o.needsDelivery || !o.deliveryDone).length,
+    terlambat: opActiveOrders.filter(o=>o.estimatedReadyAt && formatCountdown(o.estimatedReadyAt).overdue).length
+  };
+  const opStatusStrip = `
+    <h3 class="section-title no-print">Status Operasional</h3>
+    <div class="op-status-grid no-print">
+      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+        <div class="op-status-num" style="color:var(--coin);">${opStats.perluDijemput}</div>
+        <div class="op-status-label">Perlu Dijemput</div>
+      </div>
+      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+        <div class="op-status-num" style="color:var(--suds-blue);">${opStats.belumDiproses}</div>
+        <div class="op-status-label">Belum Diproses</div>
+      </div>
+      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+        <div class="op-status-num" style="color:var(--coin);">${opStats.sedangDiproses}</div>
+        <div class="op-status-label">Sedang Diproses</div>
+      </div>
+      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+        <div class="op-status-num" style="color:var(--mint);">${opStats.siapDiambilAntar}</div>
+        <div class="op-status-label">Siap Diambil/Antar</div>
+      </div>
+      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+        <div class="op-status-num" style="color:var(--rose);">${opStats.terlambat}</div>
+        <div class="op-status-label">Terlambat</div>
+      </div>
+    </div>
+  `;
+
   return `
     ${branchSwitcher}
+    ${opStatusStrip}
     <div class="hero-balance">
       <div class="card-title">Saldo Kas Saat Ini${activeBranchId ? ` — ${escapeHtml(state.branches.find(b=>b.id===activeBranchId)?.name||'')}` : ' (Semua Cabang)'}</div>
       <div class="amount num" data-countup="${neraca.kas}">Rp0</div>
@@ -3564,7 +3602,8 @@ async function openAddOrderModal(){
     closeModal();
     toast("Pesanan & pendapatan tersimpan");
 
-    offerSendReceipt({ ...txRecord, id: txId, orderId, hasPhotos: photoUrls.length > 0 });
+    const loyaltyProgressText = await buildLoyaltyProgressText(txRecord);
+    offerSendReceipt({ ...txRecord, id: txId, orderId, hasPhotos: photoUrls.length > 0, loyaltyProgressText });
   });
 }
 
@@ -4288,6 +4327,10 @@ function buildReceiptText(t){
     lines.push(trackingUrl(t.orderId));
     lines.push("--------------------------------");
   }
+  if(t.loyaltyProgressText){
+    lines.push(t.loyaltyProgressText);
+    lines.push("--------------------------------");
+  }
   lines.push("Terima kasih sudah mencuci di tempat kami 🙏");
   return lines.join("\n");
 }
@@ -4748,8 +4791,8 @@ async function shareReceiptImage(t){
   const fileName = `struk-${safeName}-${t.date}.png`;
   const file = new File([blob], fileName, { type: "image/png" });
   const shareText = t.orderId
-    ? `Struk pembayaran\n\n📦 Pantau status & foto cucianmu:\n${trackingUrl(t.orderId)}`
-    : "Struk pembayaran";
+    ? `Struk pembayaran\n\n📦 Pantau status & foto cucianmu:\n${trackingUrl(t.orderId)}${t.loyaltyProgressText ? `\n\n${t.loyaltyProgressText}` : ""}`
+    : `Struk pembayaran${t.loyaltyProgressText ? `\n\n${t.loyaltyProgressText}` : ""}`;
 
   if(navigator.canShare && navigator.canShare({ files: [file] })){
     try{
@@ -4899,6 +4942,50 @@ function openPrintChoiceModal(t){
     closeModal();
     printReceiptSystemDialog(t);
   });
+}
+
+async function buildLoyaltyProgressText(t){
+  if(!t.customerPhone) return "";
+  const phone = normalizePhone(t.customerPhone);
+  if(!phone) return "";
+  const member = await DB.getMember(phone);
+  if(!member) return "";
+
+  const lines = [];
+
+  if(t.serviceType === "kiloan" && t.kiloanItems?.length){
+    const kiloanLoyalty = await getKiloanLoyalty();
+    const subtypesInvolved = [...new Set(t.kiloanItems.map(l=>l.subType))];
+    const balances = (typeof member.kiloanBalance === "object" && member.kiloanBalance) || {};
+    for(const subType of subtypesInvolved){
+      const cfg = kiloanLoyalty[subType];
+      if(!cfg?.enabled) continue;
+      const balance = balances[subType] || 0;
+      const label = KILOAN_LABELS[subType];
+      if(balance >= cfg.thresholdKg){
+        lines.push(`🎉 ${label}: Yeay, promo sudah siap diklaim di kunjungan berikutnya!`);
+      } else {
+        const remaining = (cfg.thresholdKg - balance).toFixed(1);
+        lines.push(`${label}: sudah ${balance.toFixed(1)}/${cfg.thresholdKg} kg — kurang ${remaining} kg lagi buat dapat promo!`);
+      }
+    }
+  }
+
+  if(t.serviceType === "self-service"){
+    const ssLoyalty = await getSelfServiceLoyalty();
+    if(ssLoyalty.enabled){
+      const target = ssLoyalty.visitTarget || 10;
+      const visits = member.visits || 0;
+      if(visits >= target){
+        lines.push(`🎉 Self-Service: Yeay, promo gratis sudah siap diklaim di kunjungan berikutnya!`);
+      } else {
+        lines.push(`Self-Service: sudah ${visits}/${target} kunjungan — kurang ${target-visits} kali lagi buat gratis!`);
+      }
+    }
+  }
+
+  if(lines.length === 0) return "";
+  return `📊 *Progress Promo Kamu:*\n${lines.join("\n")}`;
 }
 
 function offerSendReceipt(t){

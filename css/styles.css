@@ -57,12 +57,14 @@ a{ color:var(--suds-blue); }
   background:var(--brand-grad);
   color:var(--foam-white);
   padding:18px 20px 16px;
-  display:flex;
-  align-items:center;
-  gap:10px;
   position:sticky;
   top:0;
   z-index:20;
+}
+.app-header-inner{
+  display:flex;
+  align-items:center;
+  gap:10px;
 }
 .app-header .brand-mark{
   width:30px; height:30px; border-radius:8px;
@@ -151,8 +153,10 @@ a{ color:var(--suds-blue); }
 .sidebar{ display:none; }
 
 @media (min-width: 860px){
-  .app-body{ max-width:1160px; margin:0 auto; width:100%; }
-  .app-body.wide{ max-width:1400px; }
+  .app-body{ max-width:1300px; margin:0 auto; width:100%; }
+  .app-body.wide{ max-width:1500px; }
+  .app-header{ padding-left:0; padding-right:0; }
+  .app-header-inner{ max-width:1300px; margin:0 auto; padding:0 20px 0 12px; }
   .sidebar{
     display:flex;
     flex-direction:column;
@@ -173,13 +177,14 @@ a{ color:var(--suds-blue); }
   .sidebar button:active{ transform:scale(.97); }
   .sidebar button.active{ background:var(--mint-bg); color:var(--ink-navy); font-weight:600; }
   .bottom-nav{ display:none; }
-  .app-main{ max-width:860px; padding:28px 32px 48px; }
+  .app-main{ max-width:960px; padding:28px 32px 48px; }
 }
 
-@media (min-width:1300px){
-  .app-body{ max-width:1300px; }
-  .app-main{ max-width:960px; padding:32px 40px 56px; }
-  .app-main.wide{ max-width:1180px; }
+@media (min-width:1500px){
+  .app-body{ max-width:1560px; }
+  .app-header-inner{ max-width:1560px; }
+  .app-main{ max-width:1100px; padding:32px 40px 56px; }
+  .app-main.wide{ max-width:1280px; }
 }
 
 /* ---------- Cards ---------- */
@@ -588,6 +593,19 @@ body.printing-receipt #receiptPrintArea{
 }
 .period-pill.active{ background:var(--brand-grad); border-color:transparent; color:#fff; }
 .period-pill:active{ transform:scale(.96); }
+
+.op-status-grid{
+  display:grid; grid-template-columns:repeat(auto-fit, minmax(96px, 1fr)); gap:8px; margin-bottom:14px;
+}
+.op-status-item{
+  background:var(--paper); border-radius:12px; padding:12px 8px; text-align:center;
+  box-shadow:var(--shadow-card); cursor:pointer;
+  transition:transform .12s ease, box-shadow .15s ease;
+}
+.op-status-item:hover{ box-shadow:0 4px 14px rgba(20,42,77,.1); }
+.op-status-item:active{ transform:scale(.96); }
+.op-status-num{ font-family:var(--font-mono); font-size:24px; font-weight:700; }
+.op-status-label{ font-size:10.5px; font-weight:600; color:var(--text-muted); margin-top:2px; }
 
 .akun-menu-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
 .akun-menu-item{
