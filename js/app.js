@@ -572,6 +572,7 @@ async function pageDashboard(){
 
   return `
     ${branchSwitcher}
+    ${state.branches.length <= 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(state.branches[0]?.name||'')}</p>` : ''}
     ${opStatusStrip}
     <div class="hero-balance">
       <div class="card-title">Saldo Kas Saat Ini${activeBranchId ? ` — ${escapeHtml(state.branches.find(b=>b.id===activeBranchId)?.name||'')}` : ' (Semua Cabang)'}</div>
