@@ -141,6 +141,34 @@ const DB = {
     return list;
   },
 
+  async addLeaveRequest(record){
+    const payload = { ...record, businessId: _businessId, status: "pending", requestedAt: Date.now() };
+    const ref = await fs.collection("leaveRequests").add(payload);
+    return ref.id;
+  },
+
+  async getLeaveRequestsForUser(userId){
+    const snap = await fs.collection("leaveRequests")
+      .where("businessId","==",_businessId)
+      .where("userId","==",userId)
+      .get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.requestedAt||0)-(a.requestedAt||0));
+    return list;
+  },
+
+  async getAllLeaveRequests(){
+    const snap = await fs.collection("leaveRequests").where("businessId","==",_businessId).get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.requestedAt||0)-(a.requestedAt||0));
+    return list;
+  },
+
+  async updateLeaveRequestStatus(id, status, reviewedBy){
+    await fs.collection("leaveRequests").doc(id).update({ status, reviewedAt: Date.now(), reviewedBy });
+    return true;
+  },
+
   async setStaffRole(uid, role){
     await fs.collection("users").doc(uid).update({ role });
     return true;

@@ -108,6 +108,13 @@ service cloud.firestore {
       allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
       allow delete: if isOwner() && sameBusiness(resource.data.businessId);
     }
+
+    match /leaveRequests/{id} {
+      allow read, list: if isOwner() && sameBusiness(resource.data.businessId)
+                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId));
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && sameBusiness(request.resource.data.businessId);
+      allow update: if isOwner() && sameBusiness(resource.data.businessId);
+    }
   }
 }
 ```
@@ -175,6 +182,8 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 1. Buka aplikasinya → login (atau daftar kalau belum punya akun)
 
 > **Navigasi disederhanakan**: menu bawah sekarang **Beranda, Cucian, Laporan (khusus Owner), Akun** + tombol **"+"** mengambang untuk aksi cepat (Pesanan Baru, Catat Kas Masuk, Catat Kas Keluar). Menu **Riwayat Transaksi, Member, Tugas Saya, Absensi (termasuk gaji), serta Atur** sekarang dikumpulkan jadi satu di tab **Akun**, tampil sebagai kartu-kartu berwarna yang tinggal diketuk.
+>
+> **Halaman Atur juga dirapikan** dengan pola yang sama — bukan 1 halaman panjang lagi, sekarang jadi menu kartu: **Profil Usaha, Harga Layanan, Promo & Loyalty, Cabang, Anggota Tim, Saldo Awal, Lainnya** (Printer/Foto/Data/Tentang) — tinggal ketuk salah satu, ada tombol "Kembali" untuk balik ke menu.
 1b. **Multi-Cabang**: setiap usaha otomatis punya 1 cabang ("Cabang Utama") sejak awal. Kalau usaha Anda lebih dari 1 lokasi:
    - **Owner**: buka **Atur → Cabang** → **"+ Tambah Cabang"** → isi nama & alamat cabang baru
    - Tiap cabang punya **kode undangan sendiri**, **harga layanan sendiri**, dan **kas/laporan sendiri** — tapi tetap ada tampilan **gabungan (Semua Cabang)** untuk Owner
@@ -210,6 +219,7 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
     - Pilih **Kurir Bertugas** dari daftar pegawai/owner yang terdaftar
     - Isi **Ongkos Kirim** manual, ATAU pakai **hitung otomatis berdasarkan jarak** (lihat 9c di bawah)
     - Status jemput/antar muncul sebagai badge di kartu pesanan (Cucian tab) dan bisa ditandai selesai satu-satu lewat popup detail pesanan (klik kartunya)
+    - **Pengingat menonjol**: begitu pesanan sudah masuk status **Selesai** (cuciannya sudah beres) tapi **belum diantar/dijemput**, muncul **banner kuning mencolok** di kartu pesanan itu ("Sudah selesai dicuci — belum diantar") beserta tombol **"Tandai Sudah Diantar"** langsung di kartu (tidak perlu buka detail dulu) — supaya pesanan yang masih perlu diantar tidak kelewat tenggelam di antara pesanan Selesai lainnya
 
 9c. **Ongkir Otomatis Berdasarkan Jarak (peta, gratis — tidak pakai Google Maps berbayar)**:
     - Setiap kali muncul popup peta ("Set Lokasi..."), sekarang ada beberapa cara tandai titik: **ketik alamat di kolom cari** (otomatis muncul saran, klik salah satu → peta pindah ke situ dengan pin), **tempel koordinat/link Google Maps** (berguna kalau pelanggan share lokasi lewat WhatsApp — buka lokasinya di Google Maps, salin link/koordinat, tempel di kolom itu), **klik langsung di peta**, atau **"Gunakan Lokasi GPS Saat Ini"**. Pin yang sudah muncul juga **bisa digeser** langsung untuk pas-kan posisinya
@@ -242,6 +252,11 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
     - Radius lokasi absen (meter) tetap diatur per **cabang** (Atur → Cabang, karena terkait lokasi fisik cabang), tapi jam kerja/hari libur/gaji sekarang murni per **pegawai**
 
     > Catatan migrasi: kalau sebelumnya sudah pernah atur Jam Kerja/Hari Libur di level Cabang, itu **tidak otomatis pindah** ke pengaturan per pegawai yang baru ini — tolong buka "Kelola Pegawai" untuk tiap pegawai dan atur ulang jam kerja & hari liburnya (default sementara: masuk 08:00, pulang 17:00, libur Minggu, sampai diatur ulang).
+
+9g. **Pengajuan Izin (supaya izin resmi tidak kena potongan alpa)**:
+    - **Pegawai**: di menu Absensi, ada bagian **"Ajukan Izin"** — isi tanggal (bisa lebih dari 1 hari) dan alasan, lalu kirim. Status pengajuan (Menunggu/Disetujui/Ditolak) bisa dipantau di riwayat pengajuan sendiri
+    - **Owner**: muncul bagian **"Pengajuan Izin Pegawai"** di menu Absensi (bagian bawah) — tombol **Setujui** atau **Tolak** untuk tiap pengajuan yang masuk
+    - Begitu izin **disetujui**, tanggal itu otomatis **dikecualikan dari Potongan Tanpa Izin (Alpa)** saat slip gaji dibuat — muncul di slip sebagai "Izin Disetujui (Tidak Dipotong)", bukan potongan. Izin yang masih menunggu atau ditolak tetap dihitung sebagai alpa kalau tidak ada absen masuk di hari itu
     - **Buat Slip Gaji** (Owner, di menu Absensi bagian bawah): pilih pegawai (yang sudah dikelola) → pakai periode yang sama dengan filter rekap absensi di atasnya → klik "Buat Slip Gaji" → sistem otomatis menghitung semuanya (gaji pokok + tunjangan − potongan telat − potongan alpa) berdasarkan data Absensi periode itu
     - Slip yang sudah dibuat **tersimpan permanen** dan bisa dilihat lagi kapan saja — **baik oleh Owner (semua pegawai) maupun pegawai yang bersangkutan (cuma miliknya sendiri)**, lewat menu Absensi masing-masing. Tiap slip ada tombol **Cetak/Simpan PDF**
 

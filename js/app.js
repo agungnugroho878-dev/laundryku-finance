@@ -63,7 +63,8 @@ const state = {
   cucianPageSize: 25,
   cucianShowAllHistory: false,
   absensiReportRange: null,
-  viewingPayslipId: null
+  viewingPayslipId: null,
+  settingsSection: null
 };
 
 function el(html){
@@ -202,8 +203,19 @@ async function render(){
   if(state.page === "member"){ bindMemberControls(); renderMemberList(); }
   if(state.page === "akun"){
     document.querySelectorAll("[data-action='goto-page']").forEach(el=>{
-      el.addEventListener("click", ()=>{ state.page = el.dataset.page; render(); });
+      el.addEventListener("click", ()=>{
+        state.page = el.dataset.page;
+        if(state.page === "pengaturan") state.settingsSection = null;
+        render();
+      });
     });
+  }
+  if(state.page === "pengaturan"){
+    document.querySelectorAll("[data-action='goto-settings-section']").forEach(el=>{
+      el.addEventListener("click", ()=>{ state.settingsSection = el.dataset.section; render(); });
+    });
+    const backToSettingsBtn = document.querySelector("[data-action='back-to-settings-menu']");
+    if(backToSettingsBtn) backToSettingsBtn.addEventListener("click", ()=>{ state.settingsSection = null; render(); });
   }
   if(state.page === "absensi"){
     const checkInBtn = document.getElementById("checkInBtn");
@@ -285,7 +297,17 @@ async function render(){
       const range = state.absensiReportRange;
       const allRecords = await DB.getAttendanceInRange(range.start, range.end);
       const myRecords = allRecords.filter(r=>r.userId===uid);
-      const slip = calculatePayslip(staffMember, myRecords, range.start, range.end);
+      const leaveRequests = (await DB.getLeaveRequestsForUser(uid)).filter(r=>r.status==="approved");
+      const approvedLeaveDates = new Set();
+      leaveRequests.forEach(r=>{
+        const cursor = new Date(r.startDate+"T00:00:00");
+        const end = new Date(r.endDate+"T00:00:00");
+        while(cursor <= end){
+          approvedLeaveDates.add(localDateStr(cursor));
+          cursor.setDate(cursor.getDate()+1);
+        }
+      });
+      const slip = calculatePayslip(staffMember, myRecords, range.start, range.end, approvedLeaveDates);
       if(!slip){ toast("Pegawai ini belum diatur gajinya", "warn"); return; }
       const id = await DB.addPayslip(slip);
       toast("Slip gaji dibuat");
@@ -309,6 +331,36 @@ async function render(){
       toast("Slip gaji dihapus");
       state.viewingPayslipId = null;
       render();
+    });
+
+    const submitLeaveBtn = document.getElementById("submitLeaveBtn");
+    if(submitLeaveBtn) submitLeaveBtn.addEventListener("click", async ()=>{
+      const startDate = document.getElementById("leaveStart").value;
+      const endDate = document.getElementById("leaveEnd").value;
+      const reason = document.getElementById("leaveReason").value.trim();
+      if(!startDate || !endDate){ toast("Isi tanggal dulu", "warn"); return; }
+      if(endDate < startDate){ toast("Tanggal selesai tidak boleh sebelum tanggal mulai", "warn"); return; }
+      await DB.addLeaveRequest({
+        userId: state.user.uid, userName: state.userName || state.user.email,
+        startDate, endDate, reason
+      });
+      toast("Pengajuan izin terkirim — menunggu persetujuan Owner");
+      render();
+    });
+
+    document.querySelectorAll("[data-action='approve-leave']").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        await DB.updateLeaveRequestStatus(btn.dataset.id, "approved", state.user.uid);
+        toast("Izin disetujui");
+        render();
+      });
+    });
+    document.querySelectorAll("[data-action='reject-leave']").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        await DB.updateLeaveRequestStatus(btn.dataset.id, "rejected", state.user.uid);
+        toast("Izin ditolak");
+        render();
+      });
     });
   }
   if(state.page === "transaksi"){
@@ -1155,9 +1207,39 @@ async function pagePengaturan(){
     `;
   }
 
-  return `
-    ${accountCard}
+  const SETTINGS_MENU_META = {
+    profil:  { label: "Profil Usaha",   desc: "Nama, kontak, logo",              icon: ICONS.camera,   color: "var(--suds-blue)", bg: "#EAF2F9" },
+    harga:   { label: "Harga Layanan",  desc: "Kiloan, satuan, self-service",    icon: ICONS.report,    color: "var(--coin)",      bg: "var(--coin-bg)" },
+    promo:   { label: "Promo & Loyalty",desc: "Promo kiloan & self-service",     icon: ICONS.star,      color: "var(--mint)",      bg: "var(--mint-bg)" },
+    cabang:  { label: `Cabang (${branchList.length})`, desc: "Lokasi, ongkir, absen", icon: ICONS.pin, color: "var(--rose)",      bg: "var(--rose-bg)" },
+    tim:     { label: `Anggota Tim (${staff.length})`, desc: "Peran & kelola gaji", icon: ICONS.user,   color: "var(--ink-navy)",  bg: "var(--foam-white)" },
+    saldo:   { label: "Saldo Awal",     desc: "Pembukuan awal per cabang",       icon: ICONS.list,      color: "var(--suds-blue)", bg: "#EAF2F9" },
+    lainnya: { label: "Lainnya",        desc: "Printer, foto, data, tentang",    icon: ICONS.settings,  color: "var(--text-muted)",bg: "var(--foam-white)" }
+  };
 
+  const section = state.settingsSection;
+
+  if(!section){
+    return `
+      ${accountCard}
+      <h3 class="section-title">Pengaturan Usaha</h3>
+      <div class="akun-menu-grid">
+        ${Object.entries(SETTINGS_MENU_META).map(([id,m])=>`
+          <div class="akun-menu-item" data-action="goto-settings-section" data-section="${id}">
+            <div class="akun-menu-icon" style="background:${m.bg}; color:${m.color};">${m.icon}</div>
+            <div class="akun-menu-label">${m.label}</div>
+            <div class="akun-menu-desc">${m.desc}</div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  const backBtn = `<button class="btn btn-outline no-print" data-action="back-to-settings-menu" style="margin-bottom:14px;">${ICONS.arrowUp} Kembali ke Pengaturan</button>`;
+
+  const sections = {};
+
+  sections.profil = `
     <h3 class="section-title">Profil Usaha</h3>
     <div class="card">
       <div class="field">
@@ -1191,7 +1273,9 @@ async function pagePengaturan(){
       </div>
       <button class="btn btn-primary" data-action="save-biz-name">Simpan Profil</button>
     </div>
+  `;
 
+  sections.harga = `
     <h3 class="section-title">Harga Layanan${state.branches.length > 1 ? ` — ${escapeHtml(state.branches.find(b=>b.id===getActiveBranch())?.name||'')}` : ''}</h3>
     <div class="card">
       <p class="small muted">Harga & estimasi waktu pengerjaan ini otomatis dipakai saat mencatat pesanan cucian baru di menu Cucian.${state.branches.length > 1 ? ' Tiap cabang punya harga masing-masing — pilih cabang di Beranda dulu untuk atur harga cabang lain.' : ''}</p>
@@ -1213,6 +1297,21 @@ async function pagePengaturan(){
       <button class="btn btn-primary btn-block" data-action="open-price-settings" style="margin-top:10px;">${ICONS.edit} Setting Harga</button>
     </div>
 
+    <h3 class="section-title">Kategori Tambahan</h3>
+    <div class="card">
+      <p class="small muted">Kategori dasar (kas masuk/keluar) sudah tersedia. Tambahkan kategori pendapatan atau beban khusus di sini bila perlu.</p>
+      <div class="tag-list" style="margin-bottom:14px;">
+        ${customCats.length===0 ? '<span class="small muted">Belum ada kategori tambahan.</span>' :
+          customCats.map(c=>`<span class="tag">${c.name} (${c.type==='in'?'Pendapatan':'Beban'})<button data-action="delete-cat" data-id="${c.id}">✕</button></span>`).join("")}
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-outline btn-block" data-action="add-cat" data-type="in">+ Kategori Pendapatan</button>
+        <button class="btn btn-outline btn-block" data-action="add-cat" data-type="out">+ Kategori Beban</button>
+      </div>
+    </div>
+  `;
+
+  sections.promo = `
     <h3 class="section-title">Promo Kiloan</h3>
     <p class="small muted" style="margin:-6px 0 10px;">Tiap jenis kiloan punya target & bentuk promo sendiri-sendiri — akumulasi beratnya juga dihitung terpisah per jenis.</p>
     ${Object.entries(KILOAN_LABELS).map(([key,label]) => {
@@ -1259,7 +1358,74 @@ async function pagePengaturan(){
       <div class="field"><label>Setiap berapa kali kunjungan dapat gratis 1x?</label><input type="number" id="ss-target" value="${ssLoyalty.visitTarget}" min="1"></div>
       <button class="btn btn-primary" data-action="save-ss-loyalty">Simpan Promo Self-Service</button>
     </div>
+  `;
 
+  sections.cabang = `
+    <h3 class="section-title">Cabang (${branchList.length})</h3>
+    <div class="card">
+      <p class="small muted">Tiap cabang punya kode undangan, harga layanan, dan kas sendiri-sendiri (tetap ada rekap gabungan di Beranda/Laporan). Bagikan kode cabang ke pegawai supaya mereka bergabung ke cabang yang benar.</p>
+      <div style="margin-top:10px;">
+        ${branchList.map(b => `
+          <div style="padding:12px 0; border-bottom:1px dashed var(--line);">
+            <div class="row-between">
+              <div style="font-weight:700;">${escapeHtml(b.name)}</div>
+              <div style="display:flex; gap:6px;">
+                <button class="tx-del" data-action="edit-branch" data-id="${b.id}">${ICONS.edit}</button>
+                ${branchList.length > 1 ? `<button class="tx-del" data-action="delete-branch" data-id="${b.id}">${ICONS.trash}</button>` : ''}
+              </div>
+            </div>
+            ${b.address ? `<div class="small muted">${escapeHtml(b.address)}</div>` : ''}
+            <div style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+              <input type="text" value="${b.id}" readonly style="font-family:var(--font-mono); font-size:11px; padding:6px 8px; border-radius:8px; border:1.5px solid var(--line); flex:1;">
+              <button class="btn btn-outline" data-action="copy-branch-code" data-id="${b.id}">Salin Kode</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+      <button class="btn btn-primary btn-block" data-action="add-branch" style="margin-top:14px;">${ICONS.plus} Tambah Cabang</button>
+    </div>
+  `;
+
+  sections.tim = `
+    <h3 class="section-title">Anggota Tim (${staff.length})</h3>
+    <div class="card">
+      <p class="small muted">Bisa lebih dari 1 Owner untuk usaha yang sama — misalnya Anda dan pasangan, masing-masing pakai email sendiri, akses penuh berdua. Naikkan akun Pegawai jadi Owner di sini.</p>
+      <div style="margin-top:10px;">
+        ${staff.map(s => `
+          <div style="padding:10px 0; border-bottom:1px dashed var(--line);">
+            <div class="row-between">
+              <div>
+                <div class="small" style="font-weight:700;">${escapeHtml(s.name || s.email)}${s.uid === state.user?.uid ? ' <span class="muted">(Anda)</span>' : ''}</div>
+                <div class="small muted">${escapeHtml(s.email || '')}${s.role==='pegawai' ? ` · ${escapeHtml(branchList.find(b=>b.id===s.branchId)?.name || 'Cabang tidak diketahui')}` : ''}</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="status-badge ${s.role==='owner' ? 'status-selesai' : 'status-belum-diproses'}">${s.role === 'owner' ? 'Owner' : 'Pegawai'}</span>
+                ${s.uid !== state.user?.uid ? `<button class="btn btn-outline" data-action="toggle-role" data-uid="${s.uid}" data-role="${s.role}">${s.role === 'owner' ? 'Turunkan' : 'Jadikan Owner'}</button>` : ''}
+              </div>
+            </div>
+            <button class="btn btn-outline btn-block" data-action="set-salary-config" data-uid="${s.uid}" style="margin-top:8px;">${ICONS.report} Kelola Pegawai${s.salaryConfig ? ' (sudah diatur)' : ''}</button>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+
+  sections.saldo = `
+    <h3 class="section-title">Saldo Awal Pembukuan${state.branches.length > 1 ? ` — ${escapeHtml(state.branches.find(b=>b.id===getActiveBranch())?.name||'')}` : ''}</h3>
+    <div class="card">
+      <p class="small muted">Isi saldo di sini jika usahamu sudah berjalan sebelum mulai pakai aplikasi ini. Modal dihitung otomatis agar neraca selalu seimbang.${state.branches.length > 1 ? ' Saldo awal ini khusus untuk cabang yang sedang aktif — pilih cabang lain di Beranda untuk atur saldo awal cabang lain.' : ''}</p>
+      <div class="field"><label>Tanggal Saldo Awal</label><input type="date" id="ob-date" value="${opening.date==='1970-01-01'?Reports.todayStr():opening.date}"></div>
+      <div class="field"><label>Kas</label><input type="number" id="ob-kas" value="${opening.kas}"></div>
+      <div class="field"><label>Piutang Usaha</label><input type="number" id="ob-piutang" value="${opening.piutang}"></div>
+      <div class="field"><label>Persediaan</label><input type="number" id="ob-persediaan" value="${opening.persediaan}"></div>
+      <div class="field"><label>Peralatan/Aset Tetap</label><input type="number" id="ob-asetTetap" value="${opening.asetTetap}"></div>
+      <div class="field"><label>Utang Usaha</label><input type="number" id="ob-utangUsaha" value="${opening.utangUsaha}"></div>
+      <div class="field"><label>Utang Bank</label><input type="number" id="ob-utangBank" value="${opening.utangBank}"></div>
+      <button class="btn btn-primary" data-action="save-opening">Simpan Saldo Awal</button>
+    </div>
+  `;
+
+  sections.lainnya = `
     <h3 class="section-title">Pengaturan Printer</h3>
     <div class="card">
       <p class="small muted">Untuk cetak struk lewat printer thermal Bluetooth. Sesuaikan lebar kertas supaya teks tidak terpotong.</p>
@@ -1284,78 +1450,6 @@ async function pagePengaturan(){
       <button class="btn btn-primary" data-action="save-photo-retention">Simpan</button>
     </div>
 
-    <h3 class="section-title">Saldo Awal Pembukuan${state.branches.length > 1 ? ` — ${escapeHtml(state.branches.find(b=>b.id===getActiveBranch())?.name||'')}` : ''}</h3>
-    <div class="card">
-      <p class="small muted">Isi saldo di sini jika usahamu sudah berjalan sebelum mulai pakai aplikasi ini. Modal dihitung otomatis agar neraca selalu seimbang.${state.branches.length > 1 ? ' Saldo awal ini khusus untuk cabang yang sedang aktif — pilih cabang lain di Beranda untuk atur saldo awal cabang lain.' : ''}</p>
-      <div class="field"><label>Tanggal Saldo Awal</label><input type="date" id="ob-date" value="${opening.date==='1970-01-01'?Reports.todayStr():opening.date}"></div>
-      <div class="field"><label>Kas</label><input type="number" id="ob-kas" value="${opening.kas}"></div>
-      <div class="field"><label>Piutang Usaha</label><input type="number" id="ob-piutang" value="${opening.piutang}"></div>
-      <div class="field"><label>Persediaan</label><input type="number" id="ob-persediaan" value="${opening.persediaan}"></div>
-      <div class="field"><label>Peralatan/Aset Tetap</label><input type="number" id="ob-asetTetap" value="${opening.asetTetap}"></div>
-      <div class="field"><label>Utang Usaha</label><input type="number" id="ob-utangUsaha" value="${opening.utangUsaha}"></div>
-      <div class="field"><label>Utang Bank</label><input type="number" id="ob-utangBank" value="${opening.utangBank}"></div>
-      <button class="btn btn-primary" data-action="save-opening">Simpan Saldo Awal</button>
-    </div>
-
-    <h3 class="section-title">Kategori Tambahan</h3>
-    <div class="card">
-      <p class="small muted">Kategori dasar (kas masuk/keluar) sudah tersedia. Tambahkan kategori pendapatan atau beban khusus di sini bila perlu.</p>
-      <div class="tag-list" style="margin-bottom:14px;">
-        ${customCats.length===0 ? '<span class="small muted">Belum ada kategori tambahan.</span>' :
-          customCats.map(c=>`<span class="tag">${c.name} (${c.type==='in'?'Pendapatan':'Beban'})<button data-action="delete-cat" data-id="${c.id}">✕</button></span>`).join("")}
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-outline btn-block" data-action="add-cat" data-type="in">+ Kategori Pendapatan</button>
-        <button class="btn btn-outline btn-block" data-action="add-cat" data-type="out">+ Kategori Beban</button>
-      </div>
-    </div>
-
-    <h3 class="section-title">Cabang (${branchList.length})</h3>
-    <div class="card">
-      <p class="small muted">Tiap cabang punya kode undangan, harga layanan, dan kas sendiri-sendiri (tetap ada rekap gabungan di Beranda/Laporan). Bagikan kode cabang ke pegawai supaya mereka bergabung ke cabang yang benar.</p>
-      <div style="margin-top:10px;">
-        ${branchList.map(b => `
-          <div style="padding:12px 0; border-bottom:1px dashed var(--line);">
-            <div class="row-between">
-              <div style="font-weight:700;">${escapeHtml(b.name)}</div>
-              <div style="display:flex; gap:6px;">
-                <button class="tx-del" data-action="edit-branch" data-id="${b.id}">${ICONS.edit}</button>
-                ${branchList.length > 1 ? `<button class="tx-del" data-action="delete-branch" data-id="${b.id}">${ICONS.trash}</button>` : ''}
-              </div>
-            </div>
-            ${b.address ? `<div class="small muted">${escapeHtml(b.address)}</div>` : ''}
-            <div style="display:flex; align-items:center; gap:8px; margin-top:8px;">
-              <input type="text" value="${b.id}" readonly style="font-family:var(--font-mono); font-size:11px; padding:6px 8px; border-radius:8px; border:1.5px solid var(--line); flex:1;">
-              <button class="btn btn-outline" data-action="copy-branch-code" data-id="${b.id}">Salin Kode</button>
-            </div>
-          </div>
-        `).join("")}
-      </div>
-      <button class="btn btn-primary btn-block" data-action="add-branch" style="margin-top:14px;">${ICONS.plus} Tambah Cabang</button>
-    </div>
-
-    <h3 class="section-title">Anggota Tim (${staff.length})</h3>
-    <div class="card">
-      <p class="small muted">Bisa lebih dari 1 Owner untuk usaha yang sama — misalnya Anda dan pasangan, masing-masing pakai email sendiri, akses penuh berdua. Naikkan akun Pegawai jadi Owner di sini.</p>
-      <div style="margin-top:10px;">
-        ${staff.map(s => `
-          <div style="padding:10px 0; border-bottom:1px dashed var(--line);">
-            <div class="row-between">
-              <div>
-                <div class="small" style="font-weight:700;">${escapeHtml(s.name || s.email)}${s.uid === state.user?.uid ? ' <span class="muted">(Anda)</span>' : ''}</div>
-                <div class="small muted">${escapeHtml(s.email || '')}${s.role==='pegawai' ? ` · ${escapeHtml(branchList.find(b=>b.id===s.branchId)?.name || 'Cabang tidak diketahui')}` : ''}</div>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="status-badge ${s.role==='owner' ? 'status-selesai' : 'status-belum-diproses'}">${s.role === 'owner' ? 'Owner' : 'Pegawai'}</span>
-                ${s.uid !== state.user?.uid ? `<button class="btn btn-outline" data-action="toggle-role" data-uid="${s.uid}" data-role="${s.role}">${s.role === 'owner' ? 'Turunkan' : 'Jadikan Owner'}</button>` : ''}
-              </div>
-            </div>
-            <button class="btn btn-outline btn-block" data-action="set-salary-config" data-uid="${s.uid}" style="margin-top:8px;">${ICONS.report} Kelola Pegawai${s.salaryConfig ? ' (sudah diatur)' : ''}</button>
-          </div>
-        `).join("")}
-      </div>
-    </div>
-
     <h3 class="section-title">Data</h3>
     <div class="card">
       <div class="btn-row" style="margin-bottom:10px;">
@@ -1370,6 +1464,8 @@ async function pagePengaturan(){
       LaundryKu Finance v1.0 — aplikasi laporan keuangan untuk UMKM laundry. Data tersimpan online (Firestore) dan tersinkron ke semua perangkat yang login.
     </div>
   `;
+
+  return `${backBtn}${sections[section] || ""}`;
 }
 
 /* ---------------- Streak (motivation) ---------------- */
@@ -1963,14 +2059,48 @@ async function pageAbsensi(){
   `;
 
   const ownerSection = state.role === "owner" ? await renderAbsensiOwnerReport() : "";
+  const leaveSection = state.user ? await renderMyLeaveRequestsSection(state.user.uid) : "";
   const myPayslipsSection = (state.role === "pegawai" && state.user) ? await renderMyPayslipsSection(state.user.uid) : "";
 
-  return `${staffSection}${ownerSection}${myPayslipsSection}`;
+  return `${staffSection}${leaveSection}${ownerSection}${myPayslipsSection}`;
 }
 
-function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd){
+const LEAVE_STATUS_LABEL = { pending: "Menunggu", approved: "Disetujui", rejected: "Ditolak" };
+const LEAVE_STATUS_COLOR = { pending: "var(--coin)", approved: "var(--mint)", rejected: "var(--rose)" };
+
+async function renderMyLeaveRequestsSection(userId){
+  const requests = await DB.getLeaveRequestsForUser(userId);
+  return `
+    <h3 class="section-title" style="margin-top:24px;">Ajukan Izin</h3>
+    <div class="card">
+      <div style="display:flex; gap:10px;">
+        <div class="field" style="flex:1;"><label>Dari Tanggal</label><input type="date" id="leaveStart" value="${Reports.todayStr()}"></div>
+        <div class="field" style="flex:1;"><label>Sampai Tanggal</label><input type="date" id="leaveEnd" value="${Reports.todayStr()}"></div>
+      </div>
+      <div class="field" style="margin-bottom:0;"><label>Alasan</label><textarea id="leaveReason" placeholder="Contoh: Sakit, acara keluarga, dll"></textarea></div>
+      <button class="btn btn-primary btn-block" id="submitLeaveBtn" style="margin-top:10px;">Ajukan Izin</button>
+    </div>
+    ${requests.length ? `
+      <div class="card">
+        <div class="card-title">Riwayat Pengajuan Saya</div>
+        ${requests.map(r=>`
+          <div style="padding:10px 0; border-bottom:1px dashed var(--line);">
+            <div class="row-between">
+              <div class="small" style="font-weight:600;">${fmtDate(r.startDate)}${r.startDate!==r.endDate ? ` — ${fmtDate(r.endDate)}` : ''}</div>
+              <span class="small" style="font-weight:700; color:${LEAVE_STATUS_COLOR[r.status]};">${LEAVE_STATUS_LABEL[r.status]}</span>
+            </div>
+            <div class="small muted">${escapeHtml(r.reason||'-')}</div>
+          </div>
+        `).join("")}
+      </div>
+    ` : ""}
+  `;
+}
+
+function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd, approvedLeaveDates){
   const cfg = staffMember.salaryConfig;
   if(!cfg) return null;
+  const leaveDates = approvedLeaveDates || new Set();
   const attendanceCount = attendanceRecords.length;
 
   const basePay = cfg.type === "harian" ? cfg.baseAmount * attendanceCount : cfg.baseAmount;
@@ -1997,6 +2127,7 @@ function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd
   }
 
   const absenceDetails = [];
+  const excusedDetails = [];
   let totalAbsenceDeduction = 0;
   if(cfg.absenceDeduction?.enabled){
     const attendedDates = new Set(attendanceRecords.map(r=>r.date));
@@ -2008,8 +2139,12 @@ function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd
       const isOffDay = offDays.includes(cursor.getDay());
       const isFuture = dateStr > Reports.todayStr();
       if(!isOffDay && !isFuture && !attendedDates.has(dateStr)){
-        absenceDetails.push({ date: dateStr, deduction: cfg.absenceDeduction.amountPerDay });
-        totalAbsenceDeduction += cfg.absenceDeduction.amountPerDay;
+        if(leaveDates.has(dateStr)){
+          excusedDetails.push({ date: dateStr });
+        } else {
+          absenceDetails.push({ date: dateStr, deduction: cfg.absenceDeduction.amountPerDay });
+          totalAbsenceDeduction += cfg.absenceDeduction.amountPerDay;
+        }
       }
       cursor.setDate(cursor.getDate()+1);
     }
@@ -2021,7 +2156,7 @@ function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd
     periodStart, periodEnd,
     salaryType: cfg.type, baseAmount: cfg.baseAmount, attendanceCount,
     basePay, allowanceDetails, totalAllowances,
-    deductionDetails, absenceDetails, totalAbsenceDeduction, totalDeduction,
+    deductionDetails, absenceDetails, excusedDetails, totalAbsenceDeduction, totalDeduction,
     totalPay: basePay + totalAllowances - totalDeduction
   };
 }
@@ -2047,6 +2182,10 @@ function payslipDetailHtml(s){
       ${s.absenceDetails?.length ? `
         <div class="r-row" style="margin-top:6px;"><span style="font-weight:700;">Potongan Tanpa Izin (Alpa)</span><span></span></div>
         ${s.absenceDetails.map(d=>`<div class="r-row"><span style="padding-left:12px;">${fmtDate(d.date)}</span><span class="val num">-${Reports.formatRupiah(d.deduction)}</span></div>`).join("")}
+      ` : ""}
+      ${s.excusedDetails?.length ? `
+        <div class="r-row" style="margin-top:6px;"><span style="font-weight:700; color:var(--mint);">Izin Disetujui (Tidak Dipotong)</span><span></span></div>
+        ${s.excusedDetails.map(d=>`<div class="r-row"><span style="padding-left:12px;">${fmtDate(d.date)}</span><span class="val" style="color:var(--mint);">Izin</span></div>`).join("")}
       ` : ""}
       <div class="r-row total" style="margin-top:10px;"><span>TOTAL GAJI DITERIMA</span><span class="val num">${Reports.formatRupiah(s.totalPay)}</span></div>
     </div>
@@ -2138,8 +2277,44 @@ async function renderAbsensiOwnerReport(){
       <button class="btn btn-primary btn-block" id="generatePayslipBtn">Buat Slip Gaji</button>
     </div>
 
+    ${await renderLeaveApprovalSection()}
+
     <h3 class="section-title" style="margin-top:24px;">Riwayat Slip Gaji (Semua Pegawai)</h3>
     ${await renderAllPayslipsList()}
+  `;
+}
+
+async function renderLeaveApprovalSection(){
+  const requests = await DB.getAllLeaveRequests();
+  const pending = requests.filter(r=>r.status==="pending");
+  const decided = requests.filter(r=>r.status!=="pending").slice(0,10);
+
+  return `
+    <h3 class="section-title" style="margin-top:24px;">Pengajuan Izin Pegawai${pending.length ? ` (${pending.length} menunggu)` : ''}</h3>
+    ${pending.length===0 ? emptyState("Tidak ada pengajuan izin yang menunggu.") : pending.map(r=>`
+      <div class="card" style="margin-bottom:10px;">
+        <div style="font-weight:700;">${escapeHtml(r.userName)}</div>
+        <div class="small muted" style="margin-top:2px;">${fmtDate(r.startDate)}${r.startDate!==r.endDate ? ` — ${fmtDate(r.endDate)}` : ''}</div>
+        <div class="small" style="margin-top:6px;">${escapeHtml(r.reason||'-')}</div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-primary btn-block" data-action="approve-leave" data-id="${r.id}" style="background:var(--mint);">Setujui</button>
+          <button class="btn btn-outline btn-block" data-action="reject-leave" data-id="${r.id}">Tolak</button>
+        </div>
+      </div>
+    `).join("")}
+    ${decided.length ? `
+      <div class="card">
+        <div class="card-title">Riwayat Keputusan Terbaru</div>
+        ${decided.map(r=>`
+          <div style="padding:8px 0; border-bottom:1px dashed var(--line);">
+            <div class="row-between">
+              <div class="small">${escapeHtml(r.userName)} · ${fmtDate(r.startDate)}${r.startDate!==r.endDate ? `—${fmtDate(r.endDate)}` : ''}</div>
+              <span class="small" style="font-weight:700; color:${LEAVE_STATUS_COLOR[r.status]};">${LEAVE_STATUS_LABEL[r.status]}</span>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    ` : ""}
   `;
 }
 
@@ -2572,6 +2747,13 @@ function orderCardHtml(o){
         </div>
       </div>
 
+      ${o.status === "selesai" && o.needsDelivery && !o.deliveryDone ? `
+        <div class="delivery-pending-banner">${ICONS.pin} Sudah selesai dicuci — <b>belum diantar</b></div>
+      ` : ""}
+      ${o.status === "selesai" && o.needsPickup && !o.pickupDone ? `
+        <div class="delivery-pending-banner">${ICONS.pin} <b>Belum dijemput</b> dari pelanggan</div>
+      ` : ""}
+
       <div class="order-card-customer">
         <div class="order-customer-name">${escapeHtml(o.customerName || "Tanpa nama")}</div>
         <div class="small muted">${o.customerPhone || "—"}${o.weightKg ? ` · ${o.weightKg} kg total` : ""}</div>
@@ -2597,6 +2779,8 @@ function orderCardHtml(o){
 
       <div class="btn-row" style="margin-top:12px;">
         ${next ? `<button class="btn btn-primary btn-block" data-action="advance-order" data-id="${o.id}" data-next="${next}">Tandai: ${STATUS_LABEL[next]}</button>` : ""}
+        ${o.needsDelivery && !o.deliveryDone ? `<button class="btn btn-primary btn-block" data-action="mark-delivery-done" data-id="${o.id}" style="background:var(--mint);">Tandai Sudah Diantar</button>` : ""}
+        ${o.needsPickup && !o.pickupDone ? `<button class="btn btn-primary btn-block" data-action="mark-pickup-done" data-id="${o.id}" style="background:var(--coin);">Tandai Sudah Dijemput</button>` : ""}
         ${o.customerPhone ? `<button class="btn btn-outline" data-action="wa-order" data-id="${o.id}">${ICONS.chat}</button>` : ""}
         ${o.photos?.length ? `<button class="btn btn-outline" data-action="send-tracking" data-id="${o.id}" title="Kirim link pantau">${ICONS.star}</button>` : ""}
         ${state.role === "owner" ? `<button class="btn btn-outline" data-action="delete-order" data-id="${o.id}">${ICONS.trash}</button>` : ""}
@@ -2648,6 +2832,20 @@ function bindCucianCardEvents(){
       if(e.target.closest(".btn-row")) return; // don't open detail when clicking an action button
       const o = await DB.getOrderById(card.dataset.id);
       if(o) openOrderDetailModal(o);
+    });
+  });
+  document.querySelectorAll("[data-action='mark-delivery-done']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      await DB.updateOrderFields(btn.dataset.id, { deliveryDone: true });
+      toast("Ditandai sudah diantar");
+      renderCucianList();
+    });
+  });
+  document.querySelectorAll("[data-action='mark-pickup-done']").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      await DB.updateOrderFields(btn.dataset.id, { pickupDone: true });
+      toast("Ditandai sudah dijemput");
+      renderCucianList();
     });
   });
   document.querySelectorAll("[data-action='advance-order']").forEach(btn=>{

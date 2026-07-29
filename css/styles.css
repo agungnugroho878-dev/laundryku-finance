@@ -151,8 +151,8 @@ a{ color:var(--suds-blue); }
 .sidebar{ display:none; }
 
 @media (min-width: 860px){
-  .app-body{ max-width:1040px; margin:0 auto; width:100%; }
-  .app-body.wide{ max-width:1300px; }
+  .app-body{ max-width:1160px; margin:0 auto; width:100%; }
+  .app-body.wide{ max-width:1400px; }
   .sidebar{
     display:flex;
     flex-direction:column;
@@ -173,7 +173,13 @@ a{ color:var(--suds-blue); }
   .sidebar button:active{ transform:scale(.97); }
   .sidebar button.active{ background:var(--mint-bg); color:var(--ink-navy); font-weight:600; }
   .bottom-nav{ display:none; }
-  .app-main{ max-width:720px; padding:28px 32px 48px; }
+  .app-main{ max-width:860px; padding:28px 32px 48px; }
+}
+
+@media (min-width:1300px){
+  .app-body{ max-width:1300px; }
+  .app-main{ max-width:960px; padding:32px 40px 56px; }
+  .app-main.wide{ max-width:1180px; }
 }
 
 /* ---------- Cards ---------- */
@@ -418,6 +424,12 @@ a{ color:var(--suds-blue); }
 .status-badge.status-sedang-diproses{ background:var(--coin-bg); color:var(--coin); }
 .status-badge.status-selesai{ background:var(--mint-bg); color:var(--mint); }
 
+.delivery-pending-banner{
+  background:var(--coin-bg); color:var(--coin); font-size:12.5px; font-weight:600;
+  border-radius:8px; padding:8px 10px; margin-bottom:10px;
+  display:flex; align-items:center; gap:6px;
+}
+.delivery-pending-banner svg{ width:15px; height:15px; flex-shrink:0; }
 .order-card-customer{ margin-bottom:8px; }
 .order-customer-name{ font-weight:700; font-size:15px; color:var(--ink-navy); }
 .order-card-items{ font-size:13px; color:var(--ink-navy); margin-bottom:2px; }
