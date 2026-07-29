@@ -27,6 +27,7 @@ const ICONS = {
   droplet: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.7s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>`,
   shirt: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 2 7l3 4 2-1.5V21h10V9.5L19 11l3-4-6-4-2 2h-4z"/></svg>`,
   hash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h14M5 15h14M11 4 8 20M16 4l-3 16"/></svg>`,
+  store: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 21v-5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v5"/></svg>`,
   pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
   alertTriangle: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>`
 };
@@ -523,7 +524,7 @@ async function pageDashboard(){
 
   const branchSwitcher = state.branches.length > 1 ? `
     <div class="branch-switcher no-print">
-      ${ICONS.hash}
+      <div class="branch-label-icon">${ICONS.store}</div>
       <select id="branchSwitcherSelect">
         <option value="all" ${state.currentBranchId==='all'?'selected':''}>Semua Cabang (Gabungan)</option>
         ${state.branches.map(b=>`<option value="${b.id}" ${state.currentBranchId===b.id?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
@@ -572,7 +573,12 @@ async function pageDashboard(){
 
   return `
     ${branchSwitcher}
-    ${state.branches.length <= 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(state.branches[0]?.name||'')}</p>` : ''}
+    ${state.branches.length <= 1 ? `
+      <div class="branch-label-badge">
+        <div class="branch-label-icon">${ICONS.store}</div>
+        <span>${escapeHtml(state.branches[0]?.name||'')}</span>
+      </div>
+    ` : ''}
     ${opStatusStrip}
     <div class="hero-balance">
       <div class="card-title">Saldo Kas Saat Ini${activeBranchId ? ` — ${escapeHtml(state.branches.find(b=>b.id===activeBranchId)?.name||'')}` : ' (Semua Cabang)'}</div>

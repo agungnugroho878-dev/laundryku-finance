@@ -223,15 +223,22 @@ a{ color:var(--suds-blue); }
   100%{ transform:scale(1) rotate(0); }
 }
 
-.branch-switcher{
-  display:flex; align-items:center; gap:10px;
-  background:var(--paper); border:1.5px solid var(--line); border-radius:12px;
-  padding:10px 14px; margin-bottom:14px;
+.branch-switcher, .branch-label-badge{
+  display:flex; align-items:center; gap:12px;
+  background:var(--paper); border:1.5px solid var(--line); border-radius:14px;
+  padding:10px 14px 10px 10px; margin-bottom:14px;
+  box-shadow:var(--shadow-card);
 }
-.branch-switcher svg{ width:16px; height:16px; color:var(--text-muted); flex-shrink:0; }
+.branch-switcher .branch-label-icon, .branch-label-badge .branch-label-icon{
+  width:36px; height:36px; border-radius:10px; flex-shrink:0;
+  background:var(--brand-grad); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+}
+.branch-label-icon svg{ width:18px; height:18px; }
 .branch-switcher select{
-  border:none; outline:none; font-size:14px; font-weight:600; width:100%; background:none; color:var(--ink-navy);
+  border:none; outline:none; font-size:15px; font-weight:700; width:100%; background:none; color:var(--ink-navy);
 }
+.branch-label-badge span{ font-size:16px; font-weight:700; color:var(--ink-navy); }
 
 .hero-balance{
   background:linear-gradient(155deg, var(--brand-deep), var(--ink-navy) 45%, var(--suds-blue));
