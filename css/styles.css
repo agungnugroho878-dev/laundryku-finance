@@ -240,6 +240,17 @@ a{ color:var(--suds-blue); }
 }
 .branch-label-badge span{ font-size:16px; font-weight:700; color:var(--ink-navy); }
 
+.hero-branch-row{
+  display:flex; align-items:center; gap:10px; margin-bottom:16px;
+}
+.hero-branch-row .branch-label-icon{
+  width:30px; height:30px; border-radius:9px; flex-shrink:0;
+  background:rgba(255,255,255,.16); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+}
+.hero-branch-row .branch-label-icon svg{ width:16px; height:16px; }
+.hero-branch-row span{ font-size:14.5px; font-weight:700; color:#fff; }
+
 .hero-balance{
   background:linear-gradient(155deg, var(--brand-deep), var(--ink-navy) 45%, var(--suds-blue));
   color:var(--foam-white);

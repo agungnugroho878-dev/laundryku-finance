@@ -184,6 +184,8 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 > **Navigasi disederhanakan**: menu bawah sekarang **Beranda, Cucian, Laporan (khusus Owner), Akun** + tombol **"+"** mengambang untuk aksi cepat (Pesanan Baru, Catat Kas Masuk, Catat Kas Keluar). Menu **Riwayat Transaksi, Member, Tugas Saya, Absensi (termasuk gaji), serta Atur** sekarang dikumpulkan jadi satu di tab **Akun**, tampil sebagai kartu-kartu berwarna yang tinggal diketuk.
 >
 > **Halaman Atur juga dirapikan** dengan pola yang sama — bukan 1 halaman panjang lagi, sekarang jadi menu kartu: **Profil Usaha, Harga Layanan, Promo & Loyalty, Cabang, Anggota Tim, Saldo Awal, Lainnya** (Printer/Foto/Data/Tentang) — tinggal ketuk salah satu, ada tombol "Kembali" untuk balik ke menu.
+>
+> **Beranda**: info cabang sekarang jadi 1 kartu dengan Saldo Kas (gradasi biru, tidak dobel lagi). Di atasnya ada **"Status Cucian"** (5 kotak: Perlu Dijemput, Belum Diproses, Sedang Diproses, Siap Diambil/Antar, Terlambat) — **klik salah satu kotak untuk langsung lihat daftar pesanan yang SESUAI status itu saja** (bukan semua pesanan). Ada tombol "Hapus Filter" untuk kembali ke tampilan normal.
 1b. **Multi-Cabang**: setiap usaha otomatis punya 1 cabang ("Cabang Utama") sejak awal. Kalau usaha Anda lebih dari 1 lokasi:
    - **Owner**: buka **Atur → Cabang** → **"+ Tambah Cabang"** → isi nama & alamat cabang baru
    - Tiap cabang punya **kode undangan sendiri**, **harga layanan sendiri**, dan **kas/laporan sendiri** — tapi tetap ada tampilan **gabungan (Semua Cabang)** untuk Owner
@@ -244,9 +246,10 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 
 9f. **Kelola Pegawai (satu tempat untuk semua pengaturan per pegawai)**:
     - Buka **Atur → Anggota Tim → tombol "Kelola Pegawai"** di tiap pegawai — semuanya jadi satu di sini:
+      - **Tanggal Mulai Kerja** (baru) — perhitungan alpa & gaji cuma dimulai dari tanggal ini, hari-hari sebelumnya (misal sebelum pegawai resmi mulai kerja) **tidak ikut dihitung sama sekali**, supaya tidak salah kena potongan untuk hari yang memang belum jadi tanggung jawabnya
       - **Jam Kerja & Hari Libur Mingguan** — per pegawai (bukan per cabang lagi), jadi tiap pegawai bisa punya jadwal beda-beda
       - **Jenis Gaji Pokok**: Harian (otomatis dihitung dari jumlah hari absen masuk di periode slip), Mingguan, atau Bulanan (nominal tetap)
-      - **Tunjangan** (opsional, bisa tambah beberapa) — misal Tunjangan Makan, Tunjangan Transport, atau nama bebas. Kalau gaji pokoknya Harian, tunjangan ikut dikali jumlah hari masuk
+      - **Tunjangan** (opsional, bisa tambah beberapa) — misal Tunjangan Makan, Tunjangan Transport, atau nama bebas. Tiap tunjangan sekarang punya **pilihan sendiri**: **"Harian"** (dikali jumlah hari masuk — kalau pegawai tidak masuk, tunjangan hari itu juga tidak dibayar, selain kena potongan alpa) atau **"Flat"** (nominal tetap per periode slip, tidak terpengaruh jumlah hari masuk) — bisa beda-beda per tunjangan, tidak harus ikut jenis Gaji Pokok
       - **Potongan Keterlambatan** — atur "setiap berapa menit terlambat, potongan berapa rupiah"
       - **Potongan Tanpa Izin (Alpa)** — atur nominal potongan per hari kerja yang **sama sekali tidak ada absen masuk** (bukan hari libur, bukan hari yang belum terjadi) — dihitung otomatis dari jadwal kerja & data Absensi pegawai itu
     - Radius lokasi absen (meter) tetap diatur per **cabang** (Atur → Cabang, karena terkait lokasi fisik cabang), tapi jam kerja/hari libur/gaji sekarang murni per **pegawai**

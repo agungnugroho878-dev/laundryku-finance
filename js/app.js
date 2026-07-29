@@ -63,6 +63,7 @@ const state = {
   cucianPage: 1,
   cucianPageSize: 25,
   cucianShowAllHistory: false,
+  cucianSpecialFilter: null,
   absensiReportRange: null,
   viewingPayslipId: null,
   settingsSection: null
@@ -152,7 +153,11 @@ function renderNav(){
   document.getElementById("bottomNav").innerHTML = items;
   document.getElementById("sidebar").innerHTML = items;
   document.querySelectorAll("[data-page]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{ state.page = btn.dataset.page; render(); });
+    btn.addEventListener("click", ()=>{
+      state.page = btn.dataset.page;
+      if(state.page === "cucian") state.cucianSpecialFilter = null;
+      render();
+    });
   });
 }
 
@@ -206,6 +211,25 @@ async function render(){
     el.addEventListener("click", ()=>{
       state.page = el.dataset.page;
       if(state.page === "pengaturan") state.settingsSection = null;
+      render();
+    });
+  });
+  document.querySelectorAll("[data-action='goto-cucian-filter']").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const f = el.dataset.filter;
+      state.page = "cucian";
+      state.cucianSearch = "";
+      state.cucianPage = 1;
+      if(f === "belum-diproses" || f === "sedang-diproses"){
+        state.cucianFilter = f;
+        state.cucianSpecialFilter = null;
+      } else if(f === "ready"){
+        state.cucianFilter = "selesai";
+        state.cucianSpecialFilter = "ready";
+      } else {
+        // needs-pickup / overdue span across active statuses — use the special-filter view
+        state.cucianSpecialFilter = f;
+      }
       render();
     });
   });
@@ -546,25 +570,25 @@ async function pageDashboard(){
     terlambat: opActiveOrders.filter(o=>o.estimatedReadyAt && formatCountdown(o.estimatedReadyAt).overdue).length
   };
   const opStatusStrip = `
-    <h3 class="section-title no-print">Status Operasional</h3>
+    <h3 class="section-title no-print">Status Cucian</h3>
     <div class="op-status-grid no-print">
-      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+      <div class="op-status-item" data-action="goto-cucian-filter" data-filter="needs-pickup">
         <div class="op-status-num" style="color:var(--coin);">${opStats.perluDijemput}</div>
         <div class="op-status-label">Perlu Dijemput</div>
       </div>
-      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+      <div class="op-status-item" data-action="goto-cucian-filter" data-filter="belum-diproses">
         <div class="op-status-num" style="color:var(--suds-blue);">${opStats.belumDiproses}</div>
         <div class="op-status-label">Belum Diproses</div>
       </div>
-      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+      <div class="op-status-item" data-action="goto-cucian-filter" data-filter="sedang-diproses">
         <div class="op-status-num" style="color:var(--coin);">${opStats.sedangDiproses}</div>
         <div class="op-status-label">Sedang Diproses</div>
       </div>
-      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+      <div class="op-status-item" data-action="goto-cucian-filter" data-filter="ready">
         <div class="op-status-num" style="color:var(--mint);">${opStats.siapDiambilAntar}</div>
         <div class="op-status-label">Siap Diambil/Antar</div>
       </div>
-      <div class="op-status-item" data-action="goto-page" data-page="cucian">
+      <div class="op-status-item" data-action="goto-cucian-filter" data-filter="overdue">
         <div class="op-status-num" style="color:var(--rose);">${opStats.terlambat}</div>
         <div class="op-status-label">Terlambat</div>
       </div>
@@ -573,15 +597,13 @@ async function pageDashboard(){
 
   return `
     ${branchSwitcher}
-    ${state.branches.length <= 1 ? `
-      <div class="branch-label-badge">
-        <div class="branch-label-icon">${ICONS.store}</div>
-        <span>${escapeHtml(state.branches[0]?.name||'')}</span>
-      </div>
-    ` : ''}
     ${opStatusStrip}
     <div class="hero-balance">
-      <div class="card-title">Saldo Kas Saat Ini${activeBranchId ? ` — ${escapeHtml(state.branches.find(b=>b.id===activeBranchId)?.name||'')}` : ' (Semua Cabang)'}</div>
+      <div class="hero-branch-row">
+        <div class="branch-label-icon">${ICONS.store}</div>
+        <span>${escapeHtml(activeBranchId ? (state.branches.find(b=>b.id===activeBranchId)?.name||'') : (state.branches.length===1 ? state.branches[0].name : 'Semua Cabang'))}</span>
+      </div>
+      <div class="card-title">Saldo Kas Saat Ini</div>
       <div class="amount num" data-countup="${neraca.kas}">Rp0</div>
       <div class="sub">
         <span>Aset: <b>${Reports.formatRupiah(neraca.totalAset)}</b></span>
@@ -835,6 +857,8 @@ function openSalaryConfigModal(staffMember){
 
     <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px;">
       <p class="small" style="font-weight:700; margin-bottom:8px;">🕐 Jam Kerja & Hari Libur</p>
+      <div class="field"><label>Tanggal Mulai Kerja</label><input type="date" id="wsStartDate" value="${ws.startDate || Reports.todayStr()}"></div>
+      <p class="small muted" style="margin:-6px 0 10px;">Perhitungan alpa &amp; gaji cuma dimulai dari tanggal ini — hari sebelum tanggal ini tidak ikut dihitung sama sekali.</p>
       <div style="display:flex; gap:10px;">
         <div class="field" style="flex:1;"><label>Jam Masuk</label><input type="time" id="wsStart" value="${ws.workStart}"></div>
         <div class="field" style="flex:1;"><label>Jam Pulang</label><input type="time" id="wsEnd" value="${ws.workEnd}"></div>
@@ -903,26 +927,36 @@ function openSalaryConfigModal(staffMember){
   salType.addEventListener("change", updateBaseLabel);
   updateBaseLabel();
 
-  let allowances = cfg.allowances.map(a=>({...a}));
+  let allowances = cfg.allowances.map(a=>({ type: "bulanan", ...a }));
   const allowanceList = modal.querySelector("#salAllowanceList");
   function renderAllowances(){
     allowanceList.innerHTML = allowances.map((a,i)=>`
-      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-        <input type="checkbox" class="allow-enabled" data-i="${i}" ${a.enabled?'checked':''} style="width:auto; margin:0;">
-        <input type="text" class="allow-label" data-i="${i}" value="${escapeHtml(a.label)}" placeholder="Nama tunjangan" style="flex:2;">
-        <input type="number" class="allow-amount" data-i="${i}" value="${a.amount}" placeholder="Rp" style="flex:1;">
-        <button type="button" class="tx-del allow-remove" data-i="${i}">${ICONS.trash}</button>
+      <div style="border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:8px; background:var(--paper);">
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <input type="checkbox" class="allow-enabled" data-i="${i}" ${a.enabled?'checked':''} style="width:auto; margin:0;">
+          <input type="text" class="allow-label" data-i="${i}" value="${escapeHtml(a.label)}" placeholder="Nama tunjangan" style="flex:2;">
+          <button type="button" class="tx-del allow-remove" data-i="${i}">${ICONS.trash}</button>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <select class="allow-type" data-i="${i}" style="flex:1;">
+            <option value="bulanan" ${a.type!=='harian'?'selected':''}>Flat (tiap periode)</option>
+            <option value="harian" ${a.type==='harian'?'selected':''}>Harian (per hari masuk)</option>
+          </select>
+          <input type="number" class="allow-amount" data-i="${i}" value="${a.amount}" placeholder="Rp" style="flex:1;">
+        </div>
+        <p class="small muted" style="margin-top:6px; margin-bottom:0;">${a.type==='harian' ? 'Nominal per HARI — dikali jumlah hari masuk, tidak dibayar kalau tidak masuk.' : 'Nominal FLAT per periode slip, tidak terpengaruh jumlah hari masuk.'}</p>
       </div>
     `).join("");
     allowanceList.querySelectorAll(".allow-enabled").forEach(el=> el.addEventListener("change", ()=>{ allowances[el.dataset.i].enabled = el.checked; }));
     allowanceList.querySelectorAll(".allow-label").forEach(el=> el.addEventListener("input", ()=>{ allowances[el.dataset.i].label = el.value; }));
+    allowanceList.querySelectorAll(".allow-type").forEach(el=> el.addEventListener("change", ()=>{ allowances[el.dataset.i].type = el.value; renderAllowances(); }));
     allowanceList.querySelectorAll(".allow-amount").forEach(el=> el.addEventListener("input", ()=>{ allowances[el.dataset.i].amount = parseFloat(el.value)||0; }));
     allowanceList.querySelectorAll(".allow-remove").forEach(el=> el.addEventListener("click", ()=>{ allowances.splice(parseInt(el.dataset.i),1); renderAllowances(); }));
   }
   renderAllowances();
 
   modal.querySelector("#addAllowanceBtn").addEventListener("click", ()=>{
-    allowances.push({ label: "", amount: 0, enabled: true });
+    allowances.push({ label: "", amount: 0, enabled: true, type: "bulanan" });
     renderAllowances();
   });
 
@@ -935,6 +969,7 @@ function openSalaryConfigModal(staffMember){
 
   modal.querySelector("[data-action='save-salary-config']").addEventListener("click", async ()=>{
     const workSchedule = {
+      startDate: modal.querySelector("#wsStartDate").value || Reports.todayStr(),
       workStart: modal.querySelector("#wsStart").value || "08:00",
       workEnd: modal.querySelector("#wsEnd").value || "17:00",
       offDays: Array.from(modal.querySelectorAll(".ws-off-day:checked")).map(el=>parseInt(el.value))
@@ -2150,10 +2185,14 @@ function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd
 
   const basePay = cfg.type === "harian" ? cfg.baseAmount * attendanceCount : cfg.baseAmount;
 
-  const allowanceDetails = (cfg.allowances||[]).filter(a=>a.enabled).map(a=>({
-    label: a.label,
-    amount: cfg.type === "harian" ? a.amount * attendanceCount : a.amount
-  }));
+  const allowanceDetails = (cfg.allowances||[]).filter(a=>a.enabled).map(a=>{
+    // Fall back to the old (pre-per-allowance-type) behavior for configs saved before this option existed.
+    const allowType = a.type || (cfg.type === "harian" ? "harian" : "bulanan");
+    return {
+      label: a.label,
+      amount: allowType === "harian" ? a.amount * attendanceCount : a.amount
+    };
+  });
   const totalAllowances = allowanceDetails.reduce((s,a)=>s+a.amount, 0);
 
   const deductionDetails = [];
@@ -2177,13 +2216,15 @@ function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd
   if(cfg.absenceDeduction?.enabled){
     const attendedDates = new Set(attendanceRecords.map(r=>r.date));
     const offDays = staffMember.workSchedule?.offDays ?? [0];
+    const startDate = staffMember.workSchedule?.startDate || "1970-01-01";
     const cursor = new Date(periodStart+"T00:00:00");
     const end = new Date(periodEnd+"T00:00:00");
     while(cursor <= end){
       const dateStr = localDateStr(cursor);
       const isOffDay = offDays.includes(cursor.getDay());
       const isFuture = dateStr > Reports.todayStr();
-      if(!isOffDay && !isFuture && !attendedDates.has(dateStr)){
+      const isBeforeStart = dateStr < startDate;
+      if(!isOffDay && !isFuture && !isBeforeStart && !attendedDates.has(dateStr)){
         if(leaveDates.has(dateStr)){
           excusedDetails.push({ date: dateStr });
         } else {
@@ -2501,24 +2542,22 @@ async function pageCucian(){
     <option value="created-asc" ${state.cucianSort==='created-asc'?'selected':''}>Lama selesai</option>
   `;
 
+  const specialFilterLabels = {
+    "needs-pickup": "🚗 Perlu Dijemput",
+    "overdue": "⏰ Terlambat",
+    "ready": "📦 Siap Diambil/Antar"
+  };
+  const specialFilterBanner = state.cucianSpecialFilter ? `
+    <div class="row-between" style="background:var(--foam-white); border-radius:10px; padding:10px 14px; margin-bottom:12px;">
+      <span class="small" style="font-weight:700;">Filter aktif: ${specialFilterLabels[state.cucianSpecialFilter]}</span>
+      <button class="btn btn-ghost" data-action="clear-cucian-special-filter" style="padding:4px 8px;">Hapus Filter ✕</button>
+    </div>
+  ` : "";
+
   return `
     ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchName||'')}</p>` : ''}
     <button class="btn btn-primary btn-block" data-action="add-order" style="margin-bottom:14px;">${ICONS.plus} Pesanan Cucian Baru</button>
-
-    <div class="cucian-summary-strip">
-      <div class="cucian-summary-item status-belum-diproses">
-        <div class="cucian-summary-num">${counts["belum-diproses"]}</div>
-        <div class="cucian-summary-label">Belum Diproses</div>
-      </div>
-      <div class="cucian-summary-item status-sedang-diproses">
-        <div class="cucian-summary-num">${counts["sedang-diproses"]}</div>
-        <div class="cucian-summary-label">Sedang Diproses</div>
-      </div>
-      <div class="cucian-summary-item status-selesai">
-        <div class="cucian-summary-num">${counts["selesai"]}</div>
-        <div class="cucian-summary-label">Selesai${!state.cucianShowAllHistory ? ` (${SELESAI_WINDOW_DAYS}hr)` : ''}</div>
-      </div>
-    </div>
+    ${specialFilterBanner}
 
     <div class="cucian-search">
       ${ICONS.search}
@@ -2547,8 +2586,8 @@ async function pageCucian(){
   `;
 }
 
-function filterAndSortOrders(orders, status, search, sort){
-  let list = orders.filter(o => o.status === status);
+function applySearchSort(orders, search, sort){
+  let list = orders;
   if(search){
     const q = search.trim().toLowerCase();
     list = list.filter(o =>
@@ -2566,13 +2605,31 @@ function filterAndSortOrders(orders, status, search, sort){
   return list.slice().sort(sorters[sort] || sorters["created-desc"]);
 }
 
+function filterAndSortOrders(orders, status, search, sort){
+  const list = orders.filter(o => o.status === status);
+  return applySearchSort(list, search, sort);
+}
+
 async function renderCucianList(){
   const container = document.getElementById("cucianListContainer");
   if(!container) return;
-  const all = state.cucianFilter === "selesai"
-    ? await getSelesaiOrdersForDisplay()
-    : filterOrdersByBranch(await DB.getActiveOrders());
-  const list = filterAndSortOrders(all, state.cucianFilter, state.cucianSearch, state.cucianSort);
+
+  let list;
+  if(state.cucianSpecialFilter === "needs-pickup"){
+    const all = filterOrdersByBranch(await DB.getActiveOrders()).filter(o => o.needsPickup && !o.pickupDone);
+    list = applySearchSort(all, state.cucianSearch, state.cucianSort);
+  } else if(state.cucianSpecialFilter === "overdue"){
+    const all = filterOrdersByBranch(await DB.getActiveOrders()).filter(o => o.estimatedReadyAt && formatCountdown(o.estimatedReadyAt).overdue);
+    list = applySearchSort(all, state.cucianSearch, state.cucianSort);
+  } else if(state.cucianSpecialFilter === "ready" && state.cucianFilter === "selesai"){
+    const all = (await getSelesaiOrdersForDisplay()).filter(o => !o.needsDelivery || !o.deliveryDone);
+    list = applySearchSort(all, state.cucianSearch, state.cucianSort);
+  } else {
+    const all = state.cucianFilter === "selesai"
+      ? await getSelesaiOrdersForDisplay()
+      : filterOrdersByBranch(await DB.getActiveOrders());
+    list = filterAndSortOrders(all, state.cucianFilter, state.cucianSearch, state.cucianSort);
+  }
 
   const pageSize = state.cucianPageSize || 25;
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
@@ -2859,8 +2916,16 @@ function bindCucianControls(){
       state.cucianFilter = btn.dataset.cucianTab;
       state.cucianSort = state.cucianFilter === "selesai" ? "created-desc" : "deadline-asc";
       state.cucianPage = 1;
+      state.cucianSpecialFilter = null;
       render();
     });
+  });
+
+  const clearSpecialFilterBtn = document.querySelector("[data-action='clear-cucian-special-filter']");
+  if(clearSpecialFilterBtn) clearSpecialFilterBtn.addEventListener("click", ()=>{
+    state.cucianSpecialFilter = null;
+    state.cucianPage = 1;
+    render();
   });
 
   const showAllHistoryToggle = document.getElementById("cucianShowAllHistoryToggle");
