@@ -597,7 +597,6 @@ async function pageDashboard(){
 
   return `
     ${branchSwitcher}
-    ${opStatusStrip}
     <div class="hero-balance">
       <div class="hero-branch-row">
         <div class="branch-label-icon">${ICONS.store}</div>
@@ -610,6 +609,7 @@ async function pageDashboard(){
         <span>Modal: <b>${Reports.formatRupiah(neraca.ekuitas)}</b></span>
       </div>
     </div>
+    ${opStatusStrip}
 
     <div class="quick-actions">
       <button class="in" data-action="add" data-type="in"><span class="qa-icon">${ICONS.arrowDown}</span>Catat Kas Masuk</button>
