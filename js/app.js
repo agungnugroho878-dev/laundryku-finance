@@ -170,16 +170,33 @@ async function render(){
   main.classList.toggle("wide", state.page === "cucian");
   document.getElementById("appBody")?.classList.toggle("wide", state.page === "cucian");
   main.innerHTML = `<div class="empty-state">Memuat...</div>`;
-  if(state.page === "dashboard") main.innerHTML = await pageDashboard();
-  if(state.page === "transaksi") main.innerHTML = await pageTransaksi();
-  if(state.page === "cucian") main.innerHTML = await pageCucian();
-  if(state.page === "tugas-saya") main.innerHTML = await pageTugasSaya();
-  if(state.page === "member") main.innerHTML = await pageMember();
-  if(state.page === "absensi") main.innerHTML = await pageAbsensi();
-  if(state.page === "akun") main.innerHTML = await pageAkun();
-  if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
-  if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
+  try{
+    if(state.page === "dashboard") main.innerHTML = await pageDashboard();
+    if(state.page === "transaksi") main.innerHTML = await pageTransaksi();
+    if(state.page === "cucian") main.innerHTML = await pageCucian();
+    if(state.page === "tugas-saya") main.innerHTML = await pageTugasSaya();
+    if(state.page === "member") main.innerHTML = await pageMember();
+    if(state.page === "absensi") main.innerHTML = await pageAbsensi();
+    if(state.page === "akun") main.innerHTML = await pageAkun();
+    if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
+    if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
+  }catch(err){
+    console.error("Render error:", err);
+    const isIndexError = (err?.message || "").includes("requires an index");
+    main.innerHTML = `
+      <div class="card" style="border:1.5px solid var(--rose);">
+        <p class="small" style="font-weight:700; color:var(--rose); margin-bottom:8px;">Gagal memuat halaman</p>
+        ${isIndexError ? `
+          <p class="small" style="margin-bottom:10px;">Firestore butuh index tambahan untuk query ini. Buka Console (F12) untuk lihat link biru "Create Index" dari pesan error, klik link itu, tunggu status "Enabled", lalu refresh halaman ini.</p>
+        ` : `<p class="small" style="margin-bottom:10px;">${escapeHtml(err?.message || "Terjadi kesalahan tidak diketahui.")}</p>`}
+        <button class="btn btn-outline btn-block" data-action="retry-render">Coba Lagi</button>
+      </div>
+    `;
+    main.querySelector("[data-action='retry-render']")?.addEventListener("click", render);
+    return;
+  }
   bindPageEvents();
+
   if(state.page === "dashboard"){
     runDashboardCountUps();
     document.querySelectorAll("[data-period]").forEach(btn=>{
@@ -1044,6 +1061,7 @@ function openBranchModal(existing){
       perKmRate: parseFloat(modal.querySelector("#branchPerKmRate").value) || 0
     };
     const attendanceSettings = {
+      lat: pickedLat, lng: pickedLng,
       radiusMeters: parseFloat(modal.querySelector("#attRadius").value) || 100
     };
 
