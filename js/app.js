@@ -101,12 +101,16 @@ const NAV_ITEMS = [
   { id:"dashboard", label:"Beranda", icon:ICONS.home },
   { id:"cucian", label:"Cucian", icon:ICONS.clock },
   { id:"laporan", label:"Laporan", icon:ICONS.report, ownerOnly:true },
+  { id:"absensi", label:"Absensi", icon:ICONS.calendar, pegawaiOnly:true },
   { id:"akun", label:"Akun", icon:ICONS.user }
 ];
 
 function visibleNavItems(){
-  if(state.role === "owner") return NAV_ITEMS;
-  return NAV_ITEMS.filter(i => !i.ownerOnly);
+  return NAV_ITEMS.filter(i => {
+    if(i.ownerOnly && state.role !== "owner") return false;
+    if(i.pegawaiOnly && state.role !== "pegawai") return false;
+    return true;
+  });
 }
 
 function initFabQuickAction(){
@@ -273,7 +277,7 @@ async function render(){
         const distM = haversineKm(as.lat, as.lng, lat, lng) * 1000;
         if(distM > (as.radiusMeters||100)){
           toast(`Anda ${Math.round(distM)}m dari cabang — di luar radius absen (${as.radiusMeters}m)`, "warn");
-          checkInBtn.disabled = false; checkInBtn.textContent = `${ICONS.pin} Absen Masuk`;
+          checkInBtn.disabled = false; checkInBtn.innerHTML = `${ICONS.pin} Absen Masuk`;
           return;
         }
         const now = Date.now();
@@ -288,7 +292,7 @@ async function render(){
         render();
       }, ()=>{
         toast("Gagal ambil lokasi GPS — pastikan izin lokasi diizinkan", "warn");
-        checkInBtn.disabled = false; checkInBtn.textContent = `${ICONS.pin} Absen Masuk`;
+        checkInBtn.disabled = false; checkInBtn.innerHTML = `${ICONS.pin} Absen Masuk`;
       });
     });
 
@@ -2116,6 +2120,36 @@ function minutesLate(checkInTimeMs, dateStr, workStart){
   return Math.max(0, Math.round((checkInTimeMs - workStartMs) / 60000));
 }
 
+async function renderMyWorkScheduleCard(){
+  const doc = await fs.collection("users").doc(state.user.uid).get();
+  const ws = doc.exists ? doc.data().workSchedule : null;
+  if(!ws){
+    return `<div class="card"><p class="small muted">Jam kerja & hari libur belum diatur Owner.</p></div>`;
+  }
+  const dayLabels = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
+  const offDays = ws.offDays || [0];
+  return `
+    <div class="card">
+      <div class="card-title">Jam Kerja Saya</div>
+      <div class="row-between" style="margin-bottom:10px;">
+        <span class="small">Jam Masuk</span>
+        <span class="small" style="font-weight:700;">${ws.workStart || '08:00'}</span>
+      </div>
+      <div class="row-between" style="margin-bottom:12px;">
+        <span class="small">Jam Pulang</span>
+        <span class="small" style="font-weight:700;">${ws.workEnd || '17:00'}</span>
+      </div>
+      <p class="small" style="font-weight:600; margin-bottom:8px;">Hari Kerja & Libur</p>
+      <div style="display:flex; flex-wrap:wrap; gap:6px;">
+        ${dayLabels.map((d,i)=>`
+          <span class="tag" style="${offDays.includes(i) ? 'background:var(--rose-bg); color:var(--rose);' : 'background:var(--mint-bg); color:var(--mint);'}">${d}${offDays.includes(i)?' (Libur)':''}</span>
+        `).join("")}
+      </div>
+      ${ws.startDate ? `<p class="small muted" style="margin-top:10px;">Mulai kerja: ${fmtDate(ws.startDate)}</p>` : ""}
+    </div>
+  `;
+}
+
 async function pageAbsensi(){
   if(state.viewingPayslipId){
     const slips = state.role === "owner" ? await DB.getAllPayslips() : await DB.getPayslipsForUser(state.user.uid);
@@ -2154,6 +2188,7 @@ async function pageAbsensi(){
       </div>
     </div>
     ${actionArea}
+    ${state.role === "pegawai" ? await renderMyWorkScheduleCard() : ""}
   `;
 
   const ownerSection = state.role === "owner" ? await renderAbsensiOwnerReport() : "";
@@ -2458,7 +2493,8 @@ const AKUN_MENU_META = {
 };
 
 async function pageAkun(){
-  const menuIds = ["transaksi", "member", "tugas-saya", "absensi"];
+  const menuIds = ["transaksi", "member", "tugas-saya"];
+  if(state.role === "owner") menuIds.push("absensi");
   menuIds.push("pengaturan");
 
   return `

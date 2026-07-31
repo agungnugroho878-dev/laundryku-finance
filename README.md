@@ -182,7 +182,9 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 
 1. Buka aplikasinya → login (atau daftar kalau belum punya akun). Lupa password? Klik **"Lupa password?"** di halaman Masuk → isi email akun → link reset password otomatis dikirim ke email itu (cek folder spam kalau tidak muncul). Password tidak pernah bisa "dilihat" oleh siapa pun (termasuk Owner) — cuma bisa direset lewat email.
 
-> **Navigasi disederhanakan**: menu bawah sekarang **Beranda, Cucian, Laporan (khusus Owner), Akun** + tombol **"+"** mengambang untuk aksi cepat (Pesanan Baru, Catat Kas Masuk, Catat Kas Keluar). Menu **Riwayat Transaksi, Member, Tugas Saya, Absensi (termasuk gaji), serta Atur** sekarang dikumpulkan jadi satu di tab **Akun**, tampil sebagai kartu-kartu berwarna yang tinggal diketuk.
+> **Navigasi disederhanakan**: menu bawah **Beranda, Cucian, Akun** selalu tampil untuk semua peran, ditambah **1 menu ke-4 yang beda per peran**: Owner dapat **Laporan**, Pegawai dapat **Absensi** (karena ini kegiatan harian pegawai, jadi ditaruh langsung di menu bawah, bukan ditumpuk di Akun). Ditambah tombol **"+"** mengambang untuk aksi cepat (Pesanan Baru, Catat Kas Masuk, Catat Kas Keluar). Menu **Riwayat Transaksi, Member, Tugas Saya, serta Atur** dikumpulkan jadi satu di tab **Akun**, tampil sebagai kartu-kartu berwarna yang tinggal diketuk (Laporan & Absensi tetap ada di situ juga khusus untuk Owner, karena Owner tidak punya slot menu bawah untuk itu).
+>
+> **Halaman Absensi pegawai** sekarang juga menampilkan kartu **"Jam Kerja Saya"** — jam masuk/pulang dan hari kerja/libur yang sudah diatur Owner (lewat Kelola Pegawai), supaya pegawai bisa cek sendiri jadwalnya tanpa perlu tanya.
 >
 > **Halaman Atur juga dirapikan** dengan pola yang sama — bukan 1 halaman panjang lagi, sekarang jadi menu kartu: **Profil Usaha, Harga Layanan, Promo & Loyalty, Cabang, Anggota Tim, Saldo Awal, Lainnya** (Printer/Foto/Data/Tentang) — tinggal ketuk salah satu, ada tombol "Kembali" untuk balik ke menu.
 >
