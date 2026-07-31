@@ -1,4 +1,4 @@
-/* LaundryKu Finance — Firebase init
+/* LAMAN — Firebase init
  * Uses the "compat" SDK so it works as plain <script> tags, no build step needed.
  */
 

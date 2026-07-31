@@ -1,4 +1,4 @@
-/* LaundryKu Finance — data layer (multi-tenant edition)
+/* LAMAN — data layer (multi-tenant edition)
  * Every business gets its own isolated data. All collections carry a
  * businessId field (set via DB.setBusinessContext), and every query/write
  * automatically scopes to the currently logged-in user's business.

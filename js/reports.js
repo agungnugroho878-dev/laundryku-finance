@@ -1,4 +1,4 @@
-/* LaundryKu Finance — report engine
+/* LAMAN — report engine
  * Turns a list of simple "kas masuk / kas keluar" entries into a real
  * Laba Rugi (Income Statement) and Neraca (Balance Sheet), using the
  * account tag stored on each category/transaction.

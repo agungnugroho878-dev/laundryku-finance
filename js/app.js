@@ -1,4 +1,4 @@
-/* LaundryKu Finance — app shell & UI */
+/* LAMAN — app shell & UI */
 
 const ICONS = {
   user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
@@ -1282,7 +1282,7 @@ async function pagePengaturan(){
       ${accountCard}
       <h3 class="section-title">Tentang</h3>
       <div class="card small muted">
-        LaundryKu Finance — aplikasi laporan keuangan UMKM laundry. Laporan keuangan & pengaturan lanjutan hanya bisa diakses oleh akun Owner.
+        LAMAN — aplikasi manajemen usaha laundry. Laporan keuangan & pengaturan lanjutan hanya bisa diakses oleh akun Owner.
       </div>
     `;
   }
@@ -1541,7 +1541,7 @@ async function pagePengaturan(){
 
     <h3 class="section-title">Tentang</h3>
     <div class="card small muted">
-      LaundryKu Finance v1.0 — aplikasi laporan keuangan untuk UMKM laundry. Data tersimpan online (Firestore) dan tersinkron ke semua perangkat yang login.
+      LAMAN v1.0 — aplikasi manajemen usaha laundry: kasir, laporan keuangan, kurir & ongkir, absensi, dan gaji pegawai. Data tersimpan online (Firestore) dan tersinkron ke semua perangkat yang login.
     </div>
   `;
 
@@ -5464,7 +5464,7 @@ function authShellHtml(inner){
         <div class="auth-logo">
           <svg viewBox="0 0 24 24" fill="none" stroke="#F3F7F6" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M9 12a3 3 0 0 0 4.5 2.6"/><circle cx="16" cy="8" r="1.4" fill="#C98A3B" stroke="none"/></svg>
         </div>
-        <h1>LaundryKu Finance</h1>
+        <h1>LAMAN</h1>
         <p class="small muted" style="margin-bottom:20px;">Laporan keuangan UMKM laundry</p>
         ${inner}
       </div>

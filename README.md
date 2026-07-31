@@ -1,6 +1,7 @@
-# LaundryKu Finance
+# LAMAN
+*(LAundry MANajemen)*
 
-Aplikasi laporan keuangan untuk UMKM laundry — kini **online** (Firebase) dan **multi-usaha**: satu instalasi aplikasi ini bisa dipakai banyak laundry berbeda sekaligus, masing-masing dengan data yang sepenuhnya terpisah (transaksi, member, harga, pengaturan — semua terisolasi per usaha).
+Aplikasi manajemen usaha laundry lengkap — kasir, laporan keuangan otomatis, kurir & ongkir, absensi, dan gaji pegawai — kini **online** (Firebase) dan **multi-usaha**: satu instalasi aplikasi ini bisa dipakai banyak laundry berbeda sekaligus, masing-masing dengan data yang sepenuhnya terpisah (transaksi, member, harga, pengaturan — semua terisolasi per usaha).
 
 ---
 

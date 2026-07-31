@@ -1,4 +1,4 @@
-/* LaundryKu Finance — public order tracking (no login required) */
+/* LAMAN — public order tracking (no login required) */
 
 const ORDER_FLOW = ["belum-diproses", "sedang-diproses", "selesai"];
 const STATUS_LABEL = {
