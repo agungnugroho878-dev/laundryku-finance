@@ -5462,10 +5462,13 @@ function authShellHtml(inner){
     <div class="auth-shell">
       <div class="auth-card">
         <div class="auth-logo">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#F3F7F6" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M9 12a3 3 0 0 0 4.5 2.6"/><circle cx="16" cy="8" r="1.4" fill="#C98A3B" stroke="none"/></svg>
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M8 4.5v11.2c0 1.1.9 2 2 2h5.5" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="16.5" cy="17" r="2" fill="#F2B25A"/>
+          </svg>
         </div>
         <h1>LAMAN</h1>
-        <p class="small muted" style="margin-bottom:20px;">Laporan keuangan UMKM laundry</p>
+        <p class="small muted" style="margin-bottom:20px;">Laundry Manajemen</p>
         ${inner}
       </div>
     </div>
@@ -5476,10 +5479,24 @@ function loginFormHtml(){
   return authShellHtml(`
     <div class="field"><label>Email</label><input type="email" id="authEmail" placeholder="nama@email.com"></div>
     <div class="field"><label>Password</label><input type="password" id="authPassword" placeholder="••••••••"></div>
+    <p class="small" style="text-align:right; margin:-8px 0 14px;"><a href="#" data-action="show-forgot-password">Lupa password?</a></p>
     <div id="authError" class="auth-error"></div>
     <button class="btn btn-primary btn-block" data-action="do-login">Masuk</button>
     <p class="small muted" style="text-align:center; margin-top:16px;">
       Belum punya akun? <a href="#" data-action="show-register">Daftar</a>
+    </p>
+  `);
+}
+
+function forgotPasswordFormHtml(){
+  return authShellHtml(`
+    <p class="small muted" style="margin-bottom:16px;">Masukkan email akun Anda — kami kirim link untuk atur ulang password ke email itu.</p>
+    <div class="field"><label>Email</label><input type="email" id="forgotEmail" placeholder="nama@email.com"></div>
+    <div id="authError" class="auth-error"></div>
+    <div id="forgotSuccess" class="small" style="color:var(--mint); margin-bottom:12px; display:none;">✓ Link reset password terkirim — cek email (termasuk folder spam) lalu ikuti instruksinya.</div>
+    <button class="btn btn-primary btn-block" data-action="do-forgot-password">Kirim Link Reset</button>
+    <p class="small muted" style="text-align:center; margin-top:16px;">
+      <a href="#" data-action="show-login">← Kembali ke halaman Masuk</a>
     </p>
   `);
 }
@@ -5515,7 +5532,7 @@ function showAuthScreen(mode){
     root.id = "authRoot";
     document.body.appendChild(root);
   }
-  root.innerHTML = mode === "register" ? registerFormHtml() : loginFormHtml();
+  root.innerHTML = mode === "register" ? registerFormHtml() : mode === "forgot-password" ? forgotPasswordFormHtml() : loginFormHtml();
   root.style.display = "block";
   wireAuthForm(mode, root);
 }
@@ -5532,6 +5549,22 @@ function wireAuthForm(mode, root){
 
   root.querySelector("[data-action='show-register']")?.addEventListener("click", (e)=>{ e.preventDefault(); showAuthScreen("register"); });
   root.querySelector("[data-action='show-login']")?.addEventListener("click", (e)=>{ e.preventDefault(); showAuthScreen("login"); });
+  root.querySelector("[data-action='show-forgot-password']")?.addEventListener("click", (e)=>{ e.preventDefault(); showAuthScreen("forgot-password"); });
+
+  root.querySelector("[data-action='do-forgot-password']")?.addEventListener("click", async ()=>{
+    const email = root.querySelector("#forgotEmail").value.trim();
+    if(!email){ setErr("Isi email dulu."); return; }
+    const btn = root.querySelector("[data-action='do-forgot-password']");
+    btn.disabled = true; btn.textContent = "Mengirim...";
+    try{
+      await auth.sendPasswordResetEmail(email);
+      setErr("");
+      root.querySelector("#forgotSuccess").style.display = "block";
+    }catch(err){
+      console.error("Auth error:", err); setErr(authErrorMessage(err));
+    }
+    btn.disabled = false; btn.textContent = "Kirim Link Reset";
+  });
 
   root.querySelector("[data-action='do-login']")?.addEventListener("click", async ()=>{
     const email = root.querySelector("#authEmail").value.trim();

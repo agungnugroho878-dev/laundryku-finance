@@ -180,7 +180,7 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 
 ## 1. Cara pakai cepat
 
-1. Buka aplikasinya → login (atau daftar kalau belum punya akun)
+1. Buka aplikasinya → login (atau daftar kalau belum punya akun). Lupa password? Klik **"Lupa password?"** di halaman Masuk → isi email akun → link reset password otomatis dikirim ke email itu (cek folder spam kalau tidak muncul). Password tidak pernah bisa "dilihat" oleh siapa pun (termasuk Owner) — cuma bisa direset lewat email.
 
 > **Navigasi disederhanakan**: menu bawah sekarang **Beranda, Cucian, Laporan (khusus Owner), Akun** + tombol **"+"** mengambang untuk aksi cepat (Pesanan Baru, Catat Kas Masuk, Catat Kas Keluar). Menu **Riwayat Transaksi, Member, Tugas Saya, Absensi (termasuk gaji), serta Atur** sekarang dikumpulkan jadi satu di tab **Akun**, tampil sebagai kartu-kartu berwarna yang tinggal diketuk.
 >
