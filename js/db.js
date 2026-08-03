@@ -287,7 +287,7 @@ const DB = {
   },
 
   async init(){
-    const snap = await fs.collection("categories").where("businessId","==",_businessId).limit(1).get();
+    const snap = await fs.collection("categories").where("businessId","==",_businessId).get();
     if(snap.empty){
       const batch = fs.batch();
       for(const cat of DEFAULT_CATEGORIES){
@@ -295,6 +295,19 @@ const DB = {
         batch.set(fs.collection("categories").doc(id), { ...cat, id: cat.key, businessId: _businessId });
       }
       await batch.commit();
+    } else {
+      // Usaha lama: tambahkan kategori sistem baru yang belum ada (misal saat ada
+      // fitur baru menambah kategori bawaan) tanpa mengganggu kategori kustom yang sudah dibuat.
+      const existingKeys = new Set(snap.docs.map(d => d.data().key || d.data().id));
+      const missing = DEFAULT_CATEGORIES.filter(cat => !existingKeys.has(cat.key));
+      if(missing.length){
+        const batch = fs.batch();
+        for(const cat of missing){
+          const id = scopedId(cat.key);
+          batch.set(fs.collection("categories").doc(id), { ...cat, id: cat.key, businessId: _businessId });
+        }
+        await batch.commit();
+      }
     }
   },
 
