@@ -66,7 +66,13 @@ const DB = {
   /** Creates a brand-new business + makes the given uid its Owner. Returns the new businessId. */
   async createBusiness(name, ownerUid){
     const ref = fs.collection("businesses").doc();
-    await ref.set({ name, ownerUid, createdAt: Date.now() });
+    const trialStartDate = new Date().toISOString().slice(0,10);
+    await ref.set({
+      name, ownerUid, createdAt: Date.now(),
+      subscriptionStatus: "trial",
+      trialStartDate,
+      trialDays: 14
+    });
     await fs.collection("businessSettings").doc(ref.id).set({ businessName: name });
     return ref.id;
   },
@@ -75,6 +81,29 @@ const DB = {
   async getBusinessById(businessId){
     const doc = await fs.collection("businesses").doc(businessId).get();
     return doc.exists ? { id: doc.id, ...doc.data() } : null;
+  },
+
+  async getCurrentBusinessSubscription(){
+    const doc = await fs.collection("businesses").doc(_businessId).get();
+    if(!doc.exists) return null;
+    const data = doc.data();
+    return {
+      status: data.subscriptionStatus || "trial",
+      trialStartDate: data.trialStartDate || null,
+      trialDays: data.trialDays || 14
+    };
+  },
+
+  async getAllBusinessesForAdmin(){
+    const snap = await fs.collection("businesses").get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    return list;
+  },
+
+  async updateBusinessSubscription(businessId, fields){
+    await fs.collection("businesses").doc(businessId).update(fields);
+    return true;
   },
 
   async getBusinessStaff(){

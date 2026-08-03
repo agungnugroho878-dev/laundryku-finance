@@ -182,6 +182,7 @@ async function render(){
     if(state.page === "member") main.innerHTML = await pageMember();
     if(state.page === "absensi") main.innerHTML = await pageAbsensi();
     if(state.page === "akun") main.innerHTML = await pageAkun();
+    if(state.page === "langganan" && state.user?.email === SUPER_ADMIN_EMAIL) main.innerHTML = await pageKelolaLangganan();
     if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
     if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
   }catch(err){
@@ -235,6 +236,38 @@ async function render(){
       render();
     });
   });
+  if(state.page === "langganan"){
+    document.querySelectorAll("[data-action='activate-subscription']").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        await DB.updateBusinessSubscription(btn.dataset.id, { subscriptionStatus: "active" });
+        toast("Langganan diaktifkan");
+        render();
+      });
+    });
+    document.querySelectorAll("[data-action='revert-to-trial']").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        if(!confirm("Kembalikan usaha ini ke status trial?")) return;
+        await DB.updateBusinessSubscription(btn.dataset.id, { subscriptionStatus: "trial" });
+        toast("Dikembalikan ke status trial");
+        render();
+      });
+    });
+    document.querySelectorAll("[data-action='extend-trial']").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const businesses = await DB.getAllBusinessesForAdmin();
+        const b = businesses.find(x=>x.id===btn.dataset.id);
+        if(!b) return;
+        const base = b.trialStartDate ? new Date(b.trialStartDate+"T00:00:00") : new Date();
+        const currentTrialDays = b.trialDays || 14;
+        await DB.updateBusinessSubscription(btn.dataset.id, {
+          trialStartDate: b.trialStartDate || Reports.todayStr(),
+          trialDays: currentTrialDays + 7
+        });
+        toast("Trial diperpanjang 7 hari");
+        render();
+      });
+    });
+  }
   document.querySelectorAll("[data-action='goto-cucian-filter']").forEach(el=>{
     el.addEventListener("click", ()=>{
       const f = el.dataset.filter;
@@ -1752,6 +1785,8 @@ async function pagePengaturan(){
         <button class="btn btn-outline btn-block" data-action="export-json">Cadangkan Data (JSON)</button>
         <button class="btn btn-outline btn-block" data-action="import-json">Pulihkan Data</button>
       </div>
+      <button class="btn btn-danger btn-block" data-action="reset-testing-data" style="margin-bottom:10px;">Hapus Transaksi, Cucian & Member (Reset Testing)</button>
+      <p class="small muted" style="margin:-4px 0 10px;">Cuma hapus data transaksi, pesanan cucian, dan member — pengaturan harga, promo, cabang, pegawai, gaji, tetap aman. Cocok kalau selama ini baru testing dan mau mulai bersih.</p>
       <button class="btn btn-danger btn-block" data-action="wipe-data">Hapus Semua Data</button>
     </div>
 
@@ -2692,19 +2727,61 @@ function exportAbsensiCsv(records, staffMap, branchMap){
   downloadFile(`absensi-${Reports.todayStr()}.csv`, header + rows, "text/csv");
 }
 
+const SUPER_ADMIN_EMAIL = "agungnugroho878@gmail.com";
+
 const AKUN_MENU_META = {
   transaksi:   { label: "Riwayat Transaksi", desc: "Semua catatan kas masuk/keluar", icon: ICONS.list, color: "var(--suds-blue)", bg: "#EAF2F9" },
   member:      { label: "Member",     desc: "Pelanggan & promo loyalty",     icon: ICONS.star,     color: "var(--coin)",      bg: "var(--coin-bg)" },
   "tugas-saya":{ label: "Tugas Saya", desc: "Tugas jemput & antar Anda",     icon: ICONS.pin,      color: "var(--suds-blue)", bg: "#EAF2F9" },
   absensi:     { label: "Absensi",    desc: "Absen masuk/pulang & gaji",     icon: ICONS.calendar, color: "var(--mint)",      bg: "var(--mint-bg)" },
   laporan:     { label: "Laporan",    desc: "Laba Rugi, Neraca, Aset Tetap", icon: ICONS.report,   color: "var(--rose)",      bg: "var(--rose-bg)" },
-  pengaturan:  { label: "Atur",       desc: "Profil usaha, harga, cabang",   icon: ICONS.settings, color: "var(--ink-navy)",  bg: "var(--foam-white)" }
+  pengaturan:  { label: "Atur",       desc: "Profil usaha, harga, cabang",   icon: ICONS.settings, color: "var(--ink-navy)",  bg: "var(--foam-white)" },
+  langganan:   { label: "Kelola Langganan", desc: "Trial & status semua usaha (admin)", icon: ICONS.report, color: "#8B5CF6", bg: "#F1EBFC" }
 };
+
+async function pageKelolaLangganan(){
+  const businesses = await DB.getAllBusinessesForAdmin();
+  const today = Reports.todayStr();
+
+  function trialInfo(b){
+    if(b.subscriptionStatus === "active") return { label: "Aktif (Berlangganan)", color: "var(--mint)", daysLeft: null };
+    if(!b.trialStartDate) return { label: "Trial (tanggal tidak diketahui)", color: "var(--coin)", daysLeft: null };
+    const trialEnd = new Date(b.trialStartDate+"T00:00:00");
+    trialEnd.setDate(trialEnd.getDate() + (b.trialDays||14));
+    const daysLeft = Math.ceil((trialEnd - new Date())/(24*60*60*1000));
+    if(daysLeft < 0) return { label: `Trial Berakhir (${Math.abs(daysLeft)} hari lalu)`, color: "var(--rose)", daysLeft };
+    return { label: `Trial — ${daysLeft} hari lagi`, color: "var(--coin)", daysLeft };
+  }
+
+  return `
+    <h3 class="section-title">Kelola Langganan Semua Usaha</h3>
+    <p class="small muted" style="margin-bottom:14px;">Cuma Anda (admin platform) yang bisa lihat & atur halaman ini.</p>
+    ${businesses.length===0 ? emptyState("Belum ada usaha terdaftar.") : businesses.map(b=>{
+      const info = trialInfo(b);
+      return `
+        <div class="card" style="margin-bottom:12px;">
+          <div class="row-between">
+            <div>
+              <div style="font-weight:700;">${escapeHtml(b.name)}</div>
+              <div class="small muted">Daftar: ${b.createdAt ? new Date(b.createdAt).toLocaleDateString('id-ID') : '-'}</div>
+            </div>
+            <span class="small" style="font-weight:700; color:${info.color};">${info.label}</span>
+          </div>
+          <div class="btn-row" style="margin-top:10px;">
+            ${b.subscriptionStatus !== "active" ? `<button class="btn btn-primary btn-block" data-action="activate-subscription" data-id="${b.id}" style="background:var(--mint);">Aktifkan Langganan</button>` : `<button class="btn btn-outline btn-block" data-action="revert-to-trial" data-id="${b.id}">Kembalikan ke Trial</button>`}
+            <button class="btn btn-outline btn-block" data-action="extend-trial" data-id="${b.id}">+7 Hari Trial</button>
+          </div>
+        </div>
+      `;
+    }).join("")}
+  `;
+}
 
 async function pageAkun(){
   const menuIds = ["transaksi", "member", "tugas-saya"];
   if(state.role === "owner") menuIds.push("absensi");
   menuIds.push("pengaturan");
+  if(state.user?.email === SUPER_ADMIN_EMAIL) menuIds.push("langganan");
 
   return `
     <div class="hero-balance">
@@ -5711,6 +5788,8 @@ function bindPageEvents(){
   if(importJsonBtn) importJsonBtn.addEventListener("click", importJson);
   const wipeBtn = document.querySelector("[data-action='wipe-data']");
   if(wipeBtn) wipeBtn.addEventListener("click", wipeData);
+  const resetTestingBtn = document.querySelector("[data-action='reset-testing-data']");
+  if(resetTestingBtn) resetTestingBtn.addEventListener("click", resetTestingData);
   const logoutBtn = document.querySelector("[data-action='logout']");
   if(logoutBtn) logoutBtn.addEventListener("click", ()=> auth.signOut());
   const addBranchBtn = document.querySelector("[data-action='add-branch']");
@@ -5824,6 +5903,21 @@ function importJson(){
     }
   });
   input.click();
+}
+
+async function resetTestingData(){
+  if(!confirm("Semua Transaksi, Pesanan Cucian, dan Member usaha ini akan dihapus permanen. Pengaturan harga, promo, cabang, pegawai, dan gaji TETAP AMAN. Lanjutkan?")) return;
+  if(!confirm("Yakin? Tindakan ini tidak bisa dibatalkan dan berlaku untuk semua perangkat.")) return;
+  const bizId = DB.getBusinessId();
+  const scopedCollections = ["transactions", "members", "orders"];
+  for(const name of scopedCollections){
+    const snap = await fs.collection(name).where("businessId","==",bizId).get();
+    const batch = fs.batch();
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  toast("Transaksi, Cucian, dan Member berhasil dihapus");
+  location.reload();
 }
 
 async function wipeData(){
@@ -6107,7 +6201,39 @@ async function ensureDefaultBranch(){
   return branches;
 }
 
+function showTrialExpiredScreen(sub, trialEnd){
+  document.getElementById("app").style.display = "none";
+  let root = document.getElementById("authRoot");
+  if(!root){
+    root = document.createElement("div");
+    root.id = "authRoot";
+    document.body.appendChild(root);
+  }
+  root.style.display = "block";
+  const waMsg = encodeURIComponent(`Halo, masa trial LAMAN usaha saya sudah berakhir (${fmtDate(trialEnd.toISOString().slice(0,10))}). Saya mau lanjut berlangganan.`);
+  root.innerHTML = authShellHtml(`
+    <div style="text-align:center; margin-bottom:16px;">
+      <div style="font-size:40px; margin-bottom:10px;">⏳</div>
+      <h2 style="margin-bottom:8px;">Masa Trial Berakhir</h2>
+      <p class="small muted">Trial 14 hari usaha Anda berakhir pada <b>${fmtDate(trialEnd.toISOString().slice(0,10))}</b>. Data Anda tetap aman tersimpan — hubungi kami untuk lanjut berlangganan dan aktifkan kembali akses.</p>
+    </div>
+    <a href="https://wa.me/6285353846073?text=${waMsg}" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="text-decoration:none; display:block; text-align:center;">Hubungi via WhatsApp untuk Berlangganan</a>
+    <button class="btn btn-outline btn-block" data-action="logout-trial-expired" style="margin-top:10px;">Keluar</button>
+  `);
+  root.querySelector("[data-action='logout-trial-expired']").addEventListener("click", ()=> auth.signOut());
+}
+
 async function startApp(){
+  const sub = await DB.getCurrentBusinessSubscription();
+  if(sub && sub.status === "trial" && sub.trialStartDate){
+    const trialEnd = new Date(sub.trialStartDate+"T00:00:00");
+    trialEnd.setDate(trialEnd.getDate() + (sub.trialDays||14));
+    if(new Date() > trialEnd){
+      showTrialExpiredScreen(sub, trialEnd);
+      return;
+    }
+  }
+
   await DB.init();
   state.businessName = await DB.getSetting("businessName", "Usaha Laundry Saya");
   state.businessTagline = await DB.getSetting("businessTagline", "");

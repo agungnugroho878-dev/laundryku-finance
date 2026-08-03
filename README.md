@@ -36,6 +36,9 @@ service cloud.firestore {
     function myBusinessId() { return myProfile().businessId; }
     function isOwner() { return isSignedIn() && myProfile().role == 'owner'; }
     function sameBusiness(bizId) { return isSignedIn() && myBusinessId() == bizId; }
+    // Ganti email di bawah ini dengan email Owner platform (Anda) — dipakai
+    // untuk fitur kelola langganan semua usaha (trial/aktif) lintas tenant.
+    function isSuperAdmin() { return isSignedIn() && request.auth.token.email == 'agungnugroho878@gmail.com'; }
 
     match /users/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || sameBusiness(resource.data.businessId));
@@ -45,9 +48,9 @@ service cloud.firestore {
 
     match /businesses/{bizId} {
       allow get: if isSignedIn();
-      allow list: if false;
+      allow list: if isSuperAdmin();
       allow create: if isSignedIn();
-      allow update, delete: if isOwner() && sameBusiness(bizId);
+      allow update, delete: if (isOwner() && sameBusiness(bizId)) || isSuperAdmin();
     }
 
     match /branches/{branchId} {
@@ -315,6 +318,14 @@ Setelah itu, setiap kali ongkir otomatis dihitung (di form Pesanan Cucian Baru),
       - **Neraca**: nilai Persediaan = hasil Stock Opname terakhir (digulirkan maju dengan pembelian sesudahnya kalau ada), bukan lagi angka statis dari Saldo Awal
       - **Laba Rugi**: muncul baris **"Beban Persediaan (Pemakaian Stok)"** otomatis, dihitung dari rumus **Persediaan Awal + Pembelian dalam periode − Persediaan Akhir** — inilah nilai barang yang terpakai/habis selama periode itu, dianggap sebagai beban
     - Kalau belum pernah Stock Opname sama sekali, nilai persediaan sistem murni dari akumulasi pembelian (asumsi belum ada yang terpakai) — begitu Stock Opname pertama dilakukan, baru laporan mulai akurat mencerminkan pemakaian yang sebenarnya
+
+9i. **Trial 14 Hari & Kelola Langganan (untuk model jual-ke-banyak-usaha)**:
+    - Setiap usaha baru yang mendaftar otomatis mulai masa **trial 14 hari**, terhitung sejak tanggal daftar
+    - Begitu trial habis, akses ke aplikasi **otomatis terkunci** untuk SEMUA akun di usaha itu (Owner maupun Pegawai) — muncul halaman "Masa Trial Berakhir" dengan tombol langsung chat WhatsApp untuk lanjut berlangganan. Data tidak hilang, cuma terkunci sampai diaktifkan lagi
+    - **Kelola Langganan** (menu khusus, cuma muncul untuk 1 email admin platform — default `agungnugroho878@gmail.com`, ganti di `isSuperAdmin()` pada Security Rules dan `SUPER_ADMIN_EMAIL` di `js/app.js` kalau email Anda beda): lihat status SEMUA usaha yang terdaftar (Trial/Aktif, sisa hari), dengan tombol **"Aktifkan Langganan"** (begitu pelanggan sudah bayar via WA/transfer) dan **"+7 Hari Trial"** (perpanjang kalau perlu)
+    - Usaha yang sudah ditandai **"Aktif"** tidak akan pernah terkunci otomatis oleh sistem tanggal, berapa pun lama masa aktifnya, sampai Anda ubah manual lagi
+
+    > ⚠️ **Usaha lama (dibuat sebelum fitur ini ada, termasuk Wash Space Anda sendiri)** tidak otomatis punya tanggal trial, jadi TIDAK akan ke-lock — tapi supaya rapi, buka **Kelola Langganan** dan klik **"Aktifkan Langganan"** untuk usaha Anda sendiri secara manual sekali saja.
 
 10. **Foto barang (opsional, tidak ada batas jumlah)**: saat isi pesanan, ada 2 cara ambil foto:
     - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup
