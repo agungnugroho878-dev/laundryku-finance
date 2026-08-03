@@ -35,6 +35,8 @@ service cloud.firestore {
     }
     function myBusinessId() { return myProfile().businessId; }
     function isOwner() { return isSignedIn() && myProfile().role == 'owner'; }
+    function isManager() { return isSignedIn() && myProfile().role == 'manager'; }
+    function isOwnerOrManager() { return isOwner() || isManager(); }
     function sameBusiness(bizId) { return isSignedIn() && myBusinessId() == bizId; }
     // Ganti email di bawah ini dengan email Owner platform (Anda) — dipakai
     // untuk fitur kelola langganan semua usaha (trial/aktif) lintas tenant.
@@ -43,7 +45,7 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || sameBusiness(resource.data.businessId) || isSuperAdmin());
       allow create: if isSignedIn() && request.auth.uid == uid;
-      allow update, delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow update, delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /businesses/{bizId} {
@@ -56,8 +58,8 @@ service cloud.firestore {
     match /branches/{branchId} {
       allow get: if isSignedIn();
       allow list: if sameBusiness(resource.data.businessId) || isSuperAdmin();
-      allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
-      allow update, delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow create, delete: if isOwner() && sameBusiness(request.resource.data.businessId);
+      allow update: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /businessSettings/{bizId} {
@@ -69,7 +71,7 @@ service cloud.firestore {
     match /transactions/{id} {
       allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create: if isSignedIn() && sameBusiness(request.resource.data.businessId);
-      allow update, delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow update, delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /categories/{id} {
@@ -88,61 +90,61 @@ service cloud.firestore {
       allow get: if true;
       allow list: if sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
-      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /assets/{id} {
       allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
-      allow create, update: if isOwner() && sameBusiness(request.resource.data.businessId);
-      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow create, update: if isOwnerOrManager() && sameBusiness(request.resource.data.businessId);
+      allow delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /inventoryItems/{id} {
       allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
-      allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
-      allow update, delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow create: if isOwnerOrManager() && sameBusiness(request.resource.data.businessId);
+      allow update, delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /inventoryPurchases/{id} {
       allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
-      allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
-      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow create: if isOwnerOrManager() && sameBusiness(request.resource.data.businessId);
+      allow delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /stockOpnames/{id} {
       allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create: if isSignedIn() && sameBusiness(request.resource.data.businessId);
       allow update: if isSignedIn() && sameBusiness(resource.data.businessId);
-      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /attendance/{id} {
-      allow read: if isOwner() && sameBusiness(resource.data.businessId)
+      allow read: if isOwnerOrManager() && sameBusiness(resource.data.businessId)
                   || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId))
                   || isSuperAdmin();
-      allow list: if isOwner() && sameBusiness(resource.data.businessId)
+      allow list: if isOwnerOrManager() && sameBusiness(resource.data.businessId)
                   || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId))
                   || isSuperAdmin();
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && sameBusiness(request.resource.data.businessId);
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId);
-      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /payslips/{id} {
-      allow read, list: if isOwner() && sameBusiness(resource.data.businessId)
+      allow read, list: if isOwnerOrManager() && sameBusiness(resource.data.businessId)
                   || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId))
                   || isSuperAdmin();
-      allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
-      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow create: if isOwnerOrManager() && sameBusiness(request.resource.data.businessId);
+      allow delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /leaveRequests/{id} {
-      allow read, list: if isOwner() && sameBusiness(resource.data.businessId)
+      allow read, list: if isOwnerOrManager() && sameBusiness(resource.data.businessId)
                   || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId))
                   || isSuperAdmin();
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && sameBusiness(request.resource.data.businessId);
-      allow update: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
-      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow update: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow delete: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
   }
 }
@@ -154,7 +156,15 @@ service cloud.firestore {
 
 Untuk pegawai: Owner buka **Atur → Pegawai**, salin **Kode Undangan Usaha**, bagikan ke pegawai. Pegawai buka aplikasi → **Daftar** → pilih **"Gabung sebagai Pegawai"** → masukkan kode itu → otomatis bergabung ke usaha yang sama (bukan usaha lain).
 
-**Boleh lebih dari 1 Owner untuk usaha yang sama** (misalnya Anda & pasangan, masing-masing pantau dengan email sendiri): orang kedua daftar dulu lewat "Gabung sebagai Pegawai" pakai kode undangan di atas (otomatis jadi Pegawai) → Owner pertama buka **Atur → Anggota Tim** → klik **"Jadikan Owner"** di baris akun tersebut. Selesai, akses penuh untuk keduanya.
+**Boleh lebih dari 1 Owner untuk usaha yang sama** (misalnya Anda & pasangan, masing-masing pantau dengan email sendiri): orang kedua daftar dulu lewat "Gabung sebagai Pegawai" pakai kode undangan di atas (otomatis jadi Pegawai) → Owner pertama buka **Atur → Anggota Tim** → ubah dropdown perannya jadi **"Owner"**. Selesai, akses penuh untuk keduanya.
+
+**Peran "Manager" (baru)** — untuk usaha multi-cabang yang butuh penanggung jawab di tiap cabang: Manager punya **fitur yang PERSIS SAMA dengan Owner** (Laporan, Kelola Pegawai, Gaji, Persediaan, Atur penuh, dll), **tapi terkunci ke 1 cabang saja** — tidak bisa pindah ke "Semua Cabang" atau cabang lain seperti Owner bisa. Cara mengaktifkan:
+1. Pegawai daftar dulu seperti biasa lewat kode undangan (otomatis jadi Pegawai)
+2. **Owner asli** (bukan Manager lain) buka **Atur → Anggota Tim** → cari akun itu → ubah dropdown peran jadi **"Manager (kontrol penuh, 1 cabang)"**
+3. Muncul pilihan **"Cabang yang Dikelola"** di bawahnya → pilih cabang yang jadi tanggung jawabnya
+4. Selesai — akun itu sekarang jadi Manager cabang tersebut
+
+> Catatan: pengubahan peran (jadi Owner/Manager/Pegawai) sengaja **dibatasi cuma Owner asli** yang bisa lakukan — Manager tidak bisa mengubah peran siapa pun (termasuk dirinya sendiri), demi menjaga struktur kewenangan usaha. Manager juga cuma melihat & mengelola data (Anggota Tim, Absensi, Slip Gaji, Pengajuan Izin) milik **cabangnya sendiri saja**, tidak bisa melihat cabang lain.
 
 ---
 
@@ -327,12 +337,17 @@ Setelah itu, setiap kali ongkir otomatis dihitung (di form Pesanan Cucian Baru),
       - **Neraca**: nilai Persediaan = hasil Stock Opname terakhir (digulirkan maju dengan pembelian sesudahnya kalau ada), bukan lagi angka statis dari Saldo Awal
       - **Laba Rugi**: muncul baris **"Beban Persediaan (Pemakaian Stok)"** otomatis, dihitung dari rumus **Persediaan Awal + Pembelian dalam periode − Persediaan Akhir** — inilah nilai barang yang terpakai/habis selama periode itu, dianggap sebagai beban
     - Kalau belum pernah Stock Opname sama sekali, nilai persediaan sistem murni dari akumulasi pembelian (asumsi belum ada yang terpakai) — begitu Stock Opname pertama dilakukan, baru laporan mulai akurat mencerminkan pemakaian yang sebenarnya
+    - **Unduh laporan**: baik Aset Tetap maupun Persediaan sekarang punya tombol **"Cetak/Simpan PDF"** dan **"Unduh Excel"** — formatnya mengikuti **Kartu Inventaris Barang (KIB)** ala Pemda: ID unik, jenis, nama, tanggal perolehan, nilai perolehan, umur ekonomis, penyusutan, akumulasi, dan nilai buku (untuk Aset Tetap); ID, jenis, nama, jumlah, harga per unit, dan total (untuk Persediaan). Kop laporannya sama dengan Laba Rugi/Neraca (nama usaha + cabang + alamat)
+    - **Tabelnya tetap tampil langsung di aplikasi** (bisa dilihat sebelum download), dengan **pagination** persis seperti tab Cucian — pilih 10/25/50/100 baris per halaman, navigasi Sebelumnya/Selanjutnya. Baris "TOTAL" di tabel selalu menjumlahkan **SEMUA data** (bukan cuma yang tampil di halaman itu), dan tombol Unduh Excel/PDF juga selalu mengambil **seluruh data**, tidak terpengaruh halaman yang sedang dilihat
 
 9i. **Trial 14 Hari & Kelola Langganan (untuk model jual-ke-banyak-usaha)**:
     - Setiap usaha baru yang mendaftar otomatis mulai masa **trial 14 hari**, terhitung sejak tanggal daftar
     - Begitu trial habis, akses ke aplikasi **otomatis terkunci** untuk SEMUA akun di usaha itu (Owner maupun Pegawai) — muncul halaman "Masa Trial Berakhir" dengan tombol langsung chat WhatsApp untuk lanjut berlangganan. Data tidak hilang, cuma terkunci sampai diaktifkan lagi
-    - **Kelola Langganan** (menu khusus, cuma muncul untuk 1 email admin platform — default `agungnugroho878@gmail.com`, ganti di `isSuperAdmin()` pada Security Rules dan `SUPER_ADMIN_EMAIL` di `js/app.js` kalau email Anda beda): lihat status SEMUA usaha yang terdaftar (Trial/Aktif, sisa hari), dengan tombol **"Aktifkan Langganan"** (begitu pelanggan sudah bayar via WA/transfer) dan **"+7 Hari Trial"** (perpanjang kalau perlu)
-    - Usaha yang sudah ditandai **"Aktif"** tidak akan pernah terkunci otomatis oleh sistem tanggal, berapa pun lama masa aktifnya, sampai Anda ubah manual lagi
+    - **Kelola Langganan** (menu khusus, cuma muncul untuk 1 email admin platform — default `agungnugroho878@gmail.com`, ganti di `isSuperAdmin()` pada Security Rules dan `SUPER_ADMIN_EMAIL` di `js/app.js` kalau email Anda beda): lihat status SEMUA usaha yang terdaftar, lengkap dengan **nama & email Owner, Kode Undangan/ID Bisnis, No. HP, dan Alamat usaha** — supaya gampang dihubungi kalau mau tagih/konfirmasi
+    - Begitu klik **"Aktifkan Langganan"**, otomatis tercatat **Tanggal Mulai Langganan** (hari itu) dan **Tanggal Jatuh Tempo** (1 bulan kemudian) — kalau sudah lewat jatuh tempo, muncul peringatan merah "perlu diperpanjang!". Klik **"Perpanjang 1 Bulan"** kapan saja pelanggan bayar lagi — otomatis reset jatuh tempo jadi 1 bulan dari hari itu
+    - Tombol **"+7 Hari Trial"** tetap ada untuk perpanjang masa coba kalau perlu
+    - Usaha yang sudah ditandai **"Aktif"** tidak akan pernah terkunci otomatis oleh sistem tanggal, berapa pun lama masa aktifnya, sampai Anda ubah manual lagi (tanggal jatuh tempo cuma pengingat visual, bukan pengunci otomatis — supaya Anda yang putuskan kapan benar-benar mengunci akses kalau pelanggan telat bayar)
+    - **Hapus usaha** (testing/sampah/duplikat) — tombol merah di tiap kartu, minta ketik ulang nama usaha untuk konfirmasi, lalu menghapus SEMUA data usaha itu secara permanen (transaksi, cucian, member, pegawai, dll)
 
     > ⚠️ **Usaha lama (dibuat sebelum fitur ini ada, termasuk Wash Space Anda sendiri)** tidak otomatis punya tanggal trial, jadi TIDAK akan ke-lock — tapi supaya rapi, buka **Kelola Langganan** dan klik **"Aktifkan Langganan"** untuk usaha Anda sendiri secara manual sekali saja.
 

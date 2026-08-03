@@ -1,6 +1,7 @@
 /* LAMAN — app shell & UI */
 
 const ICONS = {
+  chevronDown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`,
   user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
   calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>`,
@@ -61,6 +62,10 @@ const state = {
   txPage: 1,
   txPageSize: 25,
   cucianPage: 1,
+  asetTetapPage: 1,
+  asetTetapPageSize: 25,
+  persediaanPage: 1,
+  persediaanPageSize: 25,
   cucianPageSize: 25,
   cucianShowAllHistory: false,
   cucianSpecialFilter: null,
@@ -105,9 +110,15 @@ const NAV_ITEMS = [
   { id:"akun", label:"Akun", icon:ICONS.user }
 ];
 
+/** Manager has the same feature access as Owner, but (like Pegawai) is locked
+ *  to a single assigned branch and can't switch to other branches / "Semua Cabang". */
+function isOwnerOrManager(){ return state.role === "owner" || state.role === "manager"; }
+function isBranchLocked(){ return state.role === "pegawai" || state.role === "manager"; }
+function roleLabel(){ return state.role === "owner" ? "Owner" : state.role === "manager" ? "Manager" : "Pegawai"; }
+
 function visibleNavItems(){
   return NAV_ITEMS.filter(i => {
-    if(i.ownerOnly && state.role !== "owner") return false;
+    if(i.ownerOnly && !isOwnerOrManager()) return false;
     if(i.pegawaiOnly && state.role !== "pegawai") return false;
     return true;
   });
@@ -171,11 +182,16 @@ function updateHeaderBranchInfo(){
   const canSwitch = state.role === "owner" && state.branches.length > 1;
 
   if(canSwitch){
+    const currentLabel = state.currentBranchId === "all" ? "Semua Cabang" : (state.branches.find(b=>b.id===state.currentBranchId)?.name || "Pilih Cabang");
     el.innerHTML = `
-      <select id="headerBranchSwitch" class="hbi-select">
-        <option value="all" ${state.currentBranchId==='all'?'selected':''}>Semua Cabang (Gabungan)</option>
-        ${state.branches.map(b=>`<option value="${b.id}" ${state.currentBranchId===b.id?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
-      </select>
+      <div class="hbi-pill" title="${escapeHtml(currentLabel)}">
+        <span class="hbi-pill-label">${escapeHtml(currentLabel)}</span>
+        ${ICONS.chevronDown}
+        <select id="headerBranchSwitch" class="hbi-pill-select">
+          <option value="all" ${state.currentBranchId==='all'?'selected':''}>Semua Cabang (Gabungan)</option>
+          ${state.branches.map(b=>`<option value="${b.id}" ${state.currentBranchId===b.id?'selected':''}>${escapeHtml(b.name)}${b.address ? ' — '+escapeHtml(b.address) : ''}</option>`).join("")}
+        </select>
+      </div>
     `;
     document.getElementById("headerBranchSwitch").addEventListener("change", (e)=>{
       state.currentBranchId = e.target.value;
@@ -187,18 +203,13 @@ function updateHeaderBranchInfo(){
 
   const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
   const b = activeBranchId ? state.branches.find(x=>x.id===activeBranchId) : state.branches[0];
-  if(b){
-    el.innerHTML = `
-      <div class="hbi-name">${escapeHtml(b.name)}</div>
-      ${b.address ? `<div class="hbi-address">${escapeHtml(b.address)}</div>` : ''}
-    `;
-  } else {
-    el.innerHTML = `<div class="hbi-name">Semua Cabang</div>`;
-  }
+  const label = b ? b.name : "Semua Cabang";
+  const fullTitle = b?.address ? `${b.name} — ${b.address}` : label;
+  el.innerHTML = `<div class="hbi-pill hbi-pill-static" title="${escapeHtml(fullTitle)}"><span class="hbi-pill-label">${escapeHtml(label)}</span></div>`;
 }
 
 async function render(){
-  if(state.page === "laporan" && state.role !== "owner") state.page = "dashboard";
+  if(state.page === "laporan" && !isOwnerOrManager()) state.page = "dashboard";
   renderNav();
   initFabQuickAction();
   document.getElementById("bizName").textContent = state.businessName;
@@ -216,7 +227,7 @@ async function render(){
     if(state.page === "absensi") main.innerHTML = await pageAbsensi();
     if(state.page === "akun") main.innerHTML = await pageAkun();
     if(state.page === "langganan" && state.user?.email === SUPER_ADMIN_EMAIL) main.innerHTML = await pageKelolaLangganan();
-    if(state.page === "laporan" && state.role === "owner") main.innerHTML = await pageLaporan();
+    if(state.page === "laporan" && isOwnerOrManager()) main.innerHTML = await pageLaporan();
     if(state.page === "pengaturan") main.innerHTML = await pagePengaturan();
   }catch(err){
     console.error("Render error:", err);
@@ -266,8 +277,15 @@ async function render(){
   if(state.page === "langganan"){
     document.querySelectorAll("[data-action='activate-subscription']").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
-        await DB.updateBusinessSubscription(btn.dataset.id, { subscriptionStatus: "active" });
-        toast("Langganan diaktifkan");
+        await DB.updateBusinessSubscription(btn.dataset.id, { subscriptionStatus: "active", subscriptionRenewedAt: Reports.todayStr() });
+        toast("Langganan diaktifkan — jatuh tempo 1 bulan dari hari ini");
+        render();
+      });
+    });
+    document.querySelectorAll("[data-action='renew-subscription']").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        await DB.updateBusinessSubscription(btn.dataset.id, { subscriptionRenewedAt: Reports.todayStr() });
+        toast("Langganan diperpanjang 1 bulan dari hari ini");
         render();
       });
     });
@@ -647,7 +665,7 @@ async function pagePegawaiDashboard(){
 }
 
 async function pageDashboard(){
-  if(state.role !== "owner") return pagePegawaiDashboard();
+  if(!isOwnerOrManager()) return pagePegawaiDashboard();
 
   const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
   const neraca = await Reports.neraca(Reports.todayStr(), activeBranchId);
@@ -814,13 +832,13 @@ async function pageDashboard(){
 
 async function pageTransaksi(){
   let txs = await DB.getTransactions();
-  if(state.role === "pegawai"){
+  if(isBranchLocked()){
     txs = txs.filter(t => t.branchId === state.currentBranchId);
   } else if(state.currentBranchId !== "all"){
     txs = txs.filter(t => t.branchId === state.currentBranchId);
   }
   const cats = Object.fromEntries(state.categories.map(c=>[c.id,c]));
-  const activeBranchName = state.role === "pegawai"
+  const activeBranchName = isBranchLocked()
     ? state.branches.find(b=>b.id===state.currentBranchId)?.name
     : (state.currentBranchId !== "all" ? state.branches.find(b=>b.id===state.currentBranchId)?.name : "Semua Cabang");
 
@@ -927,6 +945,71 @@ const INVENTORY_CATEGORIES = {
   "perlengkapan": { label: "Perlengkapan Lain" }
 };
 
+async function exportAsetTetapExcel(){
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
+  let assets = await DB.getAssets();
+  if(activeBranchId) assets = assets.filter(a => a.branchId === activeBranchId);
+  const today = Reports.todayStr();
+  let totalCost = 0, totalAccum = 0;
+  const rows = assets.map(a => {
+    const accum = depreciationAsOf(a, today);
+    totalCost += a.acquisitionCost;
+    totalAccum += accum;
+    return { ...a, accum, book: a.acquisitionCost - accum };
+  });
+  const totalBook = totalCost - totalAccum;
+
+  const aoa = [
+    [state.businessName],
+    [reportBranchLabel()],
+    ["Kartu Inventaris Barang (KIB) — Aset Tetap"],
+    [`Per ${fmtDate(today)}`],
+    [],
+    ["ID Aset","Jenis Aset","Nama Aset","Tanggal Perolehan","Nilai Perolehan (Rp)","Umur Ekonomis (Tahun)","Penyusutan per Bulan (Rp)","Akumulasi Penyusutan (Rp)","Nilai Buku (Rp)"],
+    ...rows.map(a => [
+      a.id, a.category, a.name + (a.brand ? ` (${a.brand})` : ""), a.acquisitionDate,
+      a.acquisitionCost, a.usefulLifeYears, assetMonthlyDepreciation(a), a.accum, a.book
+    ]),
+    [],
+    ["", "", "", "TOTAL", totalCost, "", "", totalAccum, totalBook]
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{wch:22},{wch:16},{wch:26},{wch:14},{wch:16},{wch:14},{wch:18},{wch:18},{wch:16}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Aset Tetap");
+  XLSX.writeFile(wb, `Aset-Tetap-${state.businessName.replace(/[^a-z0-9]/gi,'_')}-${today}.xlsx`);
+}
+
+async function exportPersediaanExcel(){
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
+  let items = await DB.getInventoryItems();
+  if(activeBranchId) items = items.filter(i => i.branchId === activeBranchId);
+  const totalValue = items.reduce((s,i)=>s+(i.totalValue||0), 0);
+  const today = Reports.todayStr();
+
+  const aoa = [
+    [state.businessName],
+    [reportBranchLabel()],
+    ["Laporan Persediaan"],
+    [`Per ${fmtDate(today)}`],
+    [],
+    ["ID Persediaan","Jenis Persediaan","Nama Persediaan","Jumlah","Satuan","Harga per Unit (Rp)","Total (Rp)"],
+    ...items.map(i => [
+      i.id, INVENTORY_CATEGORIES[i.category]?.label || i.category || "-", i.name,
+      i.qty||0, i.unit||"pcs", i.avgUnitCost||0, i.totalValue||0
+    ]),
+    [],
+    ["", "", "", "", "", "TOTAL", totalValue]
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{wch:22},{wch:20},{wch:26},{wch:10},{wch:10},{wch:16},{wch:16}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Persediaan");
+  XLSX.writeFile(wb, `Persediaan-${state.businessName.replace(/[^a-z0-9]/gi,'_')}-${today}.xlsx`);
+}
+
 async function renderAsetTetapSection(){
   const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
   let assets = await DB.getAssets();
@@ -947,7 +1030,7 @@ async function renderAsetTetapSection(){
       <div class="r-head">
         <div class="biz">${state.businessName}</div>
         <div class="small muted" style="margin:2px 0 4px;">${reportBranchLabel()}</div>
-        <div class="period">Laporan Aset Tetap<br>Per ${fmtDate(today)}</div>
+        <div class="period">Kartu Inventaris Barang (KIB) — Aset Tetap<br>Per ${fmtDate(today)}</div>
       </div>
     </div>
     <div class="card no-print">
@@ -959,27 +1042,91 @@ async function renderAsetTetapSection(){
 
     <button class="btn btn-primary btn-block" data-action="add-asset" style="margin:14px 0;">${ICONS.plus} Tambah Aset Tetap</button>
 
-    ${rows.length === 0 ? emptyState("Belum ada aset tetap terdaftar.") : rows.map(a => `
-      <div class="card" style="margin-bottom:12px;">
-        <div class="row-between">
-          <div>
-            <div style="font-weight:700;">${escapeHtml(a.name)}</div>
-            <div class="small muted">${escapeHtml(a.category)}${a.brand ? ' · '+escapeHtml(a.brand) : ''}${!activeBranchId ? ' · '+escapeHtml(branchMap[a.branchId]||'Cabang tidak diketahui') : ''}</div>
-          </div>
-          <div style="display:flex; gap:6px;">
-            <button class="tx-del" data-action="edit-asset" data-id="${a.id}">${ICONS.edit}</button>
-            <button class="tx-del" data-action="delete-asset" data-id="${a.id}">${ICONS.trash}</button>
-          </div>
-        </div>
-        <div class="small muted" style="margin-top:8px;">Perolehan: ${fmtDate(a.acquisitionDate)} · Umur manfaat: ${a.usefulLifeYears} tahun</div>
-        <div class="small" style="margin-top:6px; line-height:1.9;">
-          Harga Perolehan: <b class="num">${Reports.formatRupiah(a.acquisitionCost)}</b><br>
-          Penyusutan/bulan: <span class="num">${Reports.formatRupiah(assetMonthlyDepreciation(a))}</span><br>
-          Akumulasi Penyusutan: <span class="num">${Reports.formatRupiah(a.accum)}</span><br>
-          Nilai Buku: <b class="num" style="color:var(--mint);">${Reports.formatRupiah(a.book)}</b>
-        </div>
+    ${rows.length === 0 ? emptyState("Belum ada aset tetap terdaftar.") : (()=>{
+      const pageSize = state.asetTetapPageSize || 25;
+      const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+      if(state.asetTetapPage > totalPages) state.asetTetapPage = totalPages;
+      if(state.asetTetapPage < 1) state.asetTetapPage = 1;
+      const pstart = (state.asetTetapPage - 1) * pageSize;
+      const pageRows = rows.slice(pstart, pstart + pageSize);
+      return `
+      <div class="row-between no-print" style="margin-bottom:10px;">
+        <span class="small muted">${rows.length} aset</span>
+        <select id="asetTetapPageSizeSelect" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px;">
+          ${[10,25,50,100].map(n=>`<option value="${n}" ${pageSize===n?'selected':''}>${n} / halaman</option>`).join("")}
+        </select>
       </div>
-    `).join("")}
+      <div class="kib-table-wrap">
+        <table class="kib-table">
+          <thead>
+            <tr>
+              <th>ID Aset</th><th>Jenis Aset</th><th>Nama Aset</th><th>Tgl Perolehan</th>
+              <th class="num">Nilai Perolehan</th><th>Umur Ekonomis</th>
+              <th class="num">Penyusutan/Bulan</th><th class="num">Akumulasi Penyusutan</th><th class="num">Nilai Buku</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pageRows.map(a => `
+              <tr>
+                <td>${a.id.slice(0,8)}</td>
+                <td>${escapeHtml(a.category)}</td>
+                <td>${escapeHtml(a.name)}${a.brand ? ' ('+escapeHtml(a.brand)+')' : ''}</td>
+                <td>${fmtDate(a.acquisitionDate)}</td>
+                <td class="num">${Reports.formatRupiah(a.acquisitionCost)}</td>
+                <td>${a.usefulLifeYears} tahun</td>
+                <td class="num">${Reports.formatRupiah(assetMonthlyDepreciation(a))}</td>
+                <td class="num">${Reports.formatRupiah(a.accum)}</td>
+                <td class="num">${Reports.formatRupiah(a.book)}</td>
+              </tr>
+            `).join("")}
+            <tr class="kib-total-row">
+              <td colspan="4">TOTAL (semua aset)</td>
+              <td class="num">${Reports.formatRupiah(totalCost)}</td>
+              <td></td>
+              <td></td>
+              <td class="num">${Reports.formatRupiah(totalAccum)}</td>
+              <td class="num">${Reports.formatRupiah(totalBook)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      ${rows.length > pageSize ? `
+        <div class="row-between no-print" style="margin-top:10px;">
+          <button class="btn btn-outline" id="asetTetapPrevPage" ${state.asetTetapPage<=1?'disabled':''}>← Sebelumnya</button>
+          <span class="small muted">Halaman ${state.asetTetapPage} dari ${totalPages}</span>
+          <button class="btn btn-outline" id="asetTetapNextPage" ${state.asetTetapPage>=totalPages?'disabled':''}>Selanjutnya →</button>
+        </div>
+      ` : ""}
+
+      <div class="btn-row no-print" style="margin-top:14px;">
+        <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
+        <button class="btn btn-outline btn-block" data-action="export-aset-excel">${ICONS.download} Unduh Excel</button>
+      </div>
+
+      <h3 class="section-title no-print" style="margin-top:20px;">Kelola Aset (edit/hapus)</h3>
+      ${rows.map(a => `
+        <div class="card no-print" style="margin-bottom:12px;">
+          <div class="row-between">
+            <div>
+              <div style="font-weight:700;">${escapeHtml(a.name)}</div>
+              <div class="small muted">${escapeHtml(a.category)}${a.brand ? ' · '+escapeHtml(a.brand) : ''}${!activeBranchId ? ' · '+escapeHtml(branchMap[a.branchId]||'Cabang tidak diketahui') : ''}</div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="tx-del" data-action="edit-asset" data-id="${a.id}">${ICONS.edit}</button>
+              <button class="tx-del" data-action="delete-asset" data-id="${a.id}">${ICONS.trash}</button>
+            </div>
+          </div>
+          <div class="small muted" style="margin-top:8px;">Perolehan: ${fmtDate(a.acquisitionDate)} · Umur manfaat: ${a.usefulLifeYears} tahun</div>
+          <div class="small" style="margin-top:6px; line-height:1.9;">
+            Harga Perolehan: <b class="num">${Reports.formatRupiah(a.acquisitionCost)}</b><br>
+            Penyusutan/bulan: <span class="num">${Reports.formatRupiah(assetMonthlyDepreciation(a))}</span><br>
+            Akumulasi Penyusutan: <span class="num">${Reports.formatRupiah(a.accum)}</span><br>
+            Nilai Buku: <b class="num" style="color:var(--mint);">${Reports.formatRupiah(a.book)}</b>
+          </div>
+        </div>
+      `).join("")}
+      `;
+    })()}
   `;
 }
 
@@ -1016,11 +1163,64 @@ async function renderPersediaanSection(){
 
     <button class="btn btn-primary btn-block" data-action="start-stock-opname" style="margin:14px 0;">${ICONS.calendar} Mulai Stock Opname</button>
 
-    ${items.length === 0 ? emptyState("Belum ada persediaan tercatat. Catat lewat Kas Keluar → kategori \"Beli Persediaan (Stok)\".") :
-      Object.entries(grouped).map(([cat, catItems])=>`
-        <h3 class="section-title" style="margin-top:20px;">${INVENTORY_CATEGORIES[cat]?.label || cat}</h3>
+    ${items.length === 0 ? emptyState("Belum ada persediaan tercatat. Catat lewat Kas Keluar → kategori \"Beli Persediaan (Stok)\".") : (()=>{
+      const pageSize = state.persediaanPageSize || 25;
+      const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+      if(state.persediaanPage > totalPages) state.persediaanPage = totalPages;
+      if(state.persediaanPage < 1) state.persediaanPage = 1;
+      const pstart = (state.persediaanPage - 1) * pageSize;
+      const pageItems = items.slice(pstart, pstart + pageSize);
+      return `
+      <div class="row-between no-print" style="margin-bottom:10px;">
+        <span class="small muted">${items.length} barang</span>
+        <select id="persediaanPageSizeSelect" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px;">
+          ${[10,25,50,100].map(n=>`<option value="${n}" ${pageSize===n?'selected':''}>${n} / halaman</option>`).join("")}
+        </select>
+      </div>
+      <div class="kib-table-wrap">
+        <table class="kib-table">
+          <thead>
+            <tr>
+              <th>ID Persediaan</th><th>Jenis Persediaan</th><th>Nama Persediaan</th>
+              <th class="num">Jumlah</th><th class="num">Harga per Unit</th><th class="num">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pageItems.map(i => `
+              <tr>
+                <td>${i.id.slice(0,8)}</td>
+                <td>${escapeHtml(INVENTORY_CATEGORIES[i.category]?.label || i.category || '-')}</td>
+                <td>${escapeHtml(i.name)}</td>
+                <td class="num">${(i.qty||0).toLocaleString('id-ID')} ${escapeHtml(i.unit||'pcs')}</td>
+                <td class="num">${Reports.formatRupiah(i.avgUnitCost||0)}</td>
+                <td class="num">${Reports.formatRupiah(i.totalValue||0)}</td>
+              </tr>
+            `).join("")}
+            <tr class="kib-total-row">
+              <td colspan="5">TOTAL NILAI PERSEDIAAN (semua barang)</td>
+              <td class="num">${Reports.formatRupiah(totalValue)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      ${items.length > pageSize ? `
+        <div class="row-between no-print" style="margin-top:10px;">
+          <button class="btn btn-outline" id="persediaanPrevPage" ${state.persediaanPage<=1?'disabled':''}>← Sebelumnya</button>
+          <span class="small muted">Halaman ${state.persediaanPage} dari ${totalPages}</span>
+          <button class="btn btn-outline" id="persediaanNextPage" ${state.persediaanPage>=totalPages?'disabled':''}>Selanjutnya →</button>
+        </div>
+      ` : ""}
+
+      <div class="btn-row no-print" style="margin-top:14px;">
+        <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
+        <button class="btn btn-outline btn-block" data-action="export-persediaan-excel">${ICONS.download} Unduh Excel</button>
+      </div>
+
+      <h3 class="section-title no-print" style="margin-top:20px;">Kelola Persediaan (hapus)</h3>
+      ${Object.entries(grouped).map(([cat, catItems])=>`
+        <h4 class="small no-print" style="font-weight:700; margin:16px 0 8px;">${INVENTORY_CATEGORIES[cat]?.label || cat}</h4>
         ${catItems.map(i=>`
-          <div class="card" style="margin-bottom:10px;">
+          <div class="card no-print" style="margin-bottom:10px;">
             <div class="row-between">
               <div>
                 <div style="font-weight:700;">${escapeHtml(i.name)}</div>
@@ -1034,13 +1234,14 @@ async function renderPersediaanSection(){
             </div>
           </div>
         `).join("")}
-      `).join("")
-    }
+      `).join("")}
+      `;
+    })()}
 
     ${opnames.length ? `
-      <h3 class="section-title" style="margin-top:20px;">Riwayat Stock Opname</h3>
+      <h3 class="section-title no-print" style="margin-top:20px;">Riwayat Stock Opname</h3>
       ${opnames.map(o=>`
-        <div class="card" style="margin-bottom:10px; cursor:pointer;" data-action="view-stock-opname" data-id="${o.id}">
+        <div class="card no-print" style="margin-bottom:10px; cursor:pointer;" data-action="view-stock-opname" data-id="${o.id}">
           <div class="row-between">
             <div>
               <div style="font-weight:700;">${fmtDate(o.date)}</div>
@@ -1557,14 +1758,17 @@ function fmtDateTime(timestamp){
 /* ---------------- Pengaturan ---------------- */
 
 async function pagePengaturan(){
-  const isOwner = state.role === "owner";
+  const isOwner = isOwnerOrManager();
   const opening = isOwner ? await Reports.getOpeningBalances(getActiveBranch()) : null;
   const pricing = isOwner ? await getPricing() : null;
   const kiloanLoyalty = isOwner ? await getKiloanLoyalty() : null;
   const ssLoyalty = isOwner ? await getSelfServiceLoyalty() : null;
   const printerSettings = isOwner ? await getPrinterSettings() : null;
   const photoRetentionDays = isOwner ? await DB.getSetting("photoRetentionDays", 10) : null;
-  const staff = isOwner ? await DB.getBusinessStaff() : null;
+  let staff = isOwner ? await DB.getBusinessStaff() : null;
+  if(staff && state.role === "manager"){
+    staff = staff.filter(s => s.uid === state.user?.uid || (s.role !== "owner" && s.branchId === state.userBranchId));
+  }
   const branchList = isOwner ? await DB.getBranches() : null;
   const customCats = state.categories.filter(c=>!c.system);
 
@@ -1574,7 +1778,7 @@ async function pagePengaturan(){
       <div class="row-between">
         <div>
           <div style="font-weight:700;">${state.userName || state.user?.email || ""}</div>
-          <div class="small muted">${state.user?.email || ""} · ${isOwner ? "Owner" : "Pegawai"}</div>
+          <div class="small muted">${state.user?.email || ""} · ${roleLabel()}</div>
         </div>
         <button class="btn btn-outline" data-action="logout">Keluar</button>
       </div>
@@ -1786,13 +1990,30 @@ async function pagePengaturan(){
             <div class="row-between">
               <div>
                 <div class="small" style="font-weight:700;">${escapeHtml(s.name || s.email)}${s.uid === state.user?.uid ? ' <span class="muted">(Anda)</span>' : ''}</div>
-                <div class="small muted">${escapeHtml(s.email || '')}${s.role==='pegawai' ? ` · ${escapeHtml(branchList.find(b=>b.id===s.branchId)?.name || 'Cabang tidak diketahui')}` : ''}</div>
+                <div class="small muted">${escapeHtml(s.email || '')}${s.role!=='owner' ? ` · ${escapeHtml(branchList.find(b=>b.id===s.branchId)?.name || 'Belum ada cabang')}` : ''}</div>
               </div>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="status-badge ${s.role==='owner' ? 'status-selesai' : 'status-belum-diproses'}">${s.role === 'owner' ? 'Owner' : 'Pegawai'}</span>
-                ${s.uid !== state.user?.uid ? `<button class="btn btn-outline" data-action="toggle-role" data-uid="${s.uid}" data-role="${s.role}">${s.role === 'owner' ? 'Turunkan' : 'Jadikan Owner'}</button>` : ''}
-              </div>
+              <span class="status-badge ${s.role==='owner' ? 'status-selesai' : s.role==='manager' ? 'status-sedang-diproses' : 'status-belum-diproses'}">${s.role==='owner' ? 'Owner' : s.role==='manager' ? 'Manager' : 'Pegawai'}</span>
             </div>
+            ${s.uid !== state.user?.uid ? `
+              ${state.role === "owner" ? `
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                  <select class="role-select" data-uid="${s.uid}" style="flex:1;">
+                    <option value="pegawai" ${s.role==='pegawai'?'selected':''}>Pegawai</option>
+                    <option value="manager" ${s.role==='manager'?'selected':''}>Manager (kontrol penuh, 1 cabang)</option>
+                    <option value="owner" ${s.role==='owner'?'selected':''}>Owner (kontrol penuh, semua cabang)</option>
+                  </select>
+                </div>
+              ` : ''}
+              ${s.role!=='owner' ? `
+                <div class="field" style="margin-top:8px; margin-bottom:0;">
+                  <label class="small">Cabang yang Dikelola</label>
+                  <select class="branch-assign-select" data-uid="${s.uid}">
+                    <option value="">— Pilih cabang —</option>
+                    ${branchList.map(b=>`<option value="${b.id}" ${s.branchId===b.id?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+                  </select>
+                </div>
+              ` : ''}
+            ` : ''}
             <button class="btn btn-outline btn-block" data-action="set-salary-config" data-uid="${s.uid}" style="margin-top:8px;">${ICONS.report} Kelola Pegawai${s.salaryConfig ? ' (sudah diatur)' : ''}</button>
           </div>
         `).join("")}
@@ -2388,7 +2609,7 @@ function nextOrderStatus(current){
 const SELESAI_WINDOW_DAYS = 30;
 
 function filterOrdersByBranch(orders){
-  if(state.role === "pegawai") return orders.filter(o => o.branchId === state.currentBranchId);
+  if(isBranchLocked()) return orders.filter(o => o.branchId === state.currentBranchId);
   if(state.currentBranchId !== "all") return orders.filter(o => o.branchId === state.currentBranchId);
   return orders;
 }
@@ -2444,7 +2665,7 @@ async function renderMyWorkScheduleCard(){
 
 async function pageAbsensi(){
   if(state.viewingPayslipId){
-    const slips = state.role === "owner" ? await DB.getAllPayslips() : await DB.getPayslipsForUser(state.user.uid);
+    const slips = isOwnerOrManager() ? await DB.getAllPayslips() : await DB.getPayslipsForUser(state.user.uid);
     const slip = slips.find(s=>s.id===state.viewingPayslipId);
     if(slip) return payslipDetailHtml(slip);
     state.viewingPayslipId = null;
@@ -2483,7 +2704,7 @@ async function pageAbsensi(){
     ${state.role === "pegawai" ? await renderMyWorkScheduleCard() : ""}
   `;
 
-  const ownerSection = state.role === "owner" ? await renderAbsensiOwnerReport() : "";
+  const ownerSection = isOwnerOrManager() ? await renderAbsensiOwnerReport() : "";
   const leaveSection = state.user ? await renderMyLeaveRequestsSection(state.user.uid) : "";
   const myPayslipsSection = (state.role === "pegawai" && state.user) ? await renderMyPayslipsSection(state.user.uid) : "";
 
@@ -2625,7 +2846,7 @@ function payslipDetailHtml(s){
       ${s.paidStatus ? `
         <p class="small" style="font-weight:700; color:var(--mint);">✓ Sudah Dibayar</p>
         <p class="small muted">Dibayar tanggal ${fmtDate(s.paidDate)} — otomatis tercatat sebagai Beban Gaji di Laporan Keuangan.</p>
-      ` : state.role === "owner" ? `
+      ` : isOwnerOrManager() ? `
         <p class="small" style="font-weight:700; margin-bottom:10px;">Status Pembayaran</p>
         <div class="field"><label>Tanggal Dibayarkan</label><input type="date" id="payslipPaidDate" value="${Reports.todayStr()}"></div>
         <button class="btn btn-primary btn-block no-print" data-action="mark-payslip-paid" data-id="${s.id}">Tandai Sudah Dibayar</button>
@@ -2635,7 +2856,7 @@ function payslipDetailHtml(s){
 
     <div class="btn-row no-print" style="margin-top:14px;">
       <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
-      ${state.role === "owner" ? `<button class="btn btn-danger btn-block" data-action="delete-payslip" data-id="${s.id}">Hapus</button>` : ""}
+      ${isOwnerOrManager() ? `<button class="btn btn-danger btn-block" data-action="delete-payslip" data-id="${s.id}">Hapus</button>` : ""}
     </div>
   `;
 }
@@ -2661,8 +2882,12 @@ async function renderMyPayslipsSection(userId){
 async function renderAbsensiOwnerReport(){
   const range = state.absensiReportRange || { start: Reports.startOfMonth(), end: Reports.todayStr() };
   state.absensiReportRange = range;
-  const records = await DB.getAttendanceInRange(range.start, range.end);
-  const staffList = await DB.getBusinessStaff();
+  let records = await DB.getAttendanceInRange(range.start, range.end);
+  let staffList = await DB.getBusinessStaff();
+  if(state.role === "manager"){
+    records = records.filter(r => r.branchId === state.userBranchId);
+    staffList = staffList.filter(s => s.uid === state.user?.uid || (s.role !== "owner" && s.branchId === state.userBranchId));
+  }
   const staffMap = Object.fromEntries(staffList.map(s=>[s.uid, s.name||s.email]));
   const branchMap = Object.fromEntries(state.branches.map(b=>[b.id,b.name]));
   const lateCount = records.filter(r=>r.lateMinutes>0).length;
@@ -2729,7 +2954,11 @@ async function renderAbsensiOwnerReport(){
 }
 
 async function renderLeaveApprovalSection(){
-  const requests = await DB.getAllLeaveRequests();
+  let requests = await DB.getAllLeaveRequests();
+  if(state.role === "manager"){
+    const myStaff = (await DB.getBusinessStaff()).filter(s => s.role !== "owner" && s.branchId === state.userBranchId).map(s=>s.uid);
+    requests = requests.filter(r => myStaff.includes(r.userId));
+  }
   const pending = requests.filter(r=>r.status==="pending");
   const decided = requests.filter(r=>r.status!=="pending").slice(0,10);
 
@@ -2763,7 +2992,11 @@ async function renderLeaveApprovalSection(){
 }
 
 async function renderAllPayslipsList(){
-  const slips = await DB.getAllPayslips();
+  let slips = await DB.getAllPayslips();
+  if(state.role === "manager"){
+    const myStaff = (await DB.getBusinessStaff()).filter(s => s.role !== "owner" && s.branchId === state.userBranchId).map(s=>s.uid);
+    slips = slips.filter(s => myStaff.includes(s.userId));
+  }
   if(slips.length === 0) return emptyState("Belum ada slip gaji dibuat.");
   return slips.map(s=>`
     <div class="card" data-action="view-payslip" data-id="${s.id}" style="cursor:pointer; margin-bottom:10px;">
@@ -2811,8 +3044,17 @@ async function pageKelolaLangganan(){
   const today = Reports.todayStr();
 
   const counts = {};
+  const owners = {};
+  const settingsMap = {};
   await Promise.all(businesses.map(async b=>{
-    counts[b.id] = await DB.getBusinessDataCounts(b.id);
+    const [c, owner, settings] = await Promise.all([
+      DB.getBusinessDataCounts(b.id),
+      DB.getOwnerForBusiness(b.id),
+      DB.getBusinessSettingsById(b.id)
+    ]);
+    counts[b.id] = c;
+    owners[b.id] = owner;
+    settingsMap[b.id] = settings;
   }));
 
   function trialInfo(b){
@@ -2825,6 +3067,16 @@ async function pageKelolaLangganan(){
     return { label: `Trial — ${daysLeft} hari lagi`, color: "var(--coin)", daysLeft };
   }
 
+  function billingInfo(b){
+    if(b.subscriptionStatus !== "active" || !b.subscriptionRenewedAt) return null;
+    const start = b.subscriptionRenewedAt;
+    const due = new Date(start+"T00:00:00");
+    due.setMonth(due.getMonth()+1);
+    const dueStr = localDateStr(due);
+    const daysLeft = Math.ceil((due - new Date())/(24*60*60*1000));
+    return { start, due: dueStr, daysLeft, overdue: daysLeft < 0 };
+  }
+
   return `
     <h3 class="section-title">Kelola Langganan Semua Usaha</h3>
     <p class="small muted" style="margin-bottom:14px;">Cuma Anda (admin platform) yang bisa lihat & atur halaman ini. Cek jumlah data untuk bedakan usaha yang beneran dipakai dari yang kosong/bekas percobaan.</p>
@@ -2832,6 +3084,9 @@ async function pageKelolaLangganan(){
       const info = trialInfo(b);
       const c = counts[b.id] || { transactions:0, orders:0, members:0 };
       const isEmpty = c.transactions===0 && c.orders===0 && c.members===0;
+      const owner = owners[b.id];
+      const settings = settingsMap[b.id] || {};
+      const billing = billingInfo(b);
       return `
         <div class="card" style="margin-bottom:12px; ${isEmpty ? 'border:1.5px dashed var(--line);' : 'border:1.5px solid var(--mint);'}">
           <div class="row-between">
@@ -2841,6 +3096,21 @@ async function pageKelolaLangganan(){
             </div>
             <span class="small" style="font-weight:700; color:${info.color};">${info.label}</span>
           </div>
+
+          <div class="small" style="margin-top:10px; line-height:1.8; background:var(--foam-white); border-radius:8px; padding:8px 10px;">
+            <b>Owner:</b> ${escapeHtml(owner?.name || owner?.email || 'Tidak ditemukan')}${owner?.email ? ` (${escapeHtml(owner.email)})` : ''}<br>
+            <b>Kode Undangan/ID Bisnis:</b> <span class="num">${b.id}</span><br>
+            <b>No. HP:</b> ${escapeHtml(settings.businessPhone || '-')}<br>
+            <b>Alamat:</b> ${escapeHtml(settings.businessAddress || '-')}
+          </div>
+
+          ${billing ? `
+            <div class="small" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:${billing.overdue ? 'var(--rose-bg)' : 'var(--mint-bg)'};">
+              <b>Mulai Langganan:</b> ${fmtDate(billing.start)}<br>
+              <b>Jatuh Tempo:</b> ${fmtDate(billing.due)} ${billing.overdue ? `<span style="color:var(--rose); font-weight:700;">(lewat ${Math.abs(billing.daysLeft)} hari — perlu diperpanjang!)</span>` : `<span style="color:var(--mint); font-weight:700;">(${billing.daysLeft} hari lagi)</span>`}
+            </div>
+          ` : ''}
+
           <div class="small" style="margin-top:8px; ${isEmpty ? 'color:var(--text-muted);' : 'color:var(--mint); font-weight:600;'}">
             ${isEmpty ? '📭 Kosong — kemungkinan besar bekas percobaan, aman dihapus' : `📦 Ada data: ${c.transactions} transaksi · ${c.orders} pesanan cucian · ${c.members} member`}
           </div>
@@ -2851,7 +3121,10 @@ async function pageKelolaLangganan(){
             </select>
           </div>
           <div class="btn-row" style="margin-top:10px;">
-            ${b.subscriptionStatus !== "active" ? `<button class="btn btn-primary btn-block" data-action="activate-subscription" data-id="${b.id}" style="background:var(--mint);">Aktifkan Langganan</button>` : `<button class="btn btn-outline btn-block" data-action="revert-to-trial" data-id="${b.id}">Kembalikan ke Trial</button>`}
+            ${b.subscriptionStatus !== "active"
+              ? `<button class="btn btn-primary btn-block" data-action="activate-subscription" data-id="${b.id}" style="background:var(--mint);">Aktifkan Langganan</button>`
+              : `<button class="btn btn-primary btn-block" data-action="renew-subscription" data-id="${b.id}" style="background:var(--mint);">Perpanjang 1 Bulan</button>
+                 <button class="btn btn-outline btn-block" data-action="revert-to-trial" data-id="${b.id}">Kembalikan ke Trial</button>`}
             <button class="btn btn-outline btn-block" data-action="extend-trial" data-id="${b.id}">+7 Hari Trial</button>
           </div>
           <button class="btn btn-danger btn-block" data-action="delete-business-admin" data-id="${b.id}" data-name="${escapeHtml(b.name)}" style="margin-top:8px;">Hapus Usaha Ini (Testing/Sampah)</button>
@@ -2864,7 +3137,7 @@ async function pageKelolaLangganan(){
 
 async function pageAkun(){
   const menuIds = ["transaksi", "member", "tugas-saya"];
-  if(state.role === "owner") menuIds.push("absensi");
+  if(isOwnerOrManager()) menuIds.push("absensi");
   menuIds.push("pengaturan");
   if(state.user?.email === SUPER_ADMIN_EMAIL) menuIds.push("langganan");
 
@@ -2872,7 +3145,7 @@ async function pageAkun(){
     <div class="hero-balance">
       <div class="card-title">Akun</div>
       <div class="amount" style="font-family:var(--font-display); font-size:20px;">${escapeHtml(state.userName || state.user?.email || "")}</div>
-      <div class="sub"><span>${state.role === "owner" ? "Owner" : "Pegawai"} · ${escapeHtml(state.businessName)}</span></div>
+      <div class="sub"><span>${roleLabel()} · ${escapeHtml(state.businessName)}</span></div>
     </div>
 
     <div class="akun-menu-grid">
@@ -2948,7 +3221,7 @@ async function pageCucian(){
     "selesai": selesaiOrders.length
   };
   const isActiveTab = filter !== "selesai";
-  const activeBranchName = state.role === "pegawai"
+  const activeBranchName = isBranchLocked()
     ? state.branches.find(b=>b.id===state.currentBranchId)?.name
     : (state.currentBranchId !== "all" ? state.branches.find(b=>b.id===state.currentBranchId)?.name : "Semua Cabang");
 
@@ -3310,7 +3583,7 @@ function orderCardHtml(o){
         ${o.needsPickup && !o.pickupDone ? `<button class="btn btn-primary btn-block" data-action="mark-pickup-done" data-id="${o.id}" style="background:var(--coin);">Tandai Sudah Dijemput</button>` : ""}
         ${o.customerPhone ? `<button class="btn btn-outline" data-action="wa-order" data-id="${o.id}">${ICONS.chat}</button>` : ""}
         ${o.photos?.length ? `<button class="btn btn-outline" data-action="send-tracking" data-id="${o.id}" title="Kirim link pantau">${ICONS.star}</button>` : ""}
-        ${state.role === "owner" ? `<button class="btn btn-outline" data-action="delete-order" data-id="${o.id}">${ICONS.trash}</button>` : ""}
+        ${isOwnerOrManager() ? `<button class="btn btn-outline" data-action="delete-order" data-id="${o.id}">${ICONS.trash}</button>` : ""}
       </div>
     </div>
   `;
@@ -3478,7 +3751,7 @@ function sendOrderStatusWA(o){
 }
 
 function resolveActionBranchId(){
-  if(state.role === "pegawai") return state.userBranchId || state.branches[0]?.id || null;
+  if(isBranchLocked()) return state.userBranchId || state.branches[0]?.id || null;
   if(state.currentBranchId !== "all") return state.currentBranchId;
   if(state.branches.length === 1) return state.branches[0].id;
   return null; // ambiguous — owner must pick a specific branch first
@@ -5693,8 +5966,36 @@ function bindPageEvents(){
   const addOrderBtn = document.querySelector("[data-action='add-order']");
   if(addOrderBtn) addOrderBtn.addEventListener("click", openAddOrderModal);
   document.querySelectorAll("[data-report-tab]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{ state.reportTab = btn.dataset.reportTab; render(); });
+    btn.addEventListener("click", ()=>{
+      state.reportTab = btn.dataset.reportTab;
+      state.asetTetapPage = 1;
+      state.persediaanPage = 1;
+      render();
+    });
   });
+
+  const asetTetapPageSizeSelect = document.getElementById("asetTetapPageSizeSelect");
+  if(asetTetapPageSizeSelect) asetTetapPageSizeSelect.addEventListener("change", ()=>{
+    state.asetTetapPageSize = parseInt(asetTetapPageSizeSelect.value);
+    state.asetTetapPage = 1;
+    render();
+  });
+  const asetTetapPrevPage = document.getElementById("asetTetapPrevPage");
+  if(asetTetapPrevPage) asetTetapPrevPage.addEventListener("click", ()=>{ state.asetTetapPage--; render(); });
+  const asetTetapNextPage = document.getElementById("asetTetapNextPage");
+  if(asetTetapNextPage) asetTetapNextPage.addEventListener("click", ()=>{ state.asetTetapPage++; render(); });
+
+  const persediaanPageSizeSelect = document.getElementById("persediaanPageSizeSelect");
+  if(persediaanPageSizeSelect) persediaanPageSizeSelect.addEventListener("change", ()=>{
+    state.persediaanPageSize = parseInt(persediaanPageSizeSelect.value);
+    state.persediaanPage = 1;
+    render();
+  });
+  const persediaanPrevPage = document.getElementById("persediaanPrevPage");
+  if(persediaanPrevPage) persediaanPrevPage.addEventListener("click", ()=>{ state.persediaanPage--; render(); });
+  const persediaanNextPage = document.getElementById("persediaanNextPage");
+  if(persediaanNextPage) persediaanNextPage.addEventListener("click", ()=>{ state.persediaanPage++; render(); });
+
   const addAssetBtn = document.querySelector("[data-action='add-asset']");
   if(addAssetBtn) addAssetBtn.addEventListener("click", ()=> openAssetModal());
   document.querySelectorAll("[data-action='edit-asset']").forEach(btn=>{
@@ -5742,6 +6043,12 @@ function bindPageEvents(){
 
   const csvBtn = document.querySelector("[data-action='export-csv']");
   if(csvBtn) csvBtn.addEventListener("click", exportCsv);
+
+  const exportAsetBtn = document.querySelector("[data-action='export-aset-excel']");
+  if(exportAsetBtn) exportAsetBtn.addEventListener("click", exportAsetTetapExcel);
+
+  const exportPersediaanBtn = document.querySelector("[data-action='export-persediaan-excel']");
+  if(exportPersediaanBtn) exportPersediaanBtn.addEventListener("click", exportPersediaanExcel);
 
   const saveBizBtn = document.querySelector("[data-action='save-biz-name']");
   if(saveBizBtn) saveBizBtn.addEventListener("click", async ()=>{
@@ -5913,19 +6220,28 @@ function bindPageEvents(){
       navigator.clipboard?.writeText(btn.dataset.id).then(()=> toast("Kode cabang disalin"));
     });
   });
-  document.querySelectorAll("[data-action='toggle-role']").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const uid = btn.dataset.uid;
-      const currentRole = btn.dataset.role;
-      const newRole = currentRole === "owner" ? "pegawai" : "owner";
-      if(currentRole === "owner"){
-        const staff = await DB.getBusinessStaff();
+  document.querySelectorAll(".role-select").forEach(sel=>{
+    sel.addEventListener("change", async ()=>{
+      const uid = sel.dataset.uid;
+      const newRole = sel.value;
+      const staff = await DB.getBusinessStaff();
+      const target = staff.find(s=>s.uid===uid);
+      if(target?.role === "owner"){
         const ownerCount = staff.filter(s=>s.role==="owner").length;
-        if(ownerCount <= 1){ toast("Tidak bisa menurunkan Owner terakhir", "warn"); return; }
+        if(ownerCount <= 1){ toast("Tidak bisa menurunkan Owner terakhir", "warn"); render(); return; }
       }
-      if(!confirm(newRole === "owner" ? "Jadikan akun ini Owner (akses penuh)?" : "Turunkan akun ini jadi Pegawai (akses terbatas)?")) return;
+      const roleLabels = { owner: "Owner (kontrol penuh, semua cabang)", manager: "Manager (kontrol penuh, 1 cabang)", pegawai: "Pegawai" };
+      if(!confirm(`Ubah peran akun ini jadi "${roleLabels[newRole]}"?`)){ render(); return; }
       await DB.setStaffRole(uid, newRole);
-      toast(newRole === "owner" ? "Akun dijadikan Owner" : "Akun diturunkan jadi Pegawai");
+      toast(`Peran diubah jadi ${roleLabels[newRole]}`);
+      render();
+    });
+  });
+  document.querySelectorAll(".branch-assign-select").forEach(sel=>{
+    sel.addEventListener("change", async ()=>{
+      if(!sel.value){ return; }
+      await DB.setStaffBranch(sel.dataset.uid, sel.value);
+      toast("Cabang berhasil diatur");
       render();
     });
   });
@@ -6344,7 +6660,7 @@ async function startApp(){
   state.categories = await DB.getCategories();
   state.branches = await ensureDefaultBranch();
 
-  if(state.role === "pegawai"){
+  if(isBranchLocked()){
     state.currentBranchId = state.userBranchId || state.branches[0]?.id || "all";
   } else if(state.branches.length === 1){
     state.currentBranchId = state.branches[0].id; // only one branch — no point showing "Semua Cabang"

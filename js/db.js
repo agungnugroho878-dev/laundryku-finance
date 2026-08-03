@@ -238,6 +238,11 @@ const DB = {
     return true;
   },
 
+  async setStaffBranch(uid, branchId){
+    await fs.collection("users").doc(uid).update({ branchId });
+    return true;
+  },
+
   async setSalaryConfig(uid, config){
     await fs.collection("users").doc(uid).update({ salaryConfig: config });
     return true;
@@ -297,6 +302,18 @@ const DB = {
     const doc = await fs.collection("businessSettings").doc(_businessId).get();
     const data = doc.exists ? doc.data() : {};
     return data[key] !== undefined ? data[key] : fallback;
+  },
+
+  /** Admin-only: fetch businessSettings for ANY business (not just the current session's). */
+  async getBusinessSettingsById(businessId){
+    const doc = await fs.collection("businessSettings").doc(businessId).get();
+    return doc.exists ? doc.data() : {};
+  },
+
+  /** Admin-only: find the Owner account for a given business. */
+  async getOwnerForBusiness(businessId){
+    const snap = await fs.collection("users").where("businessId","==",businessId).where("role","==","owner").limit(1).get();
+    return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
   },
 
   async setSetting(key, value){
