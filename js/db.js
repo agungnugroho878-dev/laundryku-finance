@@ -29,6 +29,7 @@ const DEFAULT_CATEGORIES = [
   { key: "setor-modal", name: "Setor Modal Usaha", type: "in", account: ACCOUNT.MODAL, system: true },
 
   { key: "bahan-baku", name: "Beli Bahan Baku & Perlengkapan", type: "out", account: ACCOUNT.BEBAN, system: true },
+  { key: "beli-persediaan", name: "Beli Persediaan (Stok)", type: "out", account: ACCOUNT.PERSEDIAAN, system: true },
   { key: "gaji", name: "Gaji Karyawan", type: "out", account: ACCOUNT.BEBAN, system: true },
   { key: "listrik-air", name: "Listrik, Air & Internet", type: "out", account: ACCOUNT.BEBAN, system: true },
   { key: "sewa", name: "Sewa Tempat", type: "out", account: ACCOUNT.BEBAN, system: true },
@@ -205,6 +206,11 @@ const DB = {
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     list.sort((a,b) => (b.generatedAt||0)-(a.generatedAt||0));
     return list;
+  },
+
+  async updatePayslip(id, fields){
+    await fs.collection("payslips").doc(id).update(fields);
+    return true;
   },
 
   async deletePayslip(id){
@@ -412,6 +418,82 @@ const DB = {
   async deleteAsset(id){
     await fs.collection("assets").doc(id).delete();
     return true;
+  },
+
+  // ---------------- Persediaan (Inventory) ----------------
+
+  async getInventoryItems(){
+    const snap = await fs.collection("inventoryItems").where("businessId","==",_businessId).get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (a.category||"").localeCompare(b.category||"") || (a.name||"").localeCompare(b.name||""));
+    return list;
+  },
+
+  async getInventoryItemById(id){
+    const doc = await fs.collection("inventoryItems").doc(id).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+  },
+
+  async addInventoryItem(item){
+    const payload = { ...item, businessId: _businessId, createdAt: Date.now() };
+    const ref = await fs.collection("inventoryItems").add(payload);
+    return ref.id;
+  },
+
+  async updateInventoryItem(id, fields){
+    await fs.collection("inventoryItems").doc(id).update(fields);
+    return true;
+  },
+
+  async deleteInventoryItem(id){
+    await fs.collection("inventoryItems").doc(id).delete();
+    return true;
+  },
+
+  async addInventoryPurchase(purchase){
+    const payload = { ...purchase, businessId: _businessId, createdAt: Date.now() };
+    const ref = await fs.collection("inventoryPurchases").add(payload);
+    return ref.id;
+  },
+
+  async getInventoryPurchasesInRange(startDate, endDate){
+    const snap = await fs.collection("inventoryPurchases")
+      .where("businessId","==",_businessId)
+      .where("date",">=",startDate)
+      .where("date","<=",endDate)
+      .get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+
+  async getAllInventoryPurchases(){
+    const snap = await fs.collection("inventoryPurchases").where("businessId","==",_businessId).get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.date||"").localeCompare(a.date||""));
+    return list;
+  },
+
+  async addStockOpname(opname){
+    const payload = { ...opname, businessId: _businessId, createdAt: Date.now() };
+    const ref = await fs.collection("stockOpnames").add(payload);
+    return ref.id;
+  },
+
+  async updateStockOpname(id, fields){
+    await fs.collection("stockOpnames").doc(id).update(fields);
+    return true;
+  },
+
+  async getAllStockOpnames(){
+    const snap = await fs.collection("stockOpnames").where("businessId","==",_businessId).get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.date||"").localeCompare(a.date||""));
+    return list;
+  },
+
+  async getLastCompletedOpnameBefore(dateStr){
+    const all = await this.getAllStockOpnames();
+    const completed = all.filter(o => o.status === "selesai" && o.date <= dateStr);
+    return completed.length ? completed[0] : null; // already sorted desc by date
   },
 
   async getNextReceiptCode(serviceType, dateStr){

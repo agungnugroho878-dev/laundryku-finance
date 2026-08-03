@@ -94,6 +94,24 @@ service cloud.firestore {
       allow delete: if isOwner() && sameBusiness(resource.data.businessId);
     }
 
+    match /inventoryItems/{id} {
+      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
+      allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
+    }
+
+    match /inventoryPurchases/{id} {
+      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
+    }
+
+    match /stockOpnames/{id} {
+      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow create: if isSignedIn() && sameBusiness(request.resource.data.businessId);
+      allow update: if isSignedIn() && sameBusiness(resource.data.businessId);
+      allow delete: if isOwner() && sameBusiness(resource.data.businessId);
+    }
+
     match /attendance/{id} {
       allow read: if isOwner() && sameBusiness(resource.data.businessId)
                   || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId));
@@ -175,6 +193,28 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 > Catatan: kalau langkah ini dilewati (tidak di-setup), fitur foto tetap berfungsi normal seperti biasa — cuma pembersihan otomatisnya yang tidak aktif, dan foto akan terus menumpuk di Cloudinary.
 >
 > Catatan keamanan: kunci `CLEANUP_SECRET` ini tetap bisa dilihat siapa saja yang membuka kode sumber aplikasi di browser (karena ini aplikasi web murni tanpa login khusus untuk API-nya) — jadi anggap ini sebagai penghalang dasar, bukan pengaman yang benar-benar kuat. Risikonya rendah karena yang bisa dilakukan cuma menghapus foto pesanan lama milik usaha sendiri, bukan akses ke data lain.
+
+---
+
+## 0d. Setup Ongkir Jarak Jalan Sungguhan (opsional)
+
+Secara default, ongkir otomatis dihitung dari **jarak garis lurus** (haversine) antara cabang dan lokasi pelanggan. Untuk hasil yang lebih akurat (mengikuti jalan yang benar-benar dilewati, bukan tembus gedung/sungai), aplikasi ini bisa pakai **OpenRouteService** — gratis, dan **boleh dipakai untuk produk komersial** (beda dengan OSRM yang sering direkomendasikan orang lain tapi syaratnya "non-commercial only").
+
+1. Daftar gratis di **openrouteservice.org** → Sign up (tidak perlu kartu kredit)
+2. Login → buka **Dashboard** → **"Request a token"** → pilih tipe **"Standard"**
+3. Salin API key yang muncul
+4. Buka file `js/firebase-config.js` → cari baris:
+   ```js
+   const ORS_API_KEY = "";
+   ```
+   Tempel API key Anda di antara tanda kutip → Commit
+
+Setelah itu, setiap kali ongkir otomatis dihitung (di form Pesanan Cucian Baru), aplikasi akan coba pakai jarak jalan sungguhan dulu — kalau gagal (misal API sedang bermasalah, atau belum diisi key-nya), otomatis kembali pakai jarak garis lurus seperti biasa, jadi fitur ongkir tidak akan pernah benar-benar berhenti berfungsi.
+
+> Kuota gratis: 2.500 request/hari, 40.000/bulan — lebih dari cukup untuk 1 atau bahkan beberapa usaha laundry sekaligus (tiap hitung ongkir cuma 1 request).
+>
+> Catatan keamanan: sama seperti `CLEANUP_SECRET`, API key ini juga bisa dilihat siapa saja yang membuka kode sumber di browser. Risikonya rendah (paling buruk, orang lain menghabiskan kuota gratis Anda) — kalau khawatir, ORS API key bisa dibatasi ke domain tertentu saja lewat Dashboard mereka.
+
 
 ---
 
@@ -265,6 +305,16 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
     - Begitu izin **disetujui**, tanggal itu otomatis **dikecualikan dari Potongan Tanpa Izin (Alpa)** saat slip gaji dibuat — muncul di slip sebagai "Izin Disetujui (Tidak Dipotong)", bukan potongan. Izin yang masih menunggu atau ditolak tetap dihitung sebagai alpa kalau tidak ada absen masuk di hari itu
     - **Buat Slip Gaji** (Owner, di menu Absensi bagian bawah): pilih pegawai (yang sudah dikelola) → pakai periode yang sama dengan filter rekap absensi di atasnya → klik "Buat Slip Gaji" → sistem otomatis menghitung semuanya (gaji pokok + tunjangan − potongan telat − potongan alpa) berdasarkan data Absensi periode itu
     - Slip yang sudah dibuat **tersimpan permanen** dan bisa dilihat lagi kapan saja — **baik oleh Owner (semua pegawai) maupun pegawai yang bersangkutan (cuma miliknya sendiri)**, lewat menu Absensi masing-masing. Tiap slip ada tombol **Cetak/Simpan PDF**
+    - **Terhubung otomatis ke Laporan Keuangan**: di detail slip gaji, ada bagian **"Status Pembayaran"** — isi tanggal dibayarkan lalu klik **"Tandai Sudah Dibayar"** → otomatis tercatat sebagai transaksi **Kas Keluar (Beban Gaji)** di tanggal itu, langsung masuk hitungan Laba Rugi. Sebelum ditandai, slip gaji **belum** mempengaruhi laporan keuangan sama sekali (supaya tidak dobel-hitung sebelum benar-benar dibayar). Hapus slip yang sudah dibayar akan otomatis ikut menghapus transaksi terkait
+
+9h. **Modul Persediaan (dengan Stock Opname, metode periodik)**:
+    - **Catat pembelian persediaan**: di form Kas Keluar, pilih kategori **"Beli Persediaan (Stok)"** → muncul rincian: Jenis Persediaan (Bahan Cuci/Kemasan/Perlengkapan Lain), Nama Barang (ketik baru atau pilih yang sudah pernah dicatat), Jumlah, Satuan. Harga satuan otomatis dihitung dari Jumlah (Rp) transaksi ÷ jumlah barang. Setiap barang otomatis dapat **ID unik** dan dikelompokkan per jenisnya — kalau nama & jenis sama dengan yang sudah ada, jumlah & nilainya digabung (bukan dobel-catat barang baru)
+    - **Lihat di Laporan → tab "Persediaan"**: daftar semua barang per jenis, lengkap jumlah, harga rata-rata, dan total nilai
+    - **Stock Opname**: tombol **"Mulai Stock Opname"** — tampil semua barang dengan jumlah "menurut sistem" (hasil catatan pembelian), lalu isi **jumlah fisik sebenarnya** yang dihitung langsung di gudang/toko (bisa dilakukan Owner maupun Pegawai). Bisa disimpan sebagai **Draft** dulu (belum mempengaruhi laporan) atau langsung **"Selesaikan Opname"** — begitu diselesaikan, nilai persediaan sistem otomatis disesuaikan mengikuti hasil hitungan fisik itu, dan tidak bisa diubah lagi setelahnya. Disarankan dilakukan tiap akhir bulan, tapi bisa dilakukan tanggal berapa saja
+    - **Otomatis masuk ke laporan keuangan** — pakai metode pencatatan persediaan **periodik**, sesuai standar akuntansi:
+      - **Neraca**: nilai Persediaan = hasil Stock Opname terakhir (digulirkan maju dengan pembelian sesudahnya kalau ada), bukan lagi angka statis dari Saldo Awal
+      - **Laba Rugi**: muncul baris **"Beban Persediaan (Pemakaian Stok)"** otomatis, dihitung dari rumus **Persediaan Awal + Pembelian dalam periode − Persediaan Akhir** — inilah nilai barang yang terpakai/habis selama periode itu, dianggap sebagai beban
+    - Kalau belum pernah Stock Opname sama sekali, nilai persediaan sistem murni dari akumulasi pembelian (asumsi belum ada yang terpakai) — begitu Stock Opname pertama dilakukan, baru laporan mulai akurat mencerminkan pemakaian yang sebenarnya
 
 10. **Foto barang (opsional, tidak ada batas jumlah)**: saat isi pesanan, ada 2 cara ambil foto:
     - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup
@@ -297,6 +347,7 @@ Setelah semua langkah ini selesai, sistem otomatis mengecek (maksimal sekali seh
 14. **Beranda** sekarang punya kartu **"Analisis Pendapatan Layanan"** — filter waktu (Hari Ini/7 Hari/Bulan Ini/Tahun Ini), rincian omzet & jumlah transaksi per jenis (Kiloan/Satuan/Self-Service) plus Total Omzet, dan grafik tren 6 bulan terakhir untuk melihat jenis layanan mana yang tumbuh paling baik
 15. **Klaim Promo**: di tab **Member**, kalau pelanggan sudah mencapai target (akumulasi kg kiloan atau kunjungan self-service, sesuai yang diatur di Atur → Promo Kiloan/Promo Self-Service), muncul tombol **"Klaim"** — dipencet saat pelanggan datang mau ambil gratisannya, progress otomatis mulai lagi dari 0 setelah diklaim (tidak perlu bikin transaksi baru untuk ini). Tombol ini kelihatan oleh Owner maupun Pegawai, tapi tetap perlu cari member-nya dulu di daftar (ada badge "🎉 Siap klaim" biar gampang kelihatan)
 16. **Progress Promo otomatis lewat WA**: setiap kali transaksi Kiloan atau Self-Service disimpan (dengan No. WA pelanggan terisi), pesan WA/struk yang dikirim ke pelanggan **otomatis menyertakan progress promo terkini** — misal "Cuci Setrika: sudah 12/20 kg — kurang 8 kg lagi buat dapat promo!", atau kalau sudah penuh: "🎉 Yeay, promo sudah siap diklaim di kunjungan berikutnya!". Ini tersinkron otomatis dengan pengaturan Promo Kiloan/Self-Service — kalau promo untuk jenis itu belum diaktifkan, baris progressnya otomatis tidak ikut muncul. Berlaku baik untuk kirim struk Gambar maupun Teks
+17. **Pengingat jeda kirim WA** (supaya akun WhatsApp Business tidak dianggap spam otomatis oleh sistem WhatsApp): aplikasi diam-diam mencatat setiap kali tombol kirim WA dipencet (kirim struk, kirim link pantau, dll). Kalau sudah **lebih dari 5x dalam 10 menit terakhir**, muncul catatan kecil (toast merah) mengingatkan untuk beri jeda sebentar. Ini cuma pengingat — tidak memblokir pengiriman, cuma bantu jaga kebiasaan pemakaian yang lebih aman. Catatan ini tersimpan lokal di browser masing-masing perangkat (tidak sinkron ke server), otomatis "lupa" sendiri setelah 10 menit tidak ada aktivitas kirim WA baru.
 16. **Cara tercepat catat aset tetap**: cukup lewat **Beranda/Transaksi → Catat Kas Keluar**, pilih kategori **"Beli Peralatan/Aset Tetap"** — form rincian aset (jenis, merk, umur manfaat, nilai residu) otomatis muncul di bawahnya, jadi 1x isi langsung tercatat sebagai **transaksi kas** sekaligus **aset tetap** dengan jadwal penyusutan. Untuk aset yang tidak perlu transaksi baru (misal peralatan lama sebelum pakai aplikasi ini), tetap bisa didaftarkan langsung lewat **Laporan → Aset Tetap → Tambah Aset Tetap**
 17. **Owner**: buka menu **Laporan → Aset Tetap** untuk melihat daftar & rincian aset tetap. Sistem otomatis menghitung **penyusutan per bulan** (metode garis lurus), **akumulasi penyusutan**, dan **nilai buku**, yang otomatis muncul sebagai **Beban Penyusutan** di Laba Rugi dan **Akumulasi Penyusutan** (pengurang nilai aset) di Neraca setiap bulan — tidak perlu input manual tiap bulan
 

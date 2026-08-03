@@ -34,3 +34,9 @@ const CLOUDINARY_UPLOAD_PRESET = "laundryku_photos";
 // value as an environment variable named CLEANUP_SECRET in Vercel
 // (Project → Settings → Environment Variables).
 const CLEANUP_SHARED_SECRET = "REPLACE_WITH_ANY_RANDOM_STRING";
+
+// --- Ongkir jarak jalan sungguhan (OpenRouteService, gratis, boleh dipakai komersial) ---
+// TODO: daftar gratis di openrouteservice.org -> Dashboard -> Request a token (Standard)
+// lalu tempel API key-nya di sini. Kalau dikosongkan, ongkir tetap jalan pakai
+// jarak garis lurus (haversine) seperti sebelumnya -- fitur ini opsional.
+const ORS_API_KEY = "";

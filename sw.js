@@ -1,4 +1,4 @@
-const CACHE_NAME = "laman-v7";
+const CACHE_NAME = "laman-v11";
 const APP_SHELL = [
   "./",
   "./index.html",

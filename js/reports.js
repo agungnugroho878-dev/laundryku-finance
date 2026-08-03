@@ -48,6 +48,13 @@ function depreciationForPeriod(asset, start, end){
   return Math.max(0, upTo - before);
 }
 
+/** Returns the date string for the day immediately before dateStr. */
+function dayBeforeStr(dateStr){
+  const d = new Date(dateStr+"T00:00:00");
+  d.setDate(d.getDate()-1);
+  return localDateStr(d);
+}
+
 const Reports = {
   todayStr(){
     return localDateStr();
@@ -68,6 +75,41 @@ const Reports = {
   },
 
   /** Laba Rugi for a date range [start, end] inclusive, grouped by category */
+  /** Persediaan value as of a given date, periodic method: anchored to the
+   *  most recent completed Stock Opname on/before that date (or the opening
+   *  balance if no opname exists yet), then rolled forward with purchases
+   *  recorded since that anchor date. */
+  async getPersediaanValueAsOf(dateStr, branchId = null){
+    const opening = await this.getOpeningBalances(branchId);
+    let baselineValue = opening.persediaan || 0;
+    let baselineDate = (opening.date && opening.date !== "1970-01-01") ? opening.date : "0000-01-01";
+
+    let opnames = await DB.getAllStockOpnames();
+    opnames = opnames.filter(o => o.status === "selesai" && o.date <= dateStr && (!branchId || o.branchId === branchId));
+    opnames.sort((a,b) => b.date.localeCompare(a.date));
+    if(opnames.length && opnames[0].date >= baselineDate){
+      baselineValue = opnames[0].totalValue || 0;
+      baselineDate = opnames[0].date;
+    }
+
+    let purchases = await DB.getAllInventoryPurchases();
+    purchases = purchases.filter(p => (!branchId || p.branchId === branchId) && p.date > baselineDate && p.date <= dateStr);
+    const purchaseTotal = purchases.reduce((s,p) => s + (p.total||0), 0);
+
+    return baselineValue + purchaseTotal;
+  },
+
+  /** Beban Persediaan (COGS, periodic method) for [start, end]:
+   *  Persediaan Awal + Pembelian dalam periode - Persediaan Akhir. */
+  async getBebanPersediaan(start, end, branchId = null){
+    const persediaanAwal = await this.getPersediaanValueAsOf(dayBeforeStr(start), branchId);
+    const persediaanAkhir = await this.getPersediaanValueAsOf(end, branchId);
+    let purchases = await DB.getAllInventoryPurchases();
+    purchases = purchases.filter(p => (!branchId || p.branchId === branchId) && p.date >= start && p.date <= end);
+    const totalPembelian = purchases.reduce((s,p) => s + (p.total||0), 0);
+    return persediaanAwal + totalPembelian - persediaanAkhir;
+  },
+
   async labaRugi(start, end, branchId = null){
     let txs = await DB.getTransactionsInRange(start, end);
     if(branchId) txs = txs.filter(t => t.branchId === branchId);
@@ -97,6 +139,12 @@ const Reports = {
     }
     if(depreciationTotal > 0){
       bebanLines["Beban Penyusutan Aset Tetap"] = (bebanLines["Beban Penyusutan Aset Tetap"]||0) + depreciationTotal;
+    }
+
+    // Beban Persediaan (COGS, periodic method) — Persediaan Awal + Pembelian - Persediaan Akhir
+    const bebanPersediaan = await this.getBebanPersediaan(start, end, branchId);
+    if(bebanPersediaan !== 0){
+      bebanLines["Beban Persediaan (Pemakaian Stok)"] = (bebanLines["Beban Persediaan (Pemakaian Stok)"]||0) + bebanPersediaan;
     }
 
     const totalPendapatan = Object.values(pendapatanLines).reduce((a,b)=>a+b,0);
@@ -152,7 +200,9 @@ const Reports = {
       }
     }
 
-    const persediaan = opening.persediaan;
+    const persediaan = await this.getPersediaanValueAsOf(asOf, branchId);
+    const bebanPersediaanSejakSaldoAwal = await this.getBebanPersediaan(opening.date, asOf, branchId);
+    laba -= bebanPersediaanSejakSaldoAwal;
 
     // Accumulated depreciation (contra-asset) — only this branch's assets
     // (or all assets, in the aggregate view).

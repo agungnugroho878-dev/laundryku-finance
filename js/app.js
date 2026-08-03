@@ -75,12 +75,12 @@ function el(html){
   return t.content.firstElementChild;
 }
 
-function toast(msg, type="success"){
+function toast(msg, type="success", duration=2400){
   const check = `<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
   const badge = type === "success" ? `<span class="toast-check">${check}</span>` : "";
   const t = el(`<div class="toast ${type==='warn'?'toast-warn':''}">${badge}<span>${msg}</span></div>`);
   document.body.appendChild(t);
-  setTimeout(()=>t.remove(), 2400);
+  setTimeout(()=>t.remove(), duration);
 }
 
 function closeModal(){
@@ -370,10 +370,33 @@ async function render(){
 
     const delPayslipBtn = document.querySelector("[data-action='delete-payslip']");
     if(delPayslipBtn) delPayslipBtn.addEventListener("click", async ()=>{
-      if(!confirm("Hapus slip gaji ini?")) return;
-      await DB.deletePayslip(delPayslipBtn.dataset.id);
+      if(!confirm("Hapus slip gaji ini? Kalau slip ini sudah ditandai dibayar, transaksi Beban Gaji yang terkait juga akan ikut dihapus.")) return;
+      const id = delPayslipBtn.dataset.id;
+      const allTx = await DB.getTransactions();
+      const linkedTx = allTx.find(t => t.payslipId === id);
+      if(linkedTx) await DB.deleteTransaction(linkedTx.id);
+      await DB.deletePayslip(id);
       toast("Slip gaji dihapus");
       state.viewingPayslipId = null;
+      render();
+    });
+
+    const markPaidBtn = document.querySelector("[data-action='mark-payslip-paid']");
+    if(markPaidBtn) markPaidBtn.addEventListener("click", async ()=>{
+      const id = markPaidBtn.dataset.id;
+      const paidDate = document.getElementById("payslipPaidDate").value || Reports.todayStr();
+      const slips = await DB.getAllPayslips();
+      const slip = slips.find(s=>s.id===id);
+      if(!slip) return;
+      const branchId = (await DB.getBusinessStaff()).find(s=>s.uid===slip.userId)?.branchId || resolveActionBranchId();
+      await DB.addTransaction({
+        type: "out", categoryId: "gaji", categoryName: "Gaji Karyawan",
+        account: DB.ACCOUNT.BEBAN, amount: slip.totalPay, date: paidDate,
+        note: `Gaji ${slip.userName} — periode ${fmtDate(slip.periodStart)} s/d ${fmtDate(slip.periodEnd)}`,
+        branchId, payslipId: id
+      });
+      await DB.updatePayslip(id, { paidStatus: true, paidDate });
+      toast("Ditandai sudah dibayar — tercatat sebagai Beban Gaji");
       render();
     });
 
@@ -801,6 +824,30 @@ function emptyState(msg){
   return `<div class="empty-state"><div class="es-icon">${ICONS.bubble}</div><div class="es-msg">${msg}</div></div>`;
 }
 
+/** Formats a raw digit string/number into Indonesian thousand-separated form, e.g. 26500 -> "26.500" */
+function formatThousands(val){
+  const digits = String(val ?? "").replace(/\D/g, "");
+  if(!digits) return "";
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+/** Parses a thousand-separated Rupiah string back into a plain Number, e.g. "26.500" -> 26500 */
+function parseThousands(str){
+  const digits = String(str ?? "").replace(/\D/g, "");
+  return digits ? parseInt(digits, 10) : 0;
+}
+
+/** Wires live thousand-separator formatting onto a text input as the user types. */
+function attachThousandsInput(el){
+  if(!el) return;
+  el.addEventListener("input", ()=>{
+    const cursorFromEnd = el.value.length - el.selectionStart;
+    el.value = formatThousands(el.value);
+    const pos = Math.max(0, el.value.length - cursorFromEnd);
+    el.setSelectionRange(pos, pos);
+  });
+}
+
 function escapeHtml(s){
   return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
@@ -812,6 +859,12 @@ const ASSET_CATEGORIES = {
   "mesin-cuci": { label: "Mesin Cuci", defaultLife: 5 },
   "dryer": { label: "Dryer / Pengering", defaultLife: 5 },
   "peralatan-lain": { label: "Peralatan Lain", defaultLife: 4 }
+};
+
+const INVENTORY_CATEGORIES = {
+  "bahan-cuci": { label: "Bahan Cuci (deterjen, pewangi, pemutih)" },
+  "kemasan": { label: "Kemasan (plastik, kantong, label)" },
+  "perlengkapan": { label: "Perlengkapan Lain" }
 };
 
 async function renderAsetTetapSection(){
@@ -861,6 +914,144 @@ async function renderAsetTetapSection(){
       </div>
     `).join("")}
   `;
+}
+
+async function renderPersediaanSection(){
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
+  let items = await DB.getInventoryItems();
+  if(activeBranchId) items = items.filter(i => i.branchId === activeBranchId);
+  const totalValue = items.reduce((s,i)=>s+(i.totalValue||0), 0);
+  const branchMap = Object.fromEntries(state.branches.map(b=>[b.id,b.name]));
+
+  const grouped = {};
+  items.forEach(i => {
+    const cat = i.category || "lainnya";
+    if(!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(i);
+  });
+
+  const opnames = (await DB.getAllStockOpnames()).filter(o => !activeBranchId || o.branchId === activeBranchId);
+  const lastOpname = opnames.find(o => o.status === "selesai");
+
+  return `
+    <div class="card no-print">
+      <div class="card-title">Ringkasan Persediaan</div>
+      <div class="r-row total"><span>Total Nilai Persediaan${lastOpname ? ' (hasil Stock Opname)' : ' (perkiraan sistem)'}</span><span class="val num">${Reports.formatRupiah(totalValue)}</span></div>
+      ${lastOpname ? `<p class="small muted" style="margin-top:6px;">Stock opname terakhir: ${fmtDate(lastOpname.date)}</p>` : `<p class="small muted" style="margin-top:6px;">Belum pernah stock opname — nilai ini dihitung dari akumulasi pembelian saja.</p>`}
+    </div>
+
+    <button class="btn btn-primary btn-block" data-action="start-stock-opname" style="margin:14px 0;">${ICONS.calendar} Mulai Stock Opname</button>
+
+    ${items.length === 0 ? emptyState("Belum ada persediaan tercatat. Catat lewat Kas Keluar → kategori \"Beli Persediaan (Stok)\".") :
+      Object.entries(grouped).map(([cat, catItems])=>`
+        <h3 class="section-title" style="margin-top:20px;">${INVENTORY_CATEGORIES[cat]?.label || cat}</h3>
+        ${catItems.map(i=>`
+          <div class="card" style="margin-bottom:10px;">
+            <div class="row-between">
+              <div>
+                <div style="font-weight:700;">${escapeHtml(i.name)}</div>
+                <div class="small muted">${(i.qty||0).toLocaleString('id-ID')} ${escapeHtml(i.unit||'pcs')}${!activeBranchId ? ' · '+escapeHtml(branchMap[i.branchId]||'Cabang tidak diketahui') : ''}</div>
+              </div>
+              <button class="tx-del" data-action="delete-inventory-item" data-id="${i.id}">${ICONS.trash}</button>
+            </div>
+            <div class="small" style="margin-top:8px; line-height:1.9;">
+              Harga Rata-rata: <span class="num">${Reports.formatRupiah(i.avgUnitCost||0)}</span> / ${escapeHtml(i.unit||'pcs')}<br>
+              Total Nilai: <b class="num" style="color:var(--mint);">${Reports.formatRupiah(i.totalValue||0)}</b>
+            </div>
+          </div>
+        `).join("")}
+      `).join("")
+    }
+
+    ${opnames.length ? `
+      <h3 class="section-title" style="margin-top:20px;">Riwayat Stock Opname</h3>
+      ${opnames.map(o=>`
+        <div class="card" style="margin-bottom:10px; cursor:pointer;" data-action="view-stock-opname" data-id="${o.id}">
+          <div class="row-between">
+            <div>
+              <div style="font-weight:700;">${fmtDate(o.date)}</div>
+              <div class="small muted">${o.items?.length||0} jenis barang dihitung</div>
+            </div>
+            <span class="status-badge ${o.status==='selesai'?'status-selesai':'status-belum-diproses'}">${o.status==='selesai'?'Selesai':'Draft'}</span>
+          </div>
+        </div>
+      `).join("")}
+    ` : ""}
+  `;
+}
+
+async function openStockOpnameModal(existingOpname){
+  const branchId = resolveActionBranchId();
+  let items = await DB.getInventoryItems();
+  if(branchId) items = items.filter(i => i.branchId === branchId);
+  const isReadOnly = existingOpname?.status === "selesai";
+
+  const countMap = {};
+  if(existingOpname){
+    (existingOpname.items||[]).forEach(i => { countMap[i.itemId] = i.countedQty; });
+  }
+
+  const modal = openModal(`
+    <h2>${existingOpname ? 'Detail Stock Opname' : 'Stock Opname'} — ${fmtDate(existingOpname?.date || Reports.todayStr())}</h2>
+    ${!existingOpname ? `<div class="field"><label>Tanggal Opname</label><input type="date" id="opnameDate" value="${Reports.todayStr()}"></div>` : ""}
+    <p class="small muted" style="margin-bottom:14px;">Hitung fisik tiap barang, isi jumlah sebenarnya di gudang/toko. Nilai persediaan akan disesuaikan berdasarkan hasil hitungan ini.</p>
+    ${items.length === 0 ? emptyState("Belum ada persediaan tercatat untuk dihitung.") : items.map(i => `
+      <div class="field" style="border-bottom:1px dashed var(--line); padding-bottom:10px;">
+        <label>${escapeHtml(i.name)} <span class="small muted">(sistem: ${(i.qty||0).toLocaleString('id-ID')} ${escapeHtml(i.unit||'pcs')})</span></label>
+        <input type="number" class="opname-count-input" data-item-id="${i.id}" data-unit-cost="${i.avgUnitCost||0}" data-item-name="${escapeHtml(i.name)}" data-category="${i.category||''}"
+          value="${countMap[i.id] ?? (i.qty||0)}" step="0.01" ${isReadOnly ? 'disabled' : ''}>
+      </div>
+    `).join("")}
+    ${!isReadOnly ? `
+      <button class="btn btn-primary btn-block" data-action="complete-stock-opname" data-id="${existingOpname?.id||''}" style="margin-top:14px;">Selesaikan Opname & Sesuaikan Stok</button>
+      <button class="btn btn-outline btn-block" data-action="save-draft-opname" data-id="${existingOpname?.id||''}" style="margin-top:10px;">Simpan sebagai Draft</button>
+    ` : `<p class="small" style="color:var(--mint); font-weight:600; margin-top:10px;">✓ Opname ini sudah selesai dan sudah menyesuaikan nilai persediaan.</p>`}
+  `);
+
+  function collectCounts(){
+    return Array.from(modal.querySelectorAll(".opname-count-input")).map(inp => ({
+      itemId: inp.dataset.itemId,
+      itemName: inp.dataset.itemName,
+      category: inp.dataset.category,
+      systemQty: parseFloat(inp.defaultValue) || 0,
+      countedQty: parseFloat(inp.value) || 0,
+      unitCost: parseFloat(inp.dataset.unitCost) || 0,
+      countedValue: (parseFloat(inp.value) || 0) * (parseFloat(inp.dataset.unitCost) || 0)
+    }));
+  }
+
+  modal.querySelector("[data-action='save-draft-opname']")?.addEventListener("click", async ()=>{
+    const counts = collectCounts();
+    const totalValue = counts.reduce((s,c)=>s+c.countedValue, 0);
+    const date = modal.querySelector("#opnameDate")?.value || existingOpname?.date || Reports.todayStr();
+    if(existingOpname){
+      await DB.updateStockOpname(existingOpname.id, { items: counts, totalValue, date });
+    } else {
+      await DB.addStockOpname({ date, branchId, status: "draft", items: counts, totalValue });
+    }
+    toast("Draft stock opname disimpan");
+    closeModal();
+    render();
+  });
+
+  modal.querySelector("[data-action='complete-stock-opname']")?.addEventListener("click", async ()=>{
+    if(!confirm("Selesaikan stock opname ini? Nilai persediaan akan disesuaikan mengikuti hasil hitungan fisik ini.")) return;
+    const counts = collectCounts();
+    const totalValue = counts.reduce((s,c)=>s+c.countedValue, 0);
+    const date = modal.querySelector("#opnameDate")?.value || existingOpname?.date || Reports.todayStr();
+
+    for(const c of counts){
+      await DB.updateInventoryItem(c.itemId, { qty: c.countedQty, totalValue: c.countedValue });
+    }
+    if(existingOpname){
+      await DB.updateStockOpname(existingOpname.id, { items: counts, totalValue, date, status: "selesai", completedAt: Date.now(), completedBy: state.user?.uid });
+    } else {
+      await DB.addStockOpname({ date, branchId, status: "selesai", items: counts, totalValue, completedAt: Date.now(), completedBy: state.user?.uid });
+    }
+    toast("Stock opname selesai — nilai persediaan disesuaikan");
+    closeModal();
+    render();
+  });
 }
 
 function openSalaryConfigModal(staffMember){
@@ -1180,19 +1371,22 @@ async function pageLaporan(){
       </div>
       ${renderNeracaReceipt(neraca)}
     `;
-  } else {
+  } else if(state.reportTab === "aset-tetap"){
     body = await renderAsetTetapSection();
+  } else {
+    body = await renderPersediaanSection();
   }
 
   return `
     ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchId ? (state.branches.find(b=>b.id===activeBranchId)?.name||'') : 'Semua Cabang')}</p>` : ''}
-    <div class="btn-row no-print" style="margin-bottom:14px;">
+    <div class="btn-row no-print" style="margin-bottom:14px; flex-wrap:wrap;">
       ${tabBtn("labarugi","Laba Rugi")}
       ${tabBtn("neraca","Neraca")}
       ${tabBtn("aset-tetap","Aset Tetap")}
+      ${tabBtn("persediaan","Persediaan")}
     </div>
     ${body}
-    ${state.reportTab !== "aset-tetap" ? `
+    ${(state.reportTab === "labarugi" || state.reportTab === "neraca") ? `
       <div class="btn-row no-print">
         <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
         <button class="btn btn-outline btn-block" data-action="export-csv">${ICONS.download} Unduh CSV</button>
@@ -1564,6 +1758,8 @@ async function pagePengaturan(){
     <h3 class="section-title">Tentang</h3>
     <div class="card small muted">
       LAMAN v1.0 — aplikasi manajemen usaha laundry: kasir, laporan keuangan, kurir & ongkir, absensi, dan gaji pegawai. Data tersimpan online (Firestore) dan tersinkron ke semua perangkat yang login.
+      <br><br>
+      Peta & pencarian alamat oleh OpenStreetMap contributors. Perhitungan jarak jalan oleh <a href="https://openrouteservice.org" target="_blank" rel="noopener">openrouteservice.org</a> by HeiGIT.
     </div>
   `;
 
@@ -2328,6 +2524,19 @@ function payslipDetailHtml(s){
       ` : ""}
       <div class="r-row total" style="margin-top:10px;"><span>TOTAL GAJI DITERIMA</span><span class="val num">${Reports.formatRupiah(s.totalPay)}</span></div>
     </div>
+
+    <div class="card" style="margin-top:14px;">
+      ${s.paidStatus ? `
+        <p class="small" style="font-weight:700; color:var(--mint);">✓ Sudah Dibayar</p>
+        <p class="small muted">Dibayar tanggal ${fmtDate(s.paidDate)} — otomatis tercatat sebagai Beban Gaji di Laporan Keuangan.</p>
+      ` : state.role === "owner" ? `
+        <p class="small" style="font-weight:700; margin-bottom:10px;">Status Pembayaran</p>
+        <div class="field"><label>Tanggal Dibayarkan</label><input type="date" id="payslipPaidDate" value="${Reports.todayStr()}"></div>
+        <button class="btn btn-primary btn-block no-print" data-action="mark-payslip-paid" data-id="${s.id}">Tandai Sudah Dibayar</button>
+        <p class="small muted" style="margin-top:8px;">Begitu ditandai, otomatis tercatat sebagai transaksi Kas Keluar (Beban Gaji) di tanggal itu — masuk ke Laporan Laba Rugi.</p>
+      ` : `<p class="small muted">Belum ditandai dibayar oleh Owner.</p>`}
+    </div>
+
     <div class="btn-row no-print" style="margin-top:14px;">
       <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
       ${state.role === "owner" ? `<button class="btn btn-danger btn-block" data-action="delete-payslip" data-id="${s.id}">Hapus</button>` : ""}
@@ -2878,6 +3087,7 @@ function openOrderDetailModal(o){
     const msg = `Halo${o.customerName ? " "+o.customerName : ""}, pantau status cucianmu (termasuk foto barang) di link ini:\n${url}`;
     const phone = normalizePhone(o.customerPhone);
     const waUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    trackWaSendAndWarn();
     window.open(waUrl, "_blank");
   });
 
@@ -3038,6 +3248,7 @@ function bindCucianCardEvents(){
       const msg = `Halo${o.customerName ? " "+o.customerName : ""}, pantau status cucianmu (termasuk foto barang) di link ini:\n${url}`;
       const phone = normalizePhone(o.customerPhone);
       const waUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      trackWaSendAndWarn();
       window.open(waUrl, "_blank");
     });
   });
@@ -3101,6 +3312,7 @@ function sendOrderStatusWA(o){
   const text = encodeURIComponent(buildOrderStatusText(o));
   const phone = normalizePhone(o.customerPhone);
   const url = phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
+  trackWaSendAndWarn();
   window.open(url, "_blank");
 }
 
@@ -3138,7 +3350,7 @@ async function openAddOrderModal(){
       <div class="field-row" style="display:flex; gap:8px; align-items:flex-end;">
         <div class="field" style="flex:1; margin-bottom:0;"><label>Opsi Durasi & Harga</label><select id="kiloanTierPicker"></select></div>
         <div class="field" style="width:90px; margin-bottom:0;"><label>Berat (kg)</label><input type="number" step="0.1" id="kiloanWeight" placeholder="5"></div>
-        <button type="button" class="btn btn-outline" id="addKiloanLine" style="margin-bottom:14px;">+</button>
+        <button type="button" class="btn btn-primary" id="addKiloanLine" style="margin-bottom:0; width:44px; flex-shrink:0;">+</button>
       </div>
       <div id="kiloanCart" style="margin:10px 0;"></div>
     </div>
@@ -3162,10 +3374,10 @@ async function openAddOrderModal(){
 
     <div class="field">
       <label>Total (Rp) <span class="small muted">— otomatis, bisa diubah manual</span></label>
-      <input type="number" class="amount-input" id="ordTotal" value="0">
+      <input type="text" inputmode="numeric" class="amount-input" id="ordTotal" value="0">
     </div>
     <div class="field-row" style="display:flex; gap:10px;">
-      <div class="field" style="flex:1;"><label>Bayar (Rp)</label><input type="number" id="ordBayar" placeholder="Samakan dengan Total jika pas"></div>
+      <div class="field" style="flex:1;"><label>Bayar (Rp)</label><input type="text" inputmode="numeric" id="ordBayar" placeholder="Samakan dengan Total jika pas"></div>
       <div class="field" style="flex:1;"><label>Kembalian</label><input type="text" id="ordKembalian" value="Rp0" disabled style="background:var(--foam-white);"></div>
     </div>
 
@@ -3210,7 +3422,7 @@ async function openAddOrderModal(){
         <div class="field"><label>Kurir Bertugas</label><select id="ordCourier">${courierOptions}</select></div>
         <div class="field" style="margin-bottom:0;">
           <label>Ongkos Kirim (Rp)</label>
-          <input type="number" id="ordDeliveryFee" placeholder="0">
+          <input type="text" inputmode="numeric" id="ordDeliveryFee" placeholder="0">
           <div id="deliveryFeeHint" class="small muted" style="margin-top:6px;"></div>
         </div>
       </div>
@@ -3350,10 +3562,11 @@ async function openAddOrderModal(){
   }
 
   function recalcKembalian(){
-    const total = parseFloat(modal.querySelector("#ordTotal").value) || 0;
-    const bayar = parseFloat(modal.querySelector("#ordBayar").value);
+    const total = parseThousands(modal.querySelector("#ordTotal").value);
+    const bayarStr = modal.querySelector("#ordBayar").value.trim();
     const kembalianField = modal.querySelector("#ordKembalian");
-    if(isNaN(bayar)){ kembalianField.value = "Rp0"; return; }
+    if(!bayarStr){ kembalianField.value = "Rp0"; return; }
+    const bayar = parseThousands(bayarStr);
     const change = bayar - total;
     kembalianField.value = Reports.formatRupiah(change);
     kembalianField.style.color = change < 0 ? "var(--rose)" : "";
@@ -3376,9 +3589,9 @@ async function openAddOrderModal(){
       const subType = modal.querySelector("#ordSubTypeSelf").value;
       total = computeTotal(pricing, "self-service", subType, 0);
     }
-    const deliveryFee = parseFloat(modal.querySelector("#ordDeliveryFee")?.value) || 0;
+    const deliveryFee = parseThousands(modal.querySelector("#ordDeliveryFee")?.value);
     total += deliveryFee;
-    modal.querySelector("#ordTotal").value = Math.round(total);
+    modal.querySelector("#ordTotal").value = formatThousands(Math.round(total));
     recalcKembalian();
   }
 
@@ -3433,6 +3646,9 @@ async function openAddOrderModal(){
     });
   });
   modal.querySelector("#ordSubTypeSelf").addEventListener("change", recalcTotal);
+  attachThousandsInput(modal.querySelector("#ordTotal"));
+  attachThousandsInput(modal.querySelector("#ordBayar"));
+  attachThousandsInput(modal.querySelector("#ordDeliveryFee"));
   modal.querySelector("#ordBayar").addEventListener("input", recalcKembalian);
 
   const courierToggle = modal.querySelector("#ordCourierToggle");
@@ -3470,16 +3686,23 @@ async function openAddOrderModal(){
   let pickupLoc = null;
   let deliveryLoc = null;
 
-  function applyAutoFee(){
+  async function applyAutoFee(){
     const loc = deliveryLoc || pickupLoc;
     if(!loc || !branchDeliverySettings?.lat){ return; }
-    const distanceKm = haversineKm(branchDeliverySettings.lat, branchDeliverySettings.lng, loc.lat, loc.lng);
-    const fee = computeAutoDeliveryFee(distanceKm, branchDeliverySettings);
-    modal.querySelector("#ordDeliveryFee").value = fee;
     const hint = modal.querySelector("#deliveryFeeHint");
+    hint.textContent = "Menghitung jarak...";
+
+    let distanceKm = await roadDistanceKm(branchDeliverySettings.lat, branchDeliverySettings.lng, loc.lat, loc.lng);
+    const isRoadDistance = distanceKm !== null;
+    if(distanceKm === null){
+      distanceKm = haversineKm(branchDeliverySettings.lat, branchDeliverySettings.lng, loc.lat, loc.lng);
+    }
+    const fee = computeAutoDeliveryFee(distanceKm, branchDeliverySettings);
+    modal.querySelector("#ordDeliveryFee").value = formatThousands(fee);
+    const distanceLabel = `${distanceKm.toFixed(1)} km${isRoadDistance ? " (jarak jalan)" : " (garis lurus)"}`;
     hint.textContent = fee > 0
-      ? `Jarak ${distanceKm.toFixed(1)} km dari cabang (radius gratis ${branchDeliverySettings.freeRadiusKm}km) — ongkir otomatis: ${Reports.formatRupiah(fee)}`
-      : `Jarak ${distanceKm.toFixed(1)} km dari cabang — masih dalam radius gratis (${branchDeliverySettings.freeRadiusKm}km)`;
+      ? `Jarak ${distanceLabel} dari cabang (radius gratis ${branchDeliverySettings.freeRadiusKm}km) — ongkir otomatis: ${Reports.formatRupiah(fee)}`
+      : `Jarak ${distanceLabel} dari cabang — masih dalam radius gratis (${branchDeliverySettings.freeRadiusKm}km)`;
     recalcTotal();
   }
 
@@ -3593,9 +3816,9 @@ async function openAddOrderModal(){
     const customerName = modal.querySelector("#ordCustName").value.trim();
     const customerPhone = modal.querySelector("#ordCustPhone").value.trim();
     const userNote = modal.querySelector("#ordNote").value.trim();
-    let total = parseFloat(modal.querySelector("#ordTotal").value);
+    let total = parseThousands(modal.querySelector("#ordTotal").value);
     const bayarRaw = modal.querySelector("#ordBayar").value;
-    const amountPaid = bayarRaw === "" ? total : parseFloat(bayarRaw);
+    const amountPaid = bayarRaw === "" ? total : parseThousands(bayarRaw);
 
     if(!customerName){ toast("Isi nama pelanggan", "warn"); return; }
     if(isNaN(total) || total < 0){ toast("Total tidak valid", "warn"); return; }
@@ -3667,7 +3890,7 @@ async function openAddOrderModal(){
     if(estimatedReadyAt){ txRecord.estimatedReadyAt = estimatedReadyAt; txRecord.durationLabel = durationLabel; }
     if(photoUrls.length > 0){ txRecord.hasPhotos = true; txRecord.photoCount = photoUrls.length; }
     if(modal.querySelector("#ordCourierToggle").checked){
-      const fee = parseFloat(modal.querySelector("#ordDeliveryFee").value) || 0;
+      const fee = parseThousands(modal.querySelector("#ordDeliveryFee").value);
       if(fee > 0) txRecord.deliveryFee = fee;
     }
 
@@ -3688,7 +3911,7 @@ async function openAddOrderModal(){
       const needsDeliveryChecked = modal.querySelector("#ordNeedsDelivery").checked;
       const courierUid = modal.querySelector("#ordCourier").value;
       const courierStaff = staffList.find(s=>s.uid===courierUid);
-      const deliveryFee = parseFloat(modal.querySelector("#ordDeliveryFee").value) || 0;
+      const deliveryFee = parseThousands(modal.querySelector("#ordDeliveryFee").value);
       if(needsPickupChecked){
         orderPayload.needsPickup = true;
         orderPayload.pickupAddress = modal.querySelector("#ordPickupAddress").value.trim();
@@ -4235,6 +4458,23 @@ function haversineKm(lat1, lng1, lat2, lng2){
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+/** Actual driving distance via OpenRouteService (free tier, commercial-use allowed).
+ *  Returns km, or null if no API key configured or the request fails —
+ *  callers should fall back to haversineKm() in that case. */
+async function roadDistanceKm(lat1, lng1, lat2, lng2){
+  if(!ORS_API_KEY) return null;
+  try{
+    const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${ORS_API_KEY}&start=${lng1},${lat1}&end=${lng2},${lat2}`;
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    const data = await res.json();
+    const meters = data?.features?.[0]?.properties?.summary?.distance;
+    return typeof meters === "number" ? meters/1000 : null;
+  }catch(e){
+    return null;
+  }
+}
+
 function computeAutoDeliveryFee(distanceKm, deliverySettings){
   if(!deliverySettings || !deliverySettings.freeRadiusKm) return 0;
   const excess = distanceKm - deliverySettings.freeRadiusKm;
@@ -4461,10 +4701,27 @@ function buildReceiptText(t){
   return lines.join("\n");
 }
 
+const WA_SEND_LOG_KEY = "laman_wa_send_log";
+const WA_WARN_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const WA_WARN_THRESHOLD = 5; // more than this many sends in the window triggers a nudge
+
+function trackWaSendAndWarn(){
+  let log = [];
+  try{ log = JSON.parse(localStorage.getItem(WA_SEND_LOG_KEY) || "[]"); }catch(e){ log = []; }
+  const now = Date.now();
+  log = log.filter(ts => now - ts < WA_WARN_WINDOW_MS);
+  log.push(now);
+  try{ localStorage.setItem(WA_SEND_LOG_KEY, JSON.stringify(log)); }catch(e){}
+  if(log.length > WA_WARN_THRESHOLD){
+    toast(`Sudah ${log.length}x kirim WA dalam 10 menit terakhir — beri jeda sebentar supaya akun WA Business tidak dianggap spam otomatis.`, "warn", 5000);
+  }
+}
+
 function sendReceiptWA(t){
   const text = encodeURIComponent(buildReceiptText(t));
   const phone = normalizePhone(t.customerPhone);
   const url = phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
+  trackWaSendAndWarn();
   window.open(url, "_blank");
 }
 
@@ -4956,7 +5213,7 @@ function openAddTxModal(defaultType){
     ${defaultType==='in' ? `<p class="small muted" style="margin:-6px 0 14px;">Untuk pendapatan cuci kiloan/self-service, gunakan menu <b>Cucian</b> → harga & pesanan sekaligus tercatat di sana.</p>` : ""}
     <div class="field">
       <label>Jumlah (Rp)</label>
-      <input type="number" inputmode="numeric" class="amount-input" id="txAmount" placeholder="0" min="0">
+      <input type="text" inputmode="numeric" class="amount-input" id="txAmount" placeholder="0">
     </div>
     <div class="field">
       <label>Kategori</label>
@@ -4987,14 +5244,44 @@ function openAddTxModal(defaultType){
       </div>
     </div>
 
+    <div id="inventoryDetailFields" style="display:none;">
+      <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px; margin-top:-6px;">
+        <p class="small" style="font-weight:700; margin-bottom:10px;">📦 Rincian Persediaan</p>
+        <div class="field">
+          <label>Jenis Persediaan</label>
+          <select id="txInvCategory">
+            ${Object.entries(INVENTORY_CATEGORIES).map(([id,c])=>`<option value="${id}">${c.label}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>Nama Barang</label>
+          <input type="text" id="txInvName" list="txInvNameList" placeholder="Contoh: Deterjen Cair 5L (ketik baru atau pilih yang sudah ada)">
+          <datalist id="txInvNameList"></datalist>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <div class="field" style="flex:1;"><label>Jumlah</label><input type="number" id="txInvQty" value="1" min="0.01" step="0.01"></div>
+          <div class="field" style="flex:1;"><label>Satuan</label><input type="text" id="txInvUnit" placeholder="pcs, liter, kg" value="pcs"></div>
+        </div>
+        <p class="small muted" style="margin-bottom:0;">Harga satuan otomatis dihitung dari Jumlah (Rp) di atas ÷ Jumlah barang.</p>
+      </div>
+    </div>
+
     <button class="btn btn-primary btn-block" data-action="save-tx">Simpan Transaksi</button>
   `);
 
+  const inventoryFieldsBox = modal.querySelector("#inventoryDetailFields");
+  DB.getInventoryItems().then(items=>{
+    modal.querySelector("#txInvNameList").innerHTML = [...new Set(items.map(i=>i.name))].map(n=>`<option value="${escapeHtml(n)}"></option>`).join("");
+    modal._inventoryItemsCache = items;
+  });
+
+  attachThousandsInput(modal.querySelector("#txAmount"));
   const assetFieldsBox = modal.querySelector("#assetDetailFields");
   let currentType = defaultType;
   function toggleAssetFields(){
     const categoryId = modal.querySelector("#txCategory").value;
     assetFieldsBox.style.display = (currentType === "out" && categoryId === "beli-aset") ? "block" : "none";
+    inventoryFieldsBox.style.display = (currentType === "out" && categoryId === "beli-persediaan") ? "block" : "none";
   }
   modal.querySelector("#txCategory").addEventListener("change", toggleAssetFields);
   modal.querySelector("#txAssetCategory").addEventListener("change", (e)=>{
@@ -5019,7 +5306,7 @@ function openAddTxModal(defaultType){
   });
 
   modal.querySelector("[data-action='save-tx']").addEventListener("click", async ()=>{
-    const amount = parseFloat(modal.querySelector("#txAmount").value);
+    const amount = parseThousands(modal.querySelector("#txAmount").value);
     const categoryId = modal.querySelector("#txCategory").value;
     const date = modal.querySelector("#txDate").value;
     const note = modal.querySelector("#txNote").value.trim();
@@ -5047,6 +5334,33 @@ function openAddTxModal(defaultType){
         usefulLifeYears, salvageValue, branchId
       });
       toast("Transaksi & data aset tetap tersimpan");
+    } else if(currentType === "out" && categoryId === "beli-persediaan"){
+      const invCategory = modal.querySelector("#txInvCategory").value;
+      const invName = modal.querySelector("#txInvName").value.trim() || note || "Persediaan";
+      const invUnit = modal.querySelector("#txInvUnit").value.trim() || "pcs";
+      const qty = parseFloat(modal.querySelector("#txInvQty").value) || 1;
+      const unitCost = amount / qty;
+
+      const existingItems = modal._inventoryItemsCache || await DB.getInventoryItems();
+      let item = existingItems.find(i => i.name.toLowerCase() === invName.toLowerCase() && i.category === invCategory);
+      let itemId;
+      if(item){
+        const newQty = (item.qty||0) + qty;
+        const newTotalValue = (item.totalValue||0) + amount;
+        const newAvgCost = newQty > 0 ? newTotalValue / newQty : unitCost;
+        await DB.updateInventoryItem(item.id, { qty: newQty, avgUnitCost: newAvgCost, totalValue: newTotalValue });
+        itemId = item.id;
+      } else {
+        itemId = await DB.addInventoryItem({
+          category: invCategory, name: invName, unit: invUnit,
+          qty, avgUnitCost: unitCost, totalValue: amount, branchId
+        });
+      }
+      await DB.addInventoryPurchase({
+        itemId, itemName: invName, category: invCategory,
+        qty, unitCost, total: amount, date, branchId
+      });
+      toast("Transaksi & stok persediaan tersimpan");
     } else {
       toast("Transaksi tersimpan");
     }
@@ -5234,6 +5548,24 @@ function bindPageEvents(){
       if(!confirm("Hapus aset ini dari daftar? (Transaksi kas yang sudah tercatat sebelumnya tidak ikut terhapus)")) return;
       await DB.deleteAsset(btn.dataset.id);
       toast("Aset dihapus");
+      render();
+    });
+  });
+  const startOpnameBtn = document.querySelector("[data-action='start-stock-opname']");
+  if(startOpnameBtn) startOpnameBtn.addEventListener("click", ()=> openStockOpnameModal(null));
+  document.querySelectorAll("[data-action='view-stock-opname']").forEach(card=>{
+    card.addEventListener("click", async ()=>{
+      const opnames = await DB.getAllStockOpnames();
+      const o = opnames.find(x=>x.id===card.dataset.id);
+      if(o) openStockOpnameModal(o);
+    });
+  });
+  document.querySelectorAll("[data-action='delete-inventory-item']").forEach(btn=>{
+    btn.addEventListener("click", async (e)=>{
+      e.stopPropagation();
+      if(!confirm("Hapus barang persediaan ini dari daftar? (Riwayat pembelian sebelumnya tidak ikut terhapus)")) return;
+      await DB.deleteInventoryItem(btn.dataset.id);
+      toast("Barang persediaan dihapus");
       render();
     });
   });
