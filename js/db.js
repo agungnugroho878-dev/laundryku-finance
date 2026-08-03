@@ -71,7 +71,8 @@ const DB = {
       name, ownerUid, createdAt: Date.now(),
       subscriptionStatus: "trial",
       trialStartDate,
-      trialDays: 14
+      trialDays: 14,
+      plan: "rintisan"
     });
     await fs.collection("businessSettings").doc(ref.id).set({ businessName: name });
     return ref.id;
@@ -90,7 +91,8 @@ const DB = {
     return {
       status: data.subscriptionStatus || "trial",
       trialStartDate: data.trialStartDate || null,
-      trialDays: data.trialDays || 14
+      trialDays: data.trialDays || 14,
+      plan: data.plan || "rintisan"
     };
   },
 
@@ -103,6 +105,38 @@ const DB = {
 
   async updateBusinessSubscription(businessId, fields){
     await fs.collection("businesses").doc(businessId).update(fields);
+    return true;
+  },
+
+  /** Admin-only: permanently deletes a business and ALL its data across every
+   *  business-scoped collection. Used to clean up abandoned/duplicate test
+   *  accounts from the "Kelola Langganan" admin panel. */
+  /** Admin-only: quick counts to help tell a real (in-use) business apart
+   *  from an empty abandoned/duplicate test signup. */
+  async getBusinessDataCounts(businessId){
+    const [txAll, orderAll, memberAll] = await Promise.all([
+      fs.collection("transactions").where("businessId","==",businessId).get(),
+      fs.collection("orders").where("businessId","==",businessId).get(),
+      fs.collection("members").where("businessId","==",businessId).get()
+    ]);
+    return { transactions: txAll.size, orders: orderAll.size, members: memberAll.size };
+  },
+
+  async deleteBusinessCompletely(businessId){
+    const scopedCollections = [
+      "transactions", "members", "categories", "orders", "branches", "assets",
+      "attendance", "payslips", "leaveRequests",
+      "inventoryItems", "inventoryPurchases", "stockOpnames", "users"
+    ];
+    for(const name of scopedCollections){
+      const snap = await fs.collection(name).where("businessId","==",businessId).get();
+      if(snap.empty) continue;
+      const batch = fs.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    await fs.collection("businessSettings").doc(businessId).delete().catch(()=>{});
+    await fs.collection("businesses").doc(businessId).delete();
     return true;
   },
 

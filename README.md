@@ -41,9 +41,9 @@ service cloud.firestore {
     function isSuperAdmin() { return isSignedIn() && request.auth.token.email == 'agungnugroho878@gmail.com'; }
 
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || sameBusiness(resource.data.businessId));
+      allow read: if isSignedIn() && (request.auth.uid == uid || sameBusiness(resource.data.businessId) || isSuperAdmin());
       allow create: if isSignedIn() && request.auth.uid == uid;
-      allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
+      allow update, delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /businesses/{bizId} {
@@ -55,87 +55,94 @@ service cloud.firestore {
 
     match /branches/{branchId} {
       allow get: if isSignedIn();
-      allow list: if sameBusiness(resource.data.businessId);
+      allow list: if sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
-      allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
+      allow update, delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /businessSettings/{bizId} {
       allow get: if true;
       allow list: if false;
-      allow write: if sameBusiness(bizId);
+      allow write, delete: if sameBusiness(bizId) || isSuperAdmin();
     }
 
     match /transactions/{id} {
-      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create: if isSignedIn() && sameBusiness(request.resource.data.businessId);
-      allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
+      allow update, delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /categories/{id} {
-      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
-      allow delete: if isSignedIn() && sameBusiness(resource.data.businessId);
+      allow delete: if (isSignedIn() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /members/{id} {
-      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
-      allow delete: if isSignedIn() && sameBusiness(resource.data.businessId);
+      allow delete: if (isSignedIn() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /orders/{id} {
       allow get: if true;
-      allow list: if sameBusiness(resource.data.businessId);
+      allow list: if sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create, update: if isSignedIn() && sameBusiness(request.resource.data.businessId);
-      allow delete: if isOwner() && sameBusiness(resource.data.businessId);
+      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /assets/{id} {
-      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create, update: if isOwner() && sameBusiness(request.resource.data.businessId);
-      allow delete: if isOwner() && sameBusiness(resource.data.businessId);
+      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /inventoryItems/{id} {
-      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
-      allow update, delete: if isOwner() && sameBusiness(resource.data.businessId);
+      allow update, delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /inventoryPurchases/{id} {
-      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
+      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /stockOpnames/{id} {
-      allow read: if resource == null || sameBusiness(resource.data.businessId);
+      allow read: if resource == null || sameBusiness(resource.data.businessId) || isSuperAdmin();
       allow create: if isSignedIn() && sameBusiness(request.resource.data.businessId);
       allow update: if isSignedIn() && sameBusiness(resource.data.businessId);
-      allow delete: if isOwner() && sameBusiness(resource.data.businessId);
+      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /attendance/{id} {
       allow read: if isOwner() && sameBusiness(resource.data.businessId)
-                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId));
+                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId))
+                  || isSuperAdmin();
       allow list: if isOwner() && sameBusiness(resource.data.businessId)
-                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId));
+                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId))
+                  || isSuperAdmin();
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && sameBusiness(request.resource.data.businessId);
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId);
+      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /payslips/{id} {
       allow read, list: if isOwner() && sameBusiness(resource.data.businessId)
-                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId));
+                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId))
+                  || isSuperAdmin();
       allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
-      allow delete: if isOwner() && sameBusiness(resource.data.businessId);
+      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
     match /leaveRequests/{id} {
       allow read, list: if isOwner() && sameBusiness(resource.data.businessId)
-                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId));
+                  || (isSignedIn() && resource.data.userId == request.auth.uid && sameBusiness(resource.data.businessId))
+                  || isSuperAdmin();
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && sameBusiness(request.resource.data.businessId);
-      allow update: if isOwner() && sameBusiness(resource.data.businessId);
+      allow update: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
+      allow delete: if (isOwner() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
   }
 }
@@ -231,7 +238,9 @@ Setelah itu, setiap kali ongkir otomatis dihitung (di form Pesanan Cucian Baru),
 >
 > **Halaman Atur juga dirapikan** dengan pola yang sama — bukan 1 halaman panjang lagi, sekarang jadi menu kartu: **Profil Usaha, Harga Layanan, Promo & Loyalty, Cabang, Anggota Tim, Saldo Awal, Lainnya** (Printer/Foto/Data/Tentang) — tinggal ketuk salah satu, ada tombol "Kembali" untuk balik ke menu.
 >
-> **Beranda**: info cabang sekarang jadi 1 kartu dengan Saldo Kas (gradasi biru, tidak dobel lagi). Di atasnya ada **"Status Cucian"** (5 kotak: Perlu Dijemput, Belum Diproses, Sedang Diproses, Siap Diambil/Antar, Terlambat) — **klik salah satu kotak untuk langsung lihat daftar pesanan yang SESUAI status itu saja** (bukan semua pesanan). Ada tombol "Hapus Filter" untuk kembali ke tampilan normal.
+> **Beranda**: di atasnya ada **"Status Cucian"** (5 kotak: Perlu Dijemput, Belum Diproses, Sedang Diproses, Siap Diambil/Antar, Terlambat) — **klik salah satu kotak untuk langsung lihat daftar pesanan yang SESUAI status itu saja** (bukan semua pesanan). Ada tombol "Hapus Filter" untuk kembali ke tampilan normal.
+>
+> **Info & pindah cabang** sekarang ada di **pojok kanan atas header** (sejajar dengan logo LAMAN), tampil di SEMUA halaman — nama cabang + alamatnya. Kalau usaha punya lebih dari 1 cabang, bagian itu otomatis jadi **dropdown** untuk Owner pindah cabang (Semua Cabang/cabang tertentu) langsung dari situ, tidak perlu lagi baris terpisah di tiap halaman seperti sebelumnya. Laporan (Laba Rugi, Neraca, Aset Tetap, Persediaan) juga otomatis menampilkan nama & alamat cabang yang sedang aktif di kop laporannya.
 1b. **Multi-Cabang**: setiap usaha otomatis punya 1 cabang ("Cabang Utama") sejak awal. Kalau usaha Anda lebih dari 1 lokasi:
    - **Owner**: buka **Atur → Cabang** → **"+ Tambah Cabang"** → isi nama & alamat cabang baru
    - Tiap cabang punya **kode undangan sendiri**, **harga layanan sendiri**, dan **kas/laporan sendiri** — tapi tetap ada tampilan **gabungan (Semua Cabang)** untuk Owner
@@ -326,6 +335,20 @@ Setelah itu, setiap kali ongkir otomatis dihitung (di form Pesanan Cucian Baru),
     - Usaha yang sudah ditandai **"Aktif"** tidak akan pernah terkunci otomatis oleh sistem tanggal, berapa pun lama masa aktifnya, sampai Anda ubah manual lagi
 
     > ⚠️ **Usaha lama (dibuat sebelum fitur ini ada, termasuk Wash Space Anda sendiri)** tidak otomatis punya tanggal trial, jadi TIDAK akan ke-lock — tapi supaya rapi, buka **Kelola Langganan** dan klik **"Aktifkan Langganan"** untuk usaha Anda sendiri secara manual sekali saja.
+
+9j. **Paket Langganan Berdasarkan Jumlah Cabang** (semua paket dapat SEMUA fitur yang sama, cuma beda batas cabang):
+    | Paket | Batas Cabang | Harga/bulan |
+    |---|---|---|
+    | Rintisan | 1 cabang | Rp99.000 |
+    | Berkembang | 5 cabang | Rp199.000 |
+    | Jaringan | Tanpa batas | Rp399.000 |
+    - Usaha baru otomatis mulai dari **Paket Rintisan**
+    - Begitu usaha coba tambah cabang **melebihi batas paketnya**, muncul popup "Batas Paket Tercapai" dengan tombol langsung chat WhatsApp untuk upgrade — cabang baru **tidak akan tersimpan** sampai paketnya di-upgrade
+    - Info paket & sisa kuota cabang juga tampil di **Atur → Cabang** (buat Owner usaha itu sendiri lihat status mereka)
+    - **Ganti paket usaha** dari **Kelola Langganan** (admin) — pilih paket baru dari dropdown di tiap kartu usaha, langsung tersimpan
+    - Harga di atas cuma **acuan** yang ditampilkan ke Owner usaha — bisa diubah kapan saja lewat variabel `PLAN_CONFIG` di `js/app.js` tanpa perlu ubah struktur data
+
+    > ⚠️ **Usaha lama yang sudah punya beberapa cabang sebelum fitur ini ada** (termasuk kalau Wash Space Anda sudah multi-cabang) otomatis dianggap Paket Rintisan (1 cabang) secara default — cabang yang SUDAH ADA tidak akan dihapus/terganggu, tapi mereka tidak akan bisa **tambah cabang baru** sampai paketnya disesuaikan manual lewat Kelola Langganan.
 
 10. **Foto barang (opsional, tidak ada batas jumlah)**: saat isi pesanan, ada 2 cara ambil foto:
     - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup

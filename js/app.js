@@ -165,11 +165,44 @@ function renderNav(){
   });
 }
 
+function updateHeaderBranchInfo(){
+  const el = document.getElementById("headerBranchInfo");
+  if(!el) return;
+  const canSwitch = state.role === "owner" && state.branches.length > 1;
+
+  if(canSwitch){
+    el.innerHTML = `
+      <select id="headerBranchSwitch" class="hbi-select">
+        <option value="all" ${state.currentBranchId==='all'?'selected':''}>Semua Cabang (Gabungan)</option>
+        ${state.branches.map(b=>`<option value="${b.id}" ${state.currentBranchId===b.id?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+      </select>
+    `;
+    document.getElementById("headerBranchSwitch").addEventListener("change", (e)=>{
+      state.currentBranchId = e.target.value;
+      setActiveBranch(state.currentBranchId !== "all" ? state.currentBranchId : (state.branches[0]?.id || null));
+      render();
+    });
+    return;
+  }
+
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
+  const b = activeBranchId ? state.branches.find(x=>x.id===activeBranchId) : state.branches[0];
+  if(b){
+    el.innerHTML = `
+      <div class="hbi-name">${escapeHtml(b.name)}</div>
+      ${b.address ? `<div class="hbi-address">${escapeHtml(b.address)}</div>` : ''}
+    `;
+  } else {
+    el.innerHTML = `<div class="hbi-name">Semua Cabang</div>`;
+  }
+}
+
 async function render(){
   if(state.page === "laporan" && state.role !== "owner") state.page = "dashboard";
   renderNav();
   initFabQuickAction();
   document.getElementById("bizName").textContent = state.businessName;
+  updateHeaderBranchInfo();
   const main = document.getElementById("appMain");
   main.classList.toggle("wide", state.page === "cucian");
   document.getElementById("appBody")?.classList.toggle("wide", state.page === "cucian");
@@ -209,12 +242,6 @@ async function render(){
         state.dashboardPeriod = btn.dataset.period;
         render();
       });
-    });
-    const branchSwitcherSelect = document.getElementById("branchSwitcherSelect");
-    if(branchSwitcherSelect) branchSwitcherSelect.addEventListener("change", ()=>{
-      state.currentBranchId = branchSwitcherSelect.value;
-      setActiveBranch(state.currentBranchId !== "all" ? state.currentBranchId : (state.branches[0]?.id || null));
-      render();
     });
   }
   if(state.page === "cucian"){ bindCucianControls(); renderCucianList(); }
@@ -265,6 +292,22 @@ async function render(){
         });
         toast("Trial diperpanjang 7 hari");
         render();
+      });
+    });
+    document.querySelectorAll("[data-action='delete-business-admin']").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const name = btn.dataset.name;
+        const typed = prompt(`Tindakan ini PERMANEN dan menghapus SEMUA data usaha ini (transaksi, cucian, member, pegawai, dll).\n\nUntuk konfirmasi, ketik ulang persis nama usahanya:\n"${name}"`);
+        if(typed !== name){ toast("Dibatalkan — nama tidak cocok", "warn"); return; }
+        await DB.deleteBusinessCompletely(btn.dataset.id);
+        toast("Usaha & semua datanya berhasil dihapus");
+        render();
+      });
+    });
+    document.querySelectorAll(".plan-select").forEach(sel=>{
+      sel.addEventListener("change", async ()=>{
+        await DB.updateBusinessSubscription(sel.dataset.id, { plan: sel.value });
+        toast(`Paket diubah ke ${PLAN_CONFIG[sel.value]?.label}`);
       });
     });
   }
@@ -623,16 +666,6 @@ async function pageDashboard(){
   const trend = await getServiceTrend(6, activeBranchId);
   const trendMax = Math.max(1, ...trend.map(m => m.kiloan + m.satuan + m["self-service"]));
 
-  const branchSwitcher = state.branches.length > 1 ? `
-    <div class="branch-switcher no-print">
-      <div class="branch-label-icon">${ICONS.store}</div>
-      <select id="branchSwitcherSelect">
-        <option value="all" ${state.currentBranchId==='all'?'selected':''}>Semua Cabang (Gabungan)</option>
-        ${state.branches.map(b=>`<option value="${b.id}" ${state.currentBranchId===b.id?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
-      </select>
-    </div>
-  ` : "";
-
   let opActiveOrders = await DB.getActiveOrders();
   let opSelesaiOrders = await getSelesaiOrdersForDisplay();
   if(activeBranchId){
@@ -673,12 +706,7 @@ async function pageDashboard(){
   `;
 
   return `
-    ${branchSwitcher}
     <div class="hero-balance">
-      <div class="hero-branch-row">
-        <div class="branch-label-icon">${ICONS.store}</div>
-        <span>${escapeHtml(activeBranchId ? (state.branches.find(b=>b.id===activeBranchId)?.name||'') : (state.branches.length===1 ? state.branches[0].name : 'Semua Cabang'))}</span>
-      </div>
       <div class="card-title">Saldo Kas Saat Ini</div>
       <div class="amount num" data-countup="${neraca.kas}">Rp0</div>
       <div class="sub">
@@ -804,7 +832,6 @@ async function pageTransaksi(){
   const pageItems = txs.slice(start, start + pageSize);
 
   return `
-    ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchName||'')}</p>` : ''}
     <div class="btn-row" style="margin-bottom:14px;">
       <button class="btn btn-primary btn-block" data-action="add" data-type="in">${ICONS.plus} Kas Masuk</button>
       <button class="btn btn-outline btn-block" data-action="add" data-type="out">${ICONS.plus} Kas Keluar</button>
@@ -916,6 +943,13 @@ async function renderAsetTetapSection(){
   const branchMap = Object.fromEntries(state.branches.map(b=>[b.id,b.name]));
 
   return `
+    <div class="receipt" style="margin-bottom:14px;">
+      <div class="r-head">
+        <div class="biz">${state.businessName}</div>
+        <div class="small muted" style="margin:2px 0 4px;">${reportBranchLabel()}</div>
+        <div class="period">Laporan Aset Tetap<br>Per ${fmtDate(today)}</div>
+      </div>
+    </div>
     <div class="card no-print">
       <div class="card-title">Ringkasan Aset Tetap</div>
       <div class="r-row"><span>Total Harga Perolehan</span><span class="val num">${Reports.formatRupiah(totalCost)}</span></div>
@@ -967,6 +1001,13 @@ async function renderPersediaanSection(){
   const lastOpname = opnames.find(o => o.status === "selesai");
 
   return `
+    <div class="receipt" style="margin-bottom:14px;">
+      <div class="r-head">
+        <div class="biz">${state.businessName}</div>
+        <div class="small muted" style="margin:2px 0 4px;">${reportBranchLabel()}</div>
+        <div class="period">Laporan Persediaan<br>Per ${fmtDate(Reports.todayStr())}</div>
+      </div>
+    </div>
     <div class="card no-print">
       <div class="card-title">Ringkasan Persediaan</div>
       <div class="r-row total"><span>Total Nilai Persediaan${lastOpname ? ' (hasil Stock Opname)' : ' (perkiraan sistem)'}</span><span class="val num">${Reports.formatRupiah(totalValue)}</span></div>
@@ -1380,7 +1421,7 @@ function openAssetModal(existing){
 
 async function pageLaporan(){
   const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
-  const tabBtn = (id,label) => `<button class="btn ${state.reportTab===id?'btn-primary':'btn-outline'}" data-report-tab="${id}">${label}</button>`;
+  const tabBtn = (id,label) => `<button class="report-tab-btn ${state.reportTab===id?'active':''}" data-report-tab="${id}">${label}</button>`;
   let body = "";
   if(state.reportTab === "labarugi"){
     const lr = await Reports.labaRugi(state.labaRugiRange.start, state.labaRugiRange.end, activeBranchId);
@@ -1411,8 +1452,7 @@ async function pageLaporan(){
   }
 
   return `
-    ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchId ? (state.branches.find(b=>b.id===activeBranchId)?.name||'') : 'Semua Cabang')}</p>` : ''}
-    <div class="btn-row no-print" style="margin-bottom:14px; flex-wrap:wrap;">
+    <div class="report-tabs no-print">
       ${tabBtn("labarugi","Laba Rugi")}
       ${tabBtn("neraca","Neraca")}
       ${tabBtn("aset-tetap","Aset Tetap")}
@@ -1428,6 +1468,19 @@ async function pageLaporan(){
   `;
 }
 
+function reportBranchLabel(){
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
+  if(activeBranchId){
+    const b = state.branches.find(x=>x.id===activeBranchId);
+    return b ? `${escapeHtml(b.name)}${b.address ? ' — '+escapeHtml(b.address) : ''}` : '';
+  }
+  if(state.branches.length === 1){
+    const b = state.branches[0];
+    return `${escapeHtml(b.name)}${b.address ? ' — '+escapeHtml(b.address) : ''}`;
+  }
+  return "Semua Cabang (Gabungan)";
+}
+
 function renderLabaRugiReceipt(lr){
   const rows = (obj, cls) => Object.entries(obj).map(([name,amt]) =>
     `<div class="r-row"><span>${name}</span><span class="val ${cls} num">${Reports.formatRupiah(amt)}</span></div>`
@@ -1439,6 +1492,7 @@ function renderLabaRugiReceipt(lr){
     <div class="receipt">
       <div class="r-head">
         <div class="biz">${state.businessName}</div>
+        <div class="small muted" style="margin:2px 0 4px;">${reportBranchLabel()}</div>
         <div class="period">Laporan Laba Rugi<br>${periodLabel}</div>
       </div>
       <div class="r-row section">Pendapatan</div>
@@ -1459,6 +1513,7 @@ function renderNeracaReceipt(n){
     <div class="receipt">
       <div class="r-head">
         <div class="biz">${state.businessName}</div>
+        <div class="small muted" style="margin:2px 0 4px;">${reportBranchLabel()}</div>
         <div class="period">Neraca (Laporan Posisi Keuangan)<br>Per ${fmtDate(n.asOf)}</div>
       </div>
 
@@ -1691,6 +1746,12 @@ async function pagePengaturan(){
 
   sections.cabang = `
     <h3 class="section-title">Cabang (${branchList.length})</h3>
+    <div class="card" style="background:var(--foam-white);">
+      <div class="row-between">
+        <span class="small" style="font-weight:700;">Paket Anda: ${PLAN_CONFIG[state.businessPlan]?.label || 'Rintisan'}</span>
+        <span class="small">${branchList.length} / ${PLAN_CONFIG[state.businessPlan]?.maxBranches === Infinity ? '∞' : PLAN_CONFIG[state.businessPlan]?.maxBranches || 1} cabang terpakai</span>
+      </div>
+    </div>
     <div class="card">
       <p class="small muted">Tiap cabang punya kode undangan, harga layanan, dan kas sendiri-sendiri (tetap ada rekap gabungan di Beranda/Laporan). Bagikan kode cabang ke pegawai supaya mereka bergabung ke cabang yang benar.</p>
       <div style="margin-top:10px;">
@@ -2729,6 +2790,12 @@ function exportAbsensiCsv(records, staffMap, branchMap){
 
 const SUPER_ADMIN_EMAIL = "agungnugroho878@gmail.com";
 
+const PLAN_CONFIG = {
+  rintisan:   { label: "Rintisan",   maxBranches: 1,        price: 99000 },
+  berkembang: { label: "Berkembang", maxBranches: 5,        price: 199000 },
+  jaringan:   { label: "Jaringan",   maxBranches: Infinity, price: 399000 }
+};
+
 const AKUN_MENU_META = {
   transaksi:   { label: "Riwayat Transaksi", desc: "Semua catatan kas masuk/keluar", icon: ICONS.list, color: "var(--suds-blue)", bg: "#EAF2F9" },
   member:      { label: "Member",     desc: "Pelanggan & promo loyalty",     icon: ICONS.star,     color: "var(--coin)",      bg: "var(--coin-bg)" },
@@ -2743,6 +2810,11 @@ async function pageKelolaLangganan(){
   const businesses = await DB.getAllBusinessesForAdmin();
   const today = Reports.todayStr();
 
+  const counts = {};
+  await Promise.all(businesses.map(async b=>{
+    counts[b.id] = await DB.getBusinessDataCounts(b.id);
+  }));
+
   function trialInfo(b){
     if(b.subscriptionStatus === "active") return { label: "Aktif (Berlangganan)", color: "var(--mint)", daysLeft: null };
     if(!b.trialStartDate) return { label: "Trial (tanggal tidak diketahui)", color: "var(--coin)", daysLeft: null };
@@ -2755,21 +2827,34 @@ async function pageKelolaLangganan(){
 
   return `
     <h3 class="section-title">Kelola Langganan Semua Usaha</h3>
-    <p class="small muted" style="margin-bottom:14px;">Cuma Anda (admin platform) yang bisa lihat & atur halaman ini.</p>
+    <p class="small muted" style="margin-bottom:14px;">Cuma Anda (admin platform) yang bisa lihat & atur halaman ini. Cek jumlah data untuk bedakan usaha yang beneran dipakai dari yang kosong/bekas percobaan.</p>
     ${businesses.length===0 ? emptyState("Belum ada usaha terdaftar.") : businesses.map(b=>{
       const info = trialInfo(b);
+      const c = counts[b.id] || { transactions:0, orders:0, members:0 };
+      const isEmpty = c.transactions===0 && c.orders===0 && c.members===0;
       return `
-        <div class="card" style="margin-bottom:12px;">
+        <div class="card" style="margin-bottom:12px; ${isEmpty ? 'border:1.5px dashed var(--line);' : 'border:1.5px solid var(--mint);'}">
           <div class="row-between">
             <div>
               <div style="font-weight:700;">${escapeHtml(b.name)}</div>
-              <div class="small muted">Daftar: ${b.createdAt ? new Date(b.createdAt).toLocaleDateString('id-ID') : '-'}</div>
+              <div class="small muted">Daftar: ${b.createdAt ? new Date(b.createdAt).toLocaleDateString('id-ID') : '-'} · ID: ${b.id.slice(0,8)}...</div>
             </div>
             <span class="small" style="font-weight:700; color:${info.color};">${info.label}</span>
+          </div>
+          <div class="small" style="margin-top:8px; ${isEmpty ? 'color:var(--text-muted);' : 'color:var(--mint); font-weight:600;'}">
+            ${isEmpty ? '📭 Kosong — kemungkinan besar bekas percobaan, aman dihapus' : `📦 Ada data: ${c.transactions} transaksi · ${c.orders} pesanan cucian · ${c.members} member`}
+          </div>
+          <div class="field" style="margin-top:10px; margin-bottom:8px;">
+            <label class="small">Paket</label>
+            <select class="plan-select" data-id="${b.id}">
+              ${Object.entries(PLAN_CONFIG).map(([id,p])=>`<option value="${id}" ${(b.plan||'rintisan')===id?'selected':''}>${p.label} (${p.maxBranches===Infinity?'tanpa batas':p.maxBranches+' cabang'} — Rp${p.price.toLocaleString('id-ID')}/bln)</option>`).join("")}
+            </select>
           </div>
           <div class="btn-row" style="margin-top:10px;">
             ${b.subscriptionStatus !== "active" ? `<button class="btn btn-primary btn-block" data-action="activate-subscription" data-id="${b.id}" style="background:var(--mint);">Aktifkan Langganan</button>` : `<button class="btn btn-outline btn-block" data-action="revert-to-trial" data-id="${b.id}">Kembalikan ke Trial</button>`}
             <button class="btn btn-outline btn-block" data-action="extend-trial" data-id="${b.id}">+7 Hari Trial</button>
+          </div>
+          <button class="btn btn-danger btn-block" data-action="delete-business-admin" data-id="${b.id}" data-name="${escapeHtml(b.name)}" style="margin-top:8px;">Hapus Usaha Ini (Testing/Sampah)</button>
           </div>
         </div>
       `;
@@ -2895,7 +2980,6 @@ async function pageCucian(){
   ` : "";
 
   return `
-    ${state.branches.length > 1 ? `<p class="small muted" style="margin-bottom:10px;">📍 ${escapeHtml(activeBranchName||'')}</p>` : ''}
     <button class="btn btn-primary btn-block" data-action="add-order" style="margin-bottom:14px;">${ICONS.plus} Pesanan Cucian Baru</button>
     ${specialFilterBanner}
 
@@ -5793,7 +5877,22 @@ function bindPageEvents(){
   const logoutBtn = document.querySelector("[data-action='logout']");
   if(logoutBtn) logoutBtn.addEventListener("click", ()=> auth.signOut());
   const addBranchBtn = document.querySelector("[data-action='add-branch']");
-  if(addBranchBtn) addBranchBtn.addEventListener("click", ()=> openBranchModal());
+  if(addBranchBtn) addBranchBtn.addEventListener("click", async ()=>{
+    const plan = PLAN_CONFIG[state.businessPlan] || PLAN_CONFIG.rintisan;
+    const currentCount = (await DB.getBranches()).length;
+    if(currentCount >= plan.maxBranches){
+      const waMsg = encodeURIComponent(`Halo, usaha saya sudah mencapai batas ${plan.maxBranches} cabang di Paket ${plan.label}. Saya mau upgrade paket untuk tambah cabang lagi.`);
+      openModal(`
+        <h2>Batas Paket Tercapai</h2>
+        <p class="small muted" style="margin-bottom:16px;">Paket <b>${plan.label}</b> Anda maksimal ${plan.maxBranches} cabang. Upgrade paket untuk menambah cabang lagi.</p>
+        <a href="https://wa.me/6285353846073?text=${waMsg}" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="text-decoration:none; display:block; text-align:center;">Hubungi via WhatsApp untuk Upgrade</a>
+        <button class="btn btn-outline btn-block" data-action="detail-close" style="margin-top:10px;">Tutup</button>
+      `);
+      document.querySelector("[data-action='detail-close']")?.addEventListener("click", closeModal);
+      return;
+    }
+    openBranchModal();
+  });
   document.querySelectorAll("[data-action='edit-branch']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const branches = await DB.getBranches();
@@ -6225,6 +6324,7 @@ function showTrialExpiredScreen(sub, trialEnd){
 
 async function startApp(){
   const sub = await DB.getCurrentBusinessSubscription();
+  state.businessPlan = sub?.plan || "rintisan";
   if(sub && sub.status === "trial" && sub.trialStartDate){
     const trialEnd = new Date(sub.trialStartDate+"T00:00:00");
     trialEnd.setDate(trialEnd.getDate() + (sub.trialDays||14));
