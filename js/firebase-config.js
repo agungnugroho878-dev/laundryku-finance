@@ -39,4 +39,4 @@ const CLEANUP_SHARED_SECRET = "REPLACE_WITH_ANY_RANDOM_STRING";
 // TODO: daftar gratis di openrouteservice.org -> Dashboard -> Request a token (Standard)
 // lalu tempel API key-nya di sini. Kalau dikosongkan, ongkir tetap jalan pakai
 // jarak garis lurus (haversine) seperti sebelumnya -- fitur ini opsional.
-const ORS_API_KEY = "";
+const ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjVmNzU4ZGM4ZTEwMjQ1NmJhYjI0YjFhN2YxODkxYTNhIiwiaCI6Im11cm11cjY0In0=";
