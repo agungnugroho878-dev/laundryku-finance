@@ -55,6 +55,8 @@ const state = {
   reportTab: "labarugi",
   labaRugiRange: { start: Reports.startOfMonth(), end: Reports.todayStr() },
   neracaDate: Reports.todayStr(),
+  kasHarianDate: Reports.todayStr(),
+  kasHarianFloat: 0,
   cucianFilter: "belum-diproses",
   cucianSort: "deadline-asc",
   cucianSearch: "",
@@ -102,8 +104,35 @@ function openModal(innerHtml){
   const backdrop = el(`<div class="modal-backdrop"><div class="modal-sheet">${innerHtml}</div></div>`);
   backdrop.addEventListener("click",(e)=>{ if(e.target === backdrop) closeModal(); });
   document.body.appendChild(backdrop);
+  pushNavEntry();
   return backdrop;
 }
+
+/* ---------------- Back-button navigation (History API) ----------------
+ * PWAs/SPAs have no real pages, so the device/browser "Back" button has
+ * nothing to go back to by default and just exits the app. We push a
+ * history entry on every meaningful in-app navigation (page switch,
+ * settings drill-down, modal open) so pressing Back steps back through
+ * the app instead of leaving it. */
+function pushNavEntry(){
+  history.pushState({ navMarker: true }, "", location.href);
+}
+
+window.addEventListener("popstate", ()=>{
+  if(document.querySelector(".modal-backdrop")){
+    closeModal();
+    return;
+  }
+  if(state.page === "pengaturan" && state.settingsSection){
+    state.settingsSection = null;
+    render();
+    return;
+  }
+  if(state.page !== "dashboard"){
+    state.page = "dashboard";
+    render();
+  }
+});
 
 /* ---------------- Navigation ---------------- */
 
@@ -176,6 +205,7 @@ function renderNav(){
     btn.addEventListener("click", ()=>{
       state.page = btn.dataset.page;
       if(state.page === "cucian") state.cucianSpecialFilter = null;
+      pushNavEntry();
       render();
     });
   });
@@ -276,6 +306,7 @@ async function render(){
     el.addEventListener("click", ()=>{
       state.page = el.dataset.page;
       if(state.page === "pengaturan") state.settingsSection = null;
+      pushNavEntry();
       render();
     });
   });
@@ -350,12 +381,13 @@ async function render(){
         // needs-pickup / overdue span across active statuses — use the special-filter view
         state.cucianSpecialFilter = f;
       }
+      pushNavEntry();
       render();
     });
   });
   if(state.page === "pengaturan"){
     document.querySelectorAll("[data-action='goto-settings-section']").forEach(el=>{
-      el.addEventListener("click", ()=>{ state.settingsSection = el.dataset.section; render(); });
+      el.addEventListener("click", ()=>{ state.settingsSection = el.dataset.section; pushNavEntry(); render(); });
     });
     const backToSettingsBtn = document.querySelector("[data-action='back-to-settings-menu']");
     if(backToSettingsBtn) backToSettingsBtn.addEventListener("click", ()=>{ state.settingsSection = null; render(); });
@@ -1158,6 +1190,67 @@ async function renderAsetTetapSection(){
   `;
 }
 
+async function renderArusKasHarianSection(){
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
+  const date = state.kasHarianDate;
+  let txs = await DB.getTransactionsInRange(date, date);
+  if(activeBranchId) txs = txs.filter(t => t.branchId === activeBranchId);
+
+  const inTxs = txs.filter(t => t.type === "in");
+  const outTxs = txs.filter(t => t.type === "out");
+
+  const byMethod = { tunai: 0, qris: 0, transfer: 0, lainnya: 0 };
+  inTxs.forEach(t => {
+    const m = t.paymentMethod && byMethod.hasOwnProperty(t.paymentMethod) ? t.paymentMethod : "lainnya";
+    byMethod[m] += t.amount || 0;
+  });
+  const totalMasuk = inTxs.reduce((s,t)=>s+(t.amount||0), 0);
+  const totalKeluar = outTxs.reduce((s,t)=>s+(t.amount||0), 0);
+  const totalKeluarTunai = outTxs.filter(t => !t.paymentMethod || t.paymentMethod === "tunai").reduce((s,t)=>s+(t.amount||0), 0);
+  const kasTunaiSeharusnya = (state.kasHarianFloat||0) + byMethod.tunai - totalKeluarTunai;
+
+  return `
+    <div class="card no-print">
+      <div class="card-title">Tanggal</div>
+      <input type="date" id="kasHarianDateInput" value="${date}">
+    </div>
+
+    <div class="receipt" style="margin-bottom:14px;">
+      <div class="r-head">
+        <div class="biz">${state.businessName}</div>
+        <div class="small muted" style="margin:2px 0 4px;">${reportBranchLabel()}</div>
+        <div class="period">Arus Kas Harian<br>${fmtDate(date)}</div>
+      </div>
+      <div class="r-row"><span>Jumlah Transaksi</span><span class="val num">${txs.length}</span></div>
+      <div class="r-row section">Pendapatan per Metode Pembayaran</div>
+      <div class="r-row"><span>Tunai</span><span class="val pos num">${Reports.formatRupiah(byMethod.tunai)}</span></div>
+      <div class="r-row"><span>QRIS</span><span class="val pos num">${Reports.formatRupiah(byMethod.qris)}</span></div>
+      <div class="r-row"><span>Transfer</span><span class="val pos num">${Reports.formatRupiah(byMethod.transfer)}</span></div>
+      ${byMethod.lainnya > 0 ? `<div class="r-row"><span>Lainnya/Tidak diketahui</span><span class="val pos num">${Reports.formatRupiah(byMethod.lainnya)}</span></div>` : ""}
+      <div class="r-row total"><span>Total Pendapatan</span><span class="val num">${Reports.formatRupiah(totalMasuk)}</span></div>
+      <div class="r-row section">Pengeluaran</div>
+      <div class="r-row"><span>Total Kas Keluar</span><span class="val neg num">${Reports.formatRupiah(totalKeluar)}</span></div>
+    </div>
+
+    <div class="card" style="background:var(--foam-white);">
+      <div class="card-title">Cek Posisi Kas Tunai Fisik</div>
+      <p class="small muted" style="margin-bottom:12px;">Isi modal awal (uang kembalian yang ditaruh pagi hari), lalu sistem hitung berapa uang tunai yang seharusnya ada di laci sekarang — cocokkan dengan uang fisiknya saat tutup buku.</p>
+      <div class="field">
+        <label>Modal Awal / Uang Kembalian Pagi (Rp)</label>
+        <input type="text" inputmode="numeric" id="kasHarianFloatInput" value="${state.kasHarianFloat ? formatThousands(state.kasHarianFloat) : ''}" placeholder="0">
+      </div>
+      <div class="r-row"><span>Modal Awal</span><span class="val num">${Reports.formatRupiah(state.kasHarianFloat||0)}</span></div>
+      <div class="r-row"><span>+ Pendapatan Tunai Hari Ini</span><span class="val pos num">${Reports.formatRupiah(byMethod.tunai)}</span></div>
+      <div class="r-row"><span>− Kas Keluar Tunai Hari Ini</span><span class="val neg num">${Reports.formatRupiah(totalKeluarTunai)}</span></div>
+      <div class="r-row total"><span>Kas Tunai Seharusnya Ada</span><span class="val num" style="color:var(--mint);">${Reports.formatRupiah(kasTunaiSeharusnya)}</span></div>
+    </div>
+
+    <div class="btn-row no-print" style="margin-top:14px;">
+      <button class="btn btn-outline btn-block" data-action="print">${ICONS.printer} Cetak / Simpan PDF</button>
+    </div>
+  `;
+}
+
 async function renderPersediaanSection(){
   const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
   let items = await DB.getInventoryItems();
@@ -1676,8 +1769,10 @@ async function pageLaporan(){
     `;
   } else if(state.reportTab === "aset-tetap"){
     body = await renderAsetTetapSection();
-  } else {
+  } else if(state.reportTab === "persediaan"){
     body = await renderPersediaanSection();
+  } else {
+    body = await renderArusKasHarianSection();
   }
 
   return `
@@ -1686,6 +1781,7 @@ async function pageLaporan(){
       ${tabBtn("neraca","Neraca")}
       ${tabBtn("aset-tetap","Aset Tetap")}
       ${tabBtn("persediaan","Persediaan")}
+      ${tabBtn("kas-harian","Arus Kas Harian")}
     </div>
     ${body}
     ${(state.reportTab === "labarugi" || state.reportTab === "neraca") ? `
@@ -2624,6 +2720,12 @@ const STATUS_LABEL = {
   "selesai": "Selesai"
 };
 
+const PAYMENT_METHOD_LABEL = {
+  tunai: "Tunai",
+  qris: "QRIS",
+  transfer: "Transfer"
+};
+
 function nextOrderStatus(current){
   const i = ORDER_FLOW.indexOf(current);
   return (i >= 0 && i < ORDER_FLOW.length - 1) ? ORDER_FLOW[i+1] : null;
@@ -3406,7 +3508,10 @@ function openOrderDetailModal(o){
     <h2>Detail Pesanan</h2>
     <div class="row-between" style="margin-bottom:14px;">
       <span class="order-id-badge">${ICONS.hash}${o.receiptNo || '------'}</span>
-      <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
+      <div style="display:flex; gap:6px;">
+        <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
+        ${o.paymentStatus === "belum-lunas" ? `<span class="status-badge" style="background:var(--rose-bg); color:var(--rose);">Belum Lunas</span>` : o.paymentMethod ? `<span class="status-badge" style="background:var(--mint-bg); color:var(--mint);">Lunas</span>` : ""}
+      </div>
     </div>
 
     <div class="small" style="line-height:1.9;">
@@ -3421,7 +3526,22 @@ function openOrderDetailModal(o){
       ${itemLines.map(l=>`${l}<br>`).join("")}
       ${typeof o.total === "number" ? `<b>Total: ${Reports.formatRupiah(o.total)}</b>` : ""}
       ${o.discountAmount ? `<br><span style="color:var(--coin);">🎁 ${escapeHtml(o.discountReason||'Diskon promo')}: -${Reports.formatRupiah(o.discountAmount)}</span>` : ""}
+      ${o.paymentMethod ? `<br>Metode: <b>${PAYMENT_METHOD_LABEL[o.paymentMethod] || o.paymentMethod}</b>` : ""}
     </div>
+
+    ${o.paymentStatus === "belum-lunas" && o.piutangAmount > 0 ? `
+      <div class="small" style="margin-top:10px; padding:12px; background:var(--rose-bg); border-radius:10px;">
+        <p style="font-weight:700; color:var(--rose); margin-bottom:8px;">Piutang: ${Reports.formatRupiah(o.piutangAmount)}</p>
+        <div class="field" style="margin-bottom:8px;">
+          <select id="pelunasanMethod">
+            <option value="tunai">Tunai</option>
+            <option value="qris">QRIS</option>
+            <option value="transfer">Transfer</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-block" data-action="terima-pelunasan" data-id="${o.id}" style="background:var(--mint);">Terima Pelunasan ${Reports.formatRupiah(o.piutangAmount)}</button>
+      </div>
+    ` : ""}
 
     ${o.note ? `<div class="small muted" style="margin-top:10px;">📝 ${escapeHtml(o.note)}</div>` : ""}
 
@@ -3539,6 +3659,24 @@ function openOrderDetailModal(o){
     renderCucianList();
   });
 
+  const pelunasanBtn = modal.querySelector("[data-action='terima-pelunasan']");
+  if(pelunasanBtn) pelunasanBtn.addEventListener("click", async ()=>{
+    const method = modal.querySelector("#pelunasanMethod").value;
+    const amount = o.piutangAmount;
+    if(!confirm(`Tandai piutang ${Reports.formatRupiah(amount)} sudah dibayar lunas via ${PAYMENT_METHOD_LABEL[method]}?`)) return;
+    const cat = state.categories.find(c=>c.id===(o.serviceType==="satuan"?"cuci-satuan":o.serviceType==="self-service"?"self-service":"jasa-cuci"));
+    await DB.addTransaction({
+      type: "in", categoryId: cat?.id || "jasa-cuci", categoryName: cat?.name || "Pendapatan Jasa Cuci",
+      account: cat?.account, amount, date: Reports.todayStr(),
+      note: `Pelunasan piutang #${o.receiptNo || o.id.slice(0,6)}`, customerName: o.customerName,
+      orderId: o.id, branchId: o.branchId, paymentMethod: method
+    });
+    await DB.updateOrderFields(o.id, { paymentStatus: "lunas", piutangAmount: 0, amountPaid: o.total, paymentMethod: method });
+    toast("Piutang berhasil dilunasi");
+    closeModal();
+    renderCucianList();
+  });
+
   const trackBtn = modal.querySelector("[data-action='detail-send-tracking']");
   if(trackBtn) trackBtn.addEventListener("click", ()=>{
     const url = trackingUrl(o.id);
@@ -3568,6 +3706,7 @@ function orderCardHtml(o){
         <div class="order-card-id">
           <span class="order-id-badge">${ICONS.hash}${o.receiptNo || '------'}</span>
           <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
+          ${o.paymentStatus === "belum-lunas" ? `<span class="status-badge" style="background:var(--rose-bg); color:var(--rose);">Belum Lunas</span>` : ""}
         </div>
       </div>
 
@@ -3838,6 +3977,15 @@ async function openAddOrderModal(){
       <div class="field" style="flex:1;"><label>Bayar (Rp)</label><input type="text" inputmode="numeric" id="ordBayar" placeholder="Samakan dengan Total jika pas"></div>
       <div class="field" style="flex:1;"><label>Kembalian</label><input type="text" id="ordKembalian" value="Rp0" disabled style="background:var(--foam-white);"></div>
     </div>
+    <div class="field">
+      <label>Metode Pembayaran</label>
+      <select id="ordPaymentMethod">
+        <option value="tunai">Tunai</option>
+        <option value="qris">QRIS</option>
+        <option value="transfer">Transfer</option>
+      </select>
+    </div>
+    <p class="small" id="ordPiutangHint" style="display:none; margin:-10px 0 14px; padding:10px 12px; background:var(--coin-bg); color:var(--coin); border-radius:10px;"></p>
 
     <button type="button" class="btn btn-outline btn-block" id="searchMemberBtn" style="margin-bottom:14px;">${ICONS.search} Cari Pelanggan Terdaftar</button>
     <div class="field"><label>Nama Pelanggan</label><input type="text" id="ordCustName" placeholder="Contoh: Budi"></div>
@@ -4023,11 +4171,18 @@ async function openAddOrderModal(){
     const total = parseThousands(modal.querySelector("#ordTotal").value);
     const bayarStr = modal.querySelector("#ordBayar").value.trim();
     const kembalianField = modal.querySelector("#ordKembalian");
-    if(!bayarStr){ kembalianField.value = "Rp0"; return; }
+    const piutangHint = modal.querySelector("#ordPiutangHint");
+    if(!bayarStr){ kembalianField.value = "Rp0"; piutangHint.style.display = "none"; return; }
     const bayar = parseThousands(bayarStr);
     const change = bayar - total;
     kembalianField.value = Reports.formatRupiah(change);
     kembalianField.style.color = change < 0 ? "var(--rose)" : "";
+    if(change < 0){
+      piutangHint.style.display = "block";
+      piutangHint.textContent = `⚠️ Kurang bayar ${Reports.formatRupiah(Math.abs(change))} — ini akan tercatat sebagai piutang pelanggan.`;
+    } else {
+      piutangHint.style.display = "none";
+    }
   }
 
   function recalcTotal(){
@@ -4330,13 +4485,18 @@ async function openAddOrderModal(){
 
     const receiptNo = await DB.getNextReceiptCode(serviceType, Reports.todayStr());
     const changeAmount = amountPaid - total;
+    const collectedAmount = Math.min(amountPaid, total); // cash actually kept, excludes kembalian given back
+    const piutangAmount = Math.max(0, total - amountPaid);
+    const paymentStatus = piutangAmount > 0 ? "belum-lunas" : "lunas";
+    const paymentMethod = modal.querySelector("#ordPaymentMethod").value;
     const orderRef = fs.collection("orders").doc();
     const orderId = orderRef.id;
 
     const txRecord = {
       type: "in", categoryId, categoryName,
-      account: cat?.account, amount: total, date: Reports.todayStr(),
-      note, customerName, serviceType, receiptNo, amountPaid, changeAmount, orderId, branchId
+      account: cat?.account, amount: collectedAmount, date: Reports.todayStr(),
+      note, customerName, serviceType, receiptNo, amountPaid, changeAmount, orderId, branchId, paymentMethod,
+      orderTotal: total, paymentStatus, piutangAmount
     };
     if(serviceType === "kiloan") txRecord.kiloanItems = kiloanCart;
     if(serviceType === "satuan") txRecord.satuanItems = satuanCart;
@@ -4354,7 +4514,7 @@ async function openAddOrderModal(){
 
     const txId = await DB.addTransaction(txRecord);
 
-    const orderPayload = { customerName, note, serviceType, total, receiptNo, amountPaid, changeAmount, branchId };
+    const orderPayload = { customerName, note, serviceType, total, receiptNo, amountPaid, changeAmount, branchId, paymentMethod, paymentStatus, piutangAmount };
     if(serviceType === "kiloan") orderPayload.kiloanItems = kiloanCart;
     if(serviceType === "satuan") orderPayload.satuanItems = satuanCart;
     if(serviceType === "self-service"){ orderPayload.subType = selfSubType; orderPayload.subTypeLabel = selfSubTypeLabel; }
@@ -5136,10 +5296,17 @@ function buildReceiptText(t){
     if(t.discountReason) lines.push(`(${t.discountReason})`);
   }
   if(t.deliveryFee > 0) lines.push(`Ongkos Kirim: ${Reports.formatRupiah(t.deliveryFee)}`);
-  lines.push(`Total      : ${Reports.formatRupiah(t.amount)}`);
+  const trueTotal = t.orderTotal ?? t.amount;
+  lines.push(`Total      : ${Reports.formatRupiah(trueTotal)}`);
   if(typeof t.amountPaid === "number"){
     lines.push(`Bayar      : ${Reports.formatRupiah(t.amountPaid)}`);
     lines.push(`Kembalian  : ${Reports.formatRupiah(t.changeAmount||0)}`);
+  }
+  if(t.paymentMethod) lines.push(`Metode     : ${PAYMENT_METHOD_LABEL[t.paymentMethod] || t.paymentMethod}`);
+  if(t.paymentStatus === "belum-lunas"){
+    lines.push(`Status     : ⚠️ BELUM LUNAS (sisa ${Reports.formatRupiah(t.piutangAmount||0)})`);
+  } else if(t.paymentMethod){
+    lines.push(`Status     : ✅ LUNAS`);
   }
   if(t.note) lines.push(`Catatan: ${t.note}`);
   if(t.photoCount) lines.push(`📷 Total ${t.photoCount} pcs pakaian difoto`);
@@ -5320,7 +5487,7 @@ function buildEscPos(t, width){
 
   raw(ESC,0x45,1);
   raw(GS,0x21,0x01); // taller total
-  text(padRow("TOTAL", Reports.formatRupiah(t.amount), width) + "\n");
+  text(padRow("TOTAL", Reports.formatRupiah(t.orderTotal ?? t.amount), width) + "\n");
   raw(GS,0x21,0x00);
   raw(ESC,0x45,0);
   text("\n");
@@ -5330,6 +5497,14 @@ function buildEscPos(t, width){
     text(padRow("Kembalian", Reports.formatRupiah(t.changeAmount||0), width) + "\n");
     text("\n");
   }
+  if(t.paymentMethod) text(padRow("Metode", PAYMENT_METHOD_LABEL[t.paymentMethod] || t.paymentMethod, width) + "\n");
+  if(t.paymentStatus === "belum-lunas"){
+    text(padRow("Status", `BELUM LUNAS`, width) + "\n");
+    text(padRow("Sisa", Reports.formatRupiah(t.piutangAmount||0), width) + "\n");
+  } else if(t.paymentMethod){
+    text(padRow("Status", "LUNAS", width) + "\n");
+  }
+  text("\n");
 
   text("-".repeat(width) + "\n");
   text("\n");
@@ -5419,11 +5594,16 @@ function printReceiptSystemDialog(t){
         <div class="pr-row"><span>Subtotal</span><span>${Reports.formatRupiah(subtotal)}</span></div>
         <div class="pr-row"><span>Diskon</span><span>-${Reports.formatRupiah(t.discountAmount)}</span></div>
       ` : ""}
-      <div class="pr-total"><span>TOTAL</span><span>${Reports.formatRupiah(t.amount)}</span></div>
+      <div class="pr-total"><span>TOTAL</span><span>${Reports.formatRupiah(t.orderTotal ?? t.amount)}</span></div>
       ${typeof t.amountPaid === "number" ? `
         <div class="pr-row"><span>Bayar</span><span>${Reports.formatRupiah(t.amountPaid)}</span></div>
         <div class="pr-row"><span>Kembalian</span><span>${Reports.formatRupiah(t.changeAmount||0)}</span></div>
       ` : ""}
+      ${t.paymentMethod ? `<div class="pr-row"><span>Metode</span><span>${PAYMENT_METHOD_LABEL[t.paymentMethod] || t.paymentMethod}</span></div>` : ""}
+      ${t.paymentStatus === "belum-lunas" ? `
+        <div class="pr-row" style="color:#D9694F; font-weight:700;"><span>Status</span><span>BELUM LUNAS</span></div>
+        <div class="pr-row" style="color:#D9694F;"><span>Sisa</span><span>${Reports.formatRupiah(t.piutangAmount||0)}</span></div>
+      ` : t.paymentMethod ? `<div class="pr-row" style="color:#4E9C82; font-weight:700;"><span>Status</span><span>LUNAS</span></div>` : ""}
       <div class="pr-divider"></div>
       <div class="pr-thanks">Terima kasih sudah mencuci<br>di tempat kami</div>
     </div>
@@ -5474,6 +5654,13 @@ async function generateReceiptCanvas(t){
   if(typeof t.amountPaid === "number"){
     payRows.push(["Bayar", Reports.formatRupiah(t.amountPaid)]);
     payRows.push(["Kembalian", Reports.formatRupiah(t.changeAmount||0)]);
+  }
+  if(t.paymentMethod) payRows.push(["Metode", PAYMENT_METHOD_LABEL[t.paymentMethod] || t.paymentMethod]);
+  if(t.paymentStatus === "belum-lunas"){
+    payRows.push(["Status", "BELUM LUNAS"]);
+    payRows.push(["Sisa", Reports.formatRupiah(t.piutangAmount||0)]);
+  } else if(t.paymentMethod){
+    payRows.push(["Status", "LUNAS"]);
   }
 
   const scale = 2;
@@ -5602,7 +5789,7 @@ async function generateReceiptCanvas(t){
   ctx.fillText("TOTAL", padding, y+2);
   ctx.textAlign = "right";
   ctx.font = "700 20px 'Courier New', monospace";
-  ctx.fillText(Reports.formatRupiah(t.amount), width-padding, y+2);
+  ctx.fillText(Reports.formatRupiah(t.orderTotal ?? t.amount), width-padding, y+2);
   y += 32;
 
   if(payRows.length){
@@ -6059,6 +6246,14 @@ function bindPageEvents(){
   if(lrEnd) lrEnd.addEventListener("change", ()=>{ state.labaRugiRange.end = lrEnd.value; render(); });
   const neracaDate = document.getElementById("neracaDate");
   if(neracaDate) neracaDate.addEventListener("change", ()=>{ state.neracaDate = neracaDate.value; render(); });
+
+  const kasHarianDateInput = document.getElementById("kasHarianDateInput");
+  if(kasHarianDateInput) kasHarianDateInput.addEventListener("change", ()=>{ state.kasHarianDate = kasHarianDateInput.value; render(); });
+  const kasHarianFloatInput = document.getElementById("kasHarianFloatInput");
+  if(kasHarianFloatInput){
+    attachThousandsInput(kasHarianFloatInput);
+    kasHarianFloatInput.addEventListener("change", ()=>{ state.kasHarianFloat = parseThousands(kasHarianFloatInput.value); render(); });
+  }
 
   const printBtn = document.querySelector("[data-action='print']");
   if(printBtn) printBtn.addEventListener("click", ()=> window.print());
@@ -6694,6 +6889,7 @@ async function startApp(){
     navigator.serviceWorker.register("./sw.js").catch(()=>{});
   }
 
+  history.replaceState({ navMarker: true, base: true }, "", location.href);
   await render();
   runPhotoCleanupIfDue(); // fire-and-forget, throttled to ~once/day, owner-only
 }

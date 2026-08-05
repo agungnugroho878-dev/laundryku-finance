@@ -178,7 +178,6 @@ const Reports = {
     if(branchId) relevant = relevant.filter(t => t.branchId === branchId);
 
     let kas = opening.kas;
-    let piutang = opening.piutang;
     let asetTetap = opening.asetTetap;
     let utangUsaha = opening.utangUsaha;
     let utangBank = opening.utangBank;
@@ -189,7 +188,6 @@ const Reports = {
     for(const t of relevant){
       kas += (t.type === "in" ? t.amount : -t.amount);
       switch(t.account){
-        case DB.ACCOUNT.PIUTANG: piutang -= t.amount; break;
         case DB.ACCOUNT.ASET_TETAP: asetTetap += t.amount; break;
         case DB.ACCOUNT.UTANG_USAHA: utangUsaha -= t.amount; break;
         case DB.ACCOUNT.UTANG_BANK: utangBank += t.amount; break;
@@ -203,6 +201,12 @@ const Reports = {
     const persediaan = await this.getPersediaanValueAsOf(asOf, branchId);
     const bebanPersediaanSejakSaldoAwal = await this.getBebanPersediaan(opening.date, asOf, branchId);
     laba -= bebanPersediaanSejakSaldoAwal;
+
+    // Piutang Usaha: saldo awal (manual) + total piutang pesanan yang masih belum lunas hari ini.
+    let unpaidOrders = await DB.getUnpaidOrders();
+    if(branchId) unpaidOrders = unpaidOrders.filter(o => o.branchId === branchId);
+    unpaidOrders = unpaidOrders.filter(o => !o.createdAt || new Date(o.createdAt).toISOString().slice(0,10) <= asOf);
+    const piutang = opening.piutang + unpaidOrders.reduce((s,o) => s + (o.piutangAmount||0), 0);
 
     // Accumulated depreciation (contra-asset) — only this branch's assets
     // (or all assets, in the aggregate view).

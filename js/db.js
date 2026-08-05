@@ -431,6 +431,18 @@ const DB = {
     return list;
   },
 
+  /** Orders with an outstanding balance (piutang) — used for the Neraca's
+   *  Piutang Usaha figure and the "belum lunas" list. */
+  async getUnpaidOrders(){
+    const snap = await fs.collection("orders")
+      .where("businessId","==",_businessId)
+      .where("paymentStatus","==","belum-lunas")
+      .get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    return list;
+  },
+
   /** Most recent N orders (any status) — for activity feeds. Uses a real
    *  Firestore orderBy+limit so it stays fast regardless of total history. */
   async getOrderById(id){

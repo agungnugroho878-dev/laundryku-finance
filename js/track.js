@@ -113,6 +113,10 @@ function renderOrder(o, content, settings = {}){
       <div class="item-row"><span>Tanggal</span><span>${dateLabel}</span></div>
       ${items.map(i=>`<div class="item-row"><span>${i}</span></div>`).join("")}
       ${typeof o.total === "number" ? `<div class="total-row"><span>Total</span><span>${formatRupiah(o.total)}</span></div>` : ""}
+      ${o.paymentMethod ? `<div class="item-row"><span>Metode Bayar</span><span>${({tunai:"Tunai",qris:"QRIS",transfer:"Transfer"})[o.paymentMethod] || o.paymentMethod}</span></div>` : ""}
+      ${o.paymentStatus === "belum-lunas"
+        ? `<div class="item-row" style="color:#C1554D; font-weight:700;"><span>Status Bayar</span><span>Belum Lunas (sisa ${formatRupiah(o.piutangAmount||0)})</span></div>`
+        : o.paymentMethod ? `<div class="item-row" style="color:#3E9C74; font-weight:700;"><span>Status Bayar</span><span>Lunas</span></div>` : ""}
     </div>
 
     ${o.photos?.length ? `

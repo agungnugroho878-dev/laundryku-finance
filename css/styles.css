@@ -785,7 +785,7 @@ body.printing-receipt #receiptPrintArea{
 }
 
 .report-tabs{
-  display:grid; grid-template-columns:repeat(4, 1fr); gap:3px;
+  display:grid; grid-template-columns:repeat(5, 1fr); gap:3px;
   background:var(--paper); border:1.5px solid var(--line); border-radius:12px;
   padding:4px; margin-bottom:14px;
 }

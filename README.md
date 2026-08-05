@@ -365,6 +365,18 @@ Setelah itu, setiap kali ongkir otomatis dihitung (di form Pesanan Cucian Baru),
 
     > ⚠️ **Usaha lama yang sudah punya beberapa cabang sebelum fitur ini ada** (termasuk kalau Wash Space Anda sudah multi-cabang) otomatis dianggap Paket Rintisan (1 cabang) secara default — cabang yang SUDAH ADA tidak akan dihapus/terganggu, tapi mereka tidak akan bisa **tambah cabang baru** sampai paketnya disesuaikan manual lewat Kelola Langganan.
 
+9k. **Piutang, Metode Pembayaran & Arus Kas Harian** (untuk usaha yang membolehkan bayar belakangan):
+    - Form Pesanan Baru sekarang punya **Metode Pembayaran** (Tunai/QRIS/Transfer) — wajib dipilih tiap transaksi
+    - Kalau isi **"Bayar (Rp)" lebih kecil dari Total**, otomatis muncul peringatan dan pesanan itu tercatat **"Belum Lunas"** — sisanya jadi **piutang**, bukan ikut kehitung sebagai kas masuk (supaya Saldo Kas di Beranda tidak salah lebih besar dari uang fisik yang sebenarnya diterima)
+    - Kartu pesanan yang belum lunas dapat badge merah **"Belum Lunas"** di halaman Cucian
+    - Di **Detail Pesanan**, ada tombol **"Terima Pelunasan"** — begitu pelanggan bayar sisanya, pilih metode pembayaran lalu klik, otomatis tercatat sebagai transaksi baru dan status berubah jadi Lunas
+    - **Neraca**: baris "Piutang Usaha" sekarang otomatis dihitung dari total semua pesanan yang belum lunas (sebelumnya cuma angka manual dari Saldo Awal)
+    - **Laporan → tab "Arus Kas Harian"** (baru): pilih 1 tanggal, lihat jumlah transaksi dan **pendapatan dipisah per metode** (Tunai/QRIS/Transfer) — plus kalkulator **"Cek Posisi Kas Tunai Fisik"**: isi modal awal (uang kembalian yang ditaruh pagi hari), sistem otomatis hitung berapa uang tunai yang SEHARUSNYA ada di laci sekarang, tinggal dicocokkan dengan uang fisik saat tutup buku
+    - **Struk** (WA, cetak thermal, cetak biasa, gambar) semuanya sekarang menampilkan **Metode Pembayaran** dan status **LUNAS / BELUM LUNAS** (+ sisa piutang kalau ada)
+    - **Halaman Pelacakan Publik** (link yang dibuka pelanggan) juga menampilkan info yang sama
+
+    > ⚠️ **Perlu index Firestore baru** — begitu pertama kali buka tab "Arus Kas Harian" atau ada pesanan berstatus belum lunas, kemungkinan muncul error index di Console (F12) — klik link "Create Index" yang muncul di situ, tunggu status "Enabled", lalu refresh.
+
 10. **Foto barang (opsional, tidak ada batas jumlah)**: saat isi pesanan, ada 2 cara ambil foto:
     - **"Kamera (pilih perangkat)"** — buka preview langsung di layar, ada dropdown untuk memilih kamera mana yang dipakai (kamera bawaan laptop/tablet, atau **webcam eksternal/USB** kalau ada yang tersambung). Bisa jepret beberapa foto berturut-turut sebelum tutup
     - **"Galeri/File"** — cara lama, buka galeri atau file manager biasa
