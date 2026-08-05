@@ -1,6 +1,11 @@
 /* LAMAN — app shell & UI */
 
 const ICONS = {
+  truckSm: `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="7" width="13" height="9"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="6" cy="18" r="1.6" fill="#fff"/><circle cx="17" cy="18" r="1.6" fill="#fff"/></svg>`,
+  hourglass: `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12M6 21h12"/><path d="M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/></svg>`,
+  spin: `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v5h-5"/></svg>`,
+  checkCircleSm: `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 7"/></svg>`,
+  warnSm: `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3L12 3z"/><path d="M12 9v4"/><circle cx="12" cy="16.3" r="0.7" fill="#fff"/></svg>`,
   chevronDown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`,
   user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
   calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
@@ -644,7 +649,7 @@ async function pagePegawaiDashboard(){
       <div class="amount num" style="font-size:21px; font-weight:700;">${txToday}</div>
     </div>
 
-    <div class="card">
+    <div>
       <div class="row-between" style="margin-bottom:8px;">
         <div class="card-title" style="margin-bottom:0">Pesanan Terbaru</div>
         <button class="btn btn-ghost btn" data-page="cucian">Lihat semua</button>
@@ -701,27 +706,27 @@ async function pageDashboard(){
     <h3 class="section-title no-print">Status Cucian</h3>
     <div class="op-status-grid no-print">
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="needs-pickup">
-        <div class="op-status-icon" style="background:var(--coin-bg); color:var(--coin);">${ICONS.pin}</div>
-        <div class="op-status-num" style="color:var(--coin);">${opStats.perluDijemput}</div>
+        <div class="op-status-icon" style="background:linear-gradient(135deg,#E8836A,#D9694F);">${ICONS.truckSm}</div>
+        <div class="op-status-num" style="color:var(--rose);">${opStats.perluDijemput}</div>
         <div class="op-status-label">Perlu Dijemput</div>
       </div>
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="belum-diproses">
-        <div class="op-status-icon" style="background:#EAF3FF; color:var(--suds-blue);">${ICONS.clock}</div>
-        <div class="op-status-num" style="color:var(--suds-blue);">${opStats.belumDiproses}</div>
+        <div class="op-status-icon" style="background:linear-gradient(135deg,#F2B25A,#D99A3C);">${ICONS.hourglass}</div>
+        <div class="op-status-num" style="color:var(--coin);">${opStats.belumDiproses}</div>
         <div class="op-status-label">Belum Diproses</div>
       </div>
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="sedang-diproses">
-        <div class="op-status-icon" style="background:var(--coin-bg); color:var(--coin);">${ICONS.bubble}</div>
-        <div class="op-status-num" style="color:var(--coin);">${opStats.sedangDiproses}</div>
+        <div class="op-status-icon" style="background:linear-gradient(135deg,#4E97E0,#2361A8);">${ICONS.spin}</div>
+        <div class="op-status-num" style="color:var(--suds-blue);">${opStats.sedangDiproses}</div>
         <div class="op-status-label">Sedang Diproses</div>
       </div>
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="ready">
-        <div class="op-status-icon" style="background:var(--mint-bg); color:var(--mint);">${ICONS.check}</div>
+        <div class="op-status-icon" style="background:linear-gradient(135deg,#6BBE9E,#3A7A63);">${ICONS.checkCircleSm}</div>
         <div class="op-status-num" style="color:var(--mint);">${opStats.siapDiambilAntar}</div>
         <div class="op-status-label">Siap Diambil/Antar</div>
       </div>
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="overdue">
-        <div class="op-status-icon" style="background:var(--rose-bg); color:var(--rose);">${ICONS.alertTriangle}</div>
+        <div class="op-status-icon" style="background:linear-gradient(135deg,#E8836A,#B23A22);">${ICONS.warnSm}</div>
         <div class="op-status-num" style="color:var(--rose);">${opStats.terlambat}</div>
         <div class="op-status-label">Terlambat</div>
       </div>
@@ -822,7 +827,7 @@ async function pageDashboard(){
       </div>
     </div>
 
-    <div class="card">
+    <div>
       <div class="row-between" style="margin-bottom:8px;">
         <div class="card-title" style="margin-bottom:0">Transaksi Terbaru</div>
         <button class="btn-ghost btn" data-page="transaksi">Lihat semua</button>
@@ -859,13 +864,13 @@ async function pageTransaksi(){
       <button class="btn btn-primary btn-block" data-action="add" data-type="in">${ICONS.plus} Kas Masuk</button>
       <button class="btn btn-outline btn-block" data-action="add" data-type="out">${ICONS.plus} Kas Keluar</button>
     </div>
-    <div class="card">
-      <div class="row-between" style="margin-bottom:6px;">
-        <div class="card-title" style="margin-bottom:0;">Semua Transaksi (${txs.length})</div>
-        <select id="txPageSizeSelect" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px;">
-          ${[10,25,50,100].map(n=>`<option value="${n}" ${pageSize===n?'selected':''}>${n} / halaman</option>`).join("")}
-        </select>
-      </div>
+    <div class="row-between no-print" style="margin-bottom:10px;">
+      <span class="small muted">${txs.length} transaksi</span>
+      <select id="txPageSizeSelect" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px;">
+        ${[10,25,50,100].map(n=>`<option value="${n}" ${pageSize===n?'selected':''}>${n} / halaman</option>`).join("")}
+      </select>
+    </div>
+    <div>
       ${pageItems.length===0 ? emptyState("Belum ada transaksi tercatat.") :
         pageItems.map(t=>txItemHtml(t, cats, state.role==='owner')).join("")}
       ${txs.length > pageSize ? `
@@ -1063,7 +1068,7 @@ async function renderAsetTetapSection(){
       <div class="r-row total"><span>Total Nilai Buku</span><span class="val num">${Reports.formatRupiah(totalBook)}</span></div>
     </div>
 
-    <button class="btn btn-primary btn-block" data-action="add-asset" style="margin:14px 0;">${ICONS.plus} Tambah Aset Tetap</button>
+    <button class="btn btn-primary btn-block no-print" data-action="add-asset" style="margin:14px 0;">${ICONS.plus} Tambah Aset Tetap</button>
 
     ${rows.length === 0 ? emptyState("Belum ada aset tetap terdaftar.") : (()=>{
       const pageSize = state.asetTetapPageSize || 25;
@@ -1184,7 +1189,7 @@ async function renderPersediaanSection(){
       ${lastOpname ? `<p class="small muted" style="margin-top:6px;">Stock opname terakhir: ${fmtDate(lastOpname.date)}</p>` : `<p class="small muted" style="margin-top:6px;">Belum pernah stock opname — nilai ini dihitung dari akumulasi pembelian saja.</p>`}
     </div>
 
-    <button class="btn btn-primary btn-block" data-action="start-stock-opname" style="margin:14px 0;">${ICONS.calendar} Mulai Stock Opname</button>
+    <button class="btn btn-primary btn-block no-print" data-action="start-stock-opname" style="margin:14px 0;">${ICONS.calendar} Mulai Stock Opname</button>
 
     ${items.length === 0 ? emptyState("Belum ada persediaan tercatat. Catat lewat Kas Keluar → kategori \"Beli Persediaan (Stok)\".") : (()=>{
       const pageSize = state.persediaanPageSize || 25;
@@ -1803,7 +1808,7 @@ async function pagePengaturan(){
           <div style="font-weight:700;">${state.userName || state.user?.email || ""}</div>
           <div class="small muted">${state.user?.email || ""} · ${roleLabel()}</div>
         </div>
-        <button class="btn btn-outline" data-action="logout">Keluar</button>
+        <button class="btn" data-action="logout" style="background:var(--foam-white); border:none;">Keluar</button>
       </div>
     </div>
   `;
@@ -1973,75 +1978,70 @@ async function pagePengaturan(){
 
   sections.cabang = `
     <h3 class="section-title">Cabang (${branchList.length})</h3>
-    <div class="card" style="background:var(--foam-white);">
+    <div class="card" style="background:#EAF3FF;">
       <div class="row-between">
-        <span class="small" style="font-weight:700;">Paket Anda: ${PLAN_CONFIG[state.businessPlan]?.label || 'Rintisan'}</span>
-        <span class="small">${branchList.length} / ${PLAN_CONFIG[state.businessPlan]?.maxBranches === Infinity ? '∞' : PLAN_CONFIG[state.businessPlan]?.maxBranches || 1} cabang terpakai</span>
+        <span class="small" style="font-weight:700; color:#1E5FA8;">Paket Anda: ${PLAN_CONFIG[state.businessPlan]?.label || 'Rintisan'}</span>
+        <span class="small" style="color:#5B6B85;">${branchList.length} / ${PLAN_CONFIG[state.businessPlan]?.maxBranches === Infinity ? '∞' : PLAN_CONFIG[state.businessPlan]?.maxBranches || 1} cabang terpakai</span>
       </div>
     </div>
-    <div class="card">
-      <p class="small muted">Tiap cabang punya kode undangan, harga layanan, dan kas sendiri-sendiri (tetap ada rekap gabungan di Beranda/Laporan). Bagikan kode cabang ke pegawai supaya mereka bergabung ke cabang yang benar.</p>
-      <div style="margin-top:10px;">
-        ${branchList.map(b => `
-          <div style="padding:12px 0; border-bottom:1px dashed var(--line);">
-            <div class="row-between">
-              <div style="font-weight:700;">${escapeHtml(b.name)}</div>
-              <div style="display:flex; gap:6px;">
-                <button class="tx-del" data-action="edit-branch" data-id="${b.id}">${ICONS.edit}</button>
-                ${branchList.length > 1 ? `<button class="tx-del" data-action="delete-branch" data-id="${b.id}">${ICONS.trash}</button>` : ''}
-              </div>
-            </div>
-            ${b.address ? `<div class="small muted">${escapeHtml(b.address)}</div>` : ''}
-            <div style="display:flex; align-items:center; gap:8px; margin-top:8px;">
-              <input type="text" value="${b.id}" readonly style="font-family:var(--font-mono); font-size:11px; padding:6px 8px; border-radius:8px; border:1.5px solid var(--line); flex:1;">
-              <button class="btn btn-outline" data-action="copy-branch-code" data-id="${b.id}">Salin Kode</button>
-            </div>
+    <p class="small muted" style="margin:10px 0 12px;">Tiap cabang punya kode undangan, harga layanan, dan kas sendiri-sendiri (tetap ada rekap gabungan di Beranda/Laporan). Bagikan kode cabang ke pegawai supaya mereka bergabung ke cabang yang benar.</p>
+    ${branchList.map(b => `
+      <div class="card" style="margin-bottom:10px;">
+        <div class="row-between" style="align-items:flex-start;">
+          <div>
+            <div style="font-size:13.5px; font-weight:700; color:var(--ink-navy);">${escapeHtml(b.name)}</div>
+            ${b.address ? `<div class="small muted" style="margin-top:2px;">${escapeHtml(b.address)}</div>` : ''}
           </div>
-        `).join("")}
+          <div style="display:flex; gap:8px; flex-shrink:0;">
+            <button class="tx-del" data-action="edit-branch" data-id="${b.id}">${ICONS.edit}</button>
+            ${branchList.length > 1 ? `<button class="tx-del" data-action="delete-branch" data-id="${b.id}">${ICONS.trash}</button>` : ''}
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+          <div style="flex:1; background:var(--foam-white); border-radius:9px; padding:10px 12px; font-family:var(--font-mono); font-size:11.5px; color:#5B6B85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${b.id}</div>
+          <button class="btn" data-action="copy-branch-code" data-id="${b.id}" style="background:#EAF3FF; color:#1E5FA8; border:none; white-space:nowrap;">Salin Kode</button>
+        </div>
       </div>
-      <button class="btn btn-primary btn-block" data-action="add-branch" style="margin-top:14px;">${ICONS.plus} Tambah Cabang</button>
-    </div>
+    `).join("")}
+    <button class="btn btn-primary btn-block" data-action="add-branch" style="margin-top:4px;">${ICONS.plus} Tambah Cabang</button>
   `;
 
   sections.tim = `
     <h3 class="section-title">Anggota Tim (${staff.length})</h3>
-    <div class="card">
-      <p class="small muted">Bisa lebih dari 1 Owner untuk usaha yang sama — misalnya Anda dan pasangan, masing-masing pakai email sendiri, akses penuh berdua. Naikkan akun Pegawai jadi Owner di sini.</p>
-      <div style="margin-top:10px;">
-        ${staff.map(s => `
-          <div style="padding:10px 0; border-bottom:1px dashed var(--line);">
-            <div class="row-between">
-              <div>
-                <div class="small" style="font-weight:700;">${escapeHtml(s.name || s.email)}${s.uid === state.user?.uid ? ' <span class="muted">(Anda)</span>' : ''}</div>
-                <div class="small muted">${escapeHtml(s.email || '')}${s.role!=='owner' ? ` · ${escapeHtml(branchList.find(b=>b.id===s.branchId)?.name || 'Belum ada cabang')}` : ''}</div>
-              </div>
-              <span class="status-badge ${s.role==='owner' ? 'status-selesai' : s.role==='manager' ? 'status-sedang-diproses' : 'status-belum-diproses'}">${s.role==='owner' ? 'Owner' : s.role==='manager' ? 'Manager' : 'Pegawai'}</span>
-            </div>
-            ${s.uid !== state.user?.uid ? `
-              ${state.role === "owner" ? `
-                <div style="display:flex; gap:8px; margin-top:8px;">
-                  <select class="role-select" data-uid="${s.uid}" style="flex:1;">
-                    <option value="pegawai" ${s.role==='pegawai'?'selected':''}>Pegawai</option>
-                    <option value="manager" ${s.role==='manager'?'selected':''}>Manager (kontrol penuh, 1 cabang)</option>
-                    <option value="owner" ${s.role==='owner'?'selected':''}>Owner (kontrol penuh, semua cabang)</option>
-                  </select>
-                </div>
-              ` : ''}
-              ${s.role!=='owner' ? `
-                <div class="field" style="margin-top:8px; margin-bottom:0;">
-                  <label class="small">Cabang yang Dikelola</label>
-                  <select class="branch-assign-select" data-uid="${s.uid}">
-                    <option value="">— Pilih cabang —</option>
-                    ${branchList.map(b=>`<option value="${b.id}" ${s.branchId===b.id?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
-                  </select>
-                </div>
-              ` : ''}
-            ` : ''}
-            <button class="btn btn-outline btn-block" data-action="set-salary-config" data-uid="${s.uid}" style="margin-top:8px;">${ICONS.report} Kelola Pegawai${s.salaryConfig ? ' (sudah diatur)' : ''}</button>
+    <p class="small muted" style="margin-bottom:12px;">Bisa lebih dari 1 Owner untuk usaha yang sama — misalnya Anda dan pasangan, masing-masing pakai email sendiri, akses penuh berdua. Naikkan akun Pegawai jadi Owner di sini.</p>
+    ${staff.map(s => `
+      <div class="card" style="margin-bottom:10px;">
+        <div class="row-between" style="align-items:flex-start;">
+          <div>
+            <div style="font-size:13.5px; font-weight:700; color:var(--ink-navy);">${escapeHtml(s.name || s.email)}${s.uid === state.user?.uid ? ' <span class="small muted">(Anda)</span>' : ''}</div>
+            <div class="small muted" style="margin-top:2px;">${escapeHtml(s.email || '')}</div>
           </div>
-        `).join("")}
+          <span class="status-badge ${s.role==='owner' ? 'status-selesai' : s.role==='manager' ? 'status-sedang-diproses' : 'status-belum-diproses'}">${s.role==='owner' ? 'Owner' : s.role==='manager' ? 'Manager' : 'Pegawai'}</span>
+        </div>
+        ${s.role!=='owner' ? `<div class="small muted" style="margin-top:6px;">Cabang: ${escapeHtml(branchList.find(b=>b.id===s.branchId)?.name || 'Belum ada cabang')}</div>` : ''}
+        ${s.uid !== state.user?.uid ? `
+          ${state.role === "owner" ? `
+            <div style="margin-top:10px;">
+              <select class="role-select" data-uid="${s.uid}" style="width:100%; background:var(--foam-white); border:none; border-radius:9px; padding:10px 12px; font-size:12.5px; color:var(--ink-navy);">
+                <option value="pegawai" ${s.role==='pegawai'?'selected':''}>Pegawai</option>
+                <option value="manager" ${s.role==='manager'?'selected':''}>Manager (kontrol penuh, 1 cabang)</option>
+                <option value="owner" ${s.role==='owner'?'selected':''}>Owner (kontrol penuh, semua cabang)</option>
+              </select>
+            </div>
+          ` : ''}
+          ${s.role!=='owner' ? `
+            <div class="field" style="margin-top:8px; margin-bottom:0;">
+              <label class="small">Cabang yang Dikelola</label>
+              <select class="branch-assign-select" data-uid="${s.uid}">
+                <option value="">— Pilih cabang —</option>
+                ${branchList.map(b=>`<option value="${b.id}" ${s.branchId===b.id?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+              </select>
+            </div>
+          ` : ''}
+        ` : ''}
+        <button class="btn btn-block" data-action="set-salary-config" data-uid="${s.uid}" style="margin-top:10px; background:var(--foam-white); border:none; color:var(--ink-navy);">${ICONS.report} Kelola Pegawai${s.salaryConfig ? ' (sudah diatur)' : ''}</button>
       </div>
-    </div>
+    `).join("")}
   `;
 
   sections.saldo = `
@@ -3055,9 +3055,9 @@ const PLAN_CONFIG = {
 const AKUN_MENU_META = {
   transaksi:   { label: "Riwayat Transaksi", desc: "Semua catatan kas masuk/keluar", icon: ICONS.list, color: "var(--suds-blue)", bg: "#EAF2F9" },
   member:      { label: "Member",     desc: "Pelanggan & promo loyalty",     icon: ICONS.star,     color: "var(--coin)",      bg: "var(--coin-bg)" },
-  "tugas-saya":{ label: "Tugas Saya", desc: "Tugas jemput & antar Anda",     icon: ICONS.pin,      color: "var(--suds-blue)", bg: "#EAF2F9" },
+  "tugas-saya":{ label: "Tugas Saya", desc: "Tugas jemput & antar Anda",     icon: ICONS.pin,      color: "var(--rose)", bg: "var(--rose-bg)" },
   absensi:     { label: "Absensi",    desc: "Absen masuk/pulang & gaji",     icon: ICONS.calendar, color: "var(--mint)",      bg: "var(--mint-bg)" },
-  laporan:     { label: "Laporan",    desc: "Laba Rugi, Neraca, Aset Tetap", icon: ICONS.report,   color: "var(--rose)",      bg: "var(--rose-bg)" },
+  laporan:     { label: "Laporan",    desc: "Laba Rugi, Neraca, Aset Tetap", icon: ICONS.report,   color: "var(--suds-blue-dark)", bg: "#EAF2F9" },
   pengaturan:  { label: "Atur",       desc: "Profil usaha, harga, cabang",   icon: ICONS.settings, color: "var(--ink-navy)",  bg: "var(--foam-white)" },
   langganan:   { label: "Kelola Langganan", desc: "Trial & status semua usaha (admin)", icon: ICONS.report, color: "#8B5CF6", bg: "#F1EBFC" }
 };
@@ -3392,6 +3392,7 @@ async function renderCucianList(){
 
 function serviceIconFor(o){
   if(o.serviceType === "satuan") return ICONS.shirt;
+  if(o.serviceType === "self-service") return ICONS.clock;
   return ICONS.droplet;
 }
 
@@ -3451,7 +3452,7 @@ function openOrderDetailModal(o){
       </div>
     ` : ""}
 
-    ${o.customerPhone ? `<button class="btn btn-outline btn-block" data-action="detail-send-tracking" style="margin-top:16px;">${ICONS.star} Kirim Link Pantau</button>` : ""}
+    ${o.customerPhone ? `<button class="btn btn-block" data-action="detail-send-tracking" style="margin-top:16px; background:#EAF3FF; color:#1E5FA8;">${ICONS.star} Kirim Link Pantau</button>` : ""}
     <button class="btn btn-outline btn-block" data-action="detail-close" style="margin-top:10px;">Tutup</button>
   `);
 
@@ -3460,7 +3461,7 @@ function openOrderDetailModal(o){
 
   function renderPhotoSection(){
     photoSection.innerHTML = `
-      <p class="small" style="font-weight:700; margin-bottom:8px;">📷 Foto Pakaian (${photos.length})</p>
+      <p class="small" style="font-weight:700; margin-bottom:8px; display:flex; align-items:center; gap:6px;"><span style="display:inline-flex; width:14px; height:14px;">${ICONS.camera}</span>Foto Pakaian (${photos.length})</p>
       ${photos.length ? `
         <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:10px;">
           ${photos.map((p,i)=>`
@@ -3472,8 +3473,8 @@ function openOrderDetailModal(o){
         </div>
       ` : `<p class="small muted" style="margin-bottom:10px;">Belum ada foto.</p>`}
       <div class="btn-row">
-        <button type="button" class="btn btn-outline btn-block" id="detailAddCameraBtn">${ICONS.camera} Kamera</button>
-        <button type="button" class="btn btn-outline btn-block" id="detailAddGalleryBtn">${ICONS.chat} Galeri/File</button>
+        <button type="button" class="btn btn-block" id="detailAddCameraBtn" style="background:#F2F6FB; color:#142A4D;">${ICONS.camera} Kamera</button>
+        <button type="button" class="btn btn-block" id="detailAddGalleryBtn" style="background:#F2F6FB; color:#142A4D;">${ICONS.chat} Galeri/File</button>
       </div>
       <input type="file" id="detailPhotoInput" accept="image/*" multiple style="display:none;">
     `;
@@ -3563,7 +3564,7 @@ function orderCardHtml(o){
   return `
     <div class="order-card status-${o.status}" data-action="view-order-detail" data-id="${o.id}" style="cursor:pointer;">
       <div class="order-card-top">
-        <div class="order-service-icon status-${o.status}">${serviceIconFor(o)}</div>
+        <div class="order-service-icon ${countdown?.overdue ? 'overdue' : 'status-'+o.status}">${serviceIconFor(o)}</div>
         <div class="order-card-id">
           <span class="order-id-badge">${ICONS.hash}${o.receiptNo || '------'}</span>
           <span class="status-badge status-${o.status}">${STATUS_LABEL[o.status]}</span>
@@ -3796,8 +3797,8 @@ async function openAddOrderModal(){
 
   const modal = openModal(`
     <h2>Pesanan Cucian Baru</h2>
-    <div class="seg" id="serviceSeg" style="margin-bottom:16px;">
-      <button type="button" class="active in" data-svc="kiloan">Kiloan</button>
+    <div class="seg seg-navy" id="serviceSeg" style="margin-bottom:16px;">
+      <button type="button" class="active" data-svc="kiloan">Kiloan</button>
       <button type="button" data-svc="satuan">Satuan</button>
       <button type="button" data-svc="self-service">Self-Service</button>
     </div>
@@ -4093,8 +4094,8 @@ async function openAddOrderModal(){
   modal.querySelectorAll("#serviceSeg button").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       serviceType = btn.dataset.svc;
-      modal.querySelectorAll("#serviceSeg button").forEach(b=>b.classList.remove("active","in"));
-      btn.classList.add("active","in");
+      modal.querySelectorAll("#serviceSeg button").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
       modal.querySelector("#kiloanFields").style.display = serviceType === "kiloan" ? "block" : "none";
       modal.querySelector("#satuanFields").style.display = serviceType === "satuan" ? "block" : "none";
       modal.querySelector("#selfServiceFields").style.display = serviceType === "self-service" ? "block" : "none";
@@ -4515,13 +4516,12 @@ async function renderMemberList(){
   const pageItems = members.slice(start, start + pageSize);
 
   container.innerHTML = `
-    <div class="card">
-      <div class="row-between" style="margin-bottom:6px;">
-        <div class="card-title" style="margin-bottom:0;">Daftar Member (${members.length}${q ? ` dari ${all.length}` : ""})</div>
-        <select id="memberPageSizeSelect" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px;">
-          ${[10,25,50,100].map(n=>`<option value="${n}" ${pageSize===n?'selected':''}>${n} / halaman</option>`).join("")}
-        </select>
-      </div>
+    <div class="row-between no-print" style="margin-bottom:10px;">
+      <span class="small muted">${members.length} member${q ? ` dari ${all.length}` : ""}</span>
+      <select id="memberPageSizeSelect" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px;">
+        ${[10,25,50,100].map(n=>`<option value="${n}" ${pageSize===n?'selected':''}>${n} / halaman</option>`).join("")}
+      </select>
+    </div>
       ${pageItems.length===0 ? emptyState(q ? "Tidak ditemukan." : "Belum ada member. Tambahkan manual, atau otomatis muncul saat transaksi cucian diisi nomor WA.") :
         pageItems.map(m=>memberRowHtml(m, kiloanLoyalty, ssLoyalty)).join("")}
       ${members.length > pageSize ? `
@@ -4531,7 +4531,6 @@ async function renderMemberList(){
           <button class="btn btn-outline" id="memberNextPage" ${state.memberPage>=totalPages?'disabled':''}>Selanjutnya →</button>
         </div>
       ` : ""}
-    </div>
   `;
   bindMemberRowEvents();
 
@@ -4632,17 +4631,17 @@ function openMemberDetailModal(m, kiloanLoyalty, ssLoyalty){
 
 function memberRowHtml(m, kiloanLoyalty, ssLoyalty){
   const ready = isAnyPromoReady(m, kiloanLoyalty, ssLoyalty);
+  const initial = (m.name || "?").trim().charAt(0).toUpperCase();
   return `
-    <div class="card" data-action="view-member-detail" data-phone="${m.phone}" style="margin-bottom:10px; box-shadow:none; border:1px solid var(--line); cursor:pointer;">
-      <div class="row-between">
-        <div>
-          <div style="font-weight:700; display:flex; align-items:center; gap:6px;">${escapeHtml(m.name || "Tanpa nama")}${ready ? `<span class="tag" style="background:var(--coin-bg); color:var(--coin); font-size:10.5px;">🎉 Siap klaim</span>` : ""}</div>
-          <div class="small muted">${m.phone}${m.address ? " · " + escapeHtml(m.address) : ""}</div>
-        </div>
-        <div class="btn-row" style="gap:6px;">
-          <button class="tx-del" data-action="edit-member" data-phone="${m.phone}" title="Edit">${ICONS.edit}</button>
-          <button class="tx-del" data-action="wa-member" data-phone="${m.phone}" title="Chat WA">${ICONS.chat}</button>
-        </div>
+    <div class="card" data-action="view-member-detail" data-phone="${m.phone}" style="margin-bottom:10px; cursor:pointer; display:flex; align-items:center; gap:12px; padding:13px 14px;">
+      <div style="width:36px; height:36px; border-radius:50%; background:#EAF3FF; color:#1E5FA8; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; flex-shrink:0;">${escapeHtml(initial)}</div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:700; display:flex; align-items:center; gap:6px;">${escapeHtml(m.name || "Tanpa nama")}${ready ? `<span class="tag" style="background:var(--coin-bg); color:var(--coin); font-size:10.5px;">🎉 Siap klaim</span>` : ""}</div>
+        <div class="small muted" style="font-family:var(--font-mono);">${m.phone}${m.address ? " · " + escapeHtml(m.address) : ""}</div>
+      </div>
+      <div class="btn-row" style="gap:6px; flex-shrink:0;">
+        <button class="tx-del" data-action="edit-member" data-phone="${m.phone}" title="Edit">${ICONS.edit}</button>
+        <button class="tx-del" data-action="wa-member" data-phone="${m.phone}" title="Chat WA">${ICONS.chat}</button>
       </div>
     </div>
   `;
