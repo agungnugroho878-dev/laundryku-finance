@@ -19,14 +19,14 @@
   --rose:          #DC5B54;
   --rose-bg:       #FDECEB;
   --line:          #E3E8F0;
-  --text-muted:    #6B7686;
+  --text-muted:    #8792A6;
 
   --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
-  --radius-card: 18px;
-  --shadow-card: 0 2px 4px rgba(20,42,77,0.05), 0 10px 24px rgba(20,42,77,0.08);
+  --radius-card: 16px;
+  --shadow-card: 0 1px 3px rgba(20,42,77,0.07);
 }
 
 *{ box-sizing:border-box; }
@@ -543,20 +543,18 @@ body.printing-receipt #receiptPrintArea{
 .quick-actions{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
 .quick-actions button{
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:10px; padding:20px 14px; border-radius:18px; border:none; cursor:pointer;
-  font-size:14px; font-weight:700;
+  gap:10px; padding:20px 14px; border-radius:14px; border:none; cursor:pointer;
+  font-size:13.5px; font-weight:700; background:var(--paper); color:var(--ink-navy);
+  box-shadow:var(--shadow-card);
 }
 .quick-actions button:active{ transform:scale(.96); }
 .quick-actions .qa-icon{
-  width:50px; height:50px; border-radius:50%;
+  width:42px; height:42px; border-radius:50%;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 4px 10px rgba(22,35,46,.12);
 }
-.quick-actions .qa-icon svg{ width:22px; height:22px; }
-.quick-actions button.in{ background:var(--mint-bg); color:var(--mint); }
-.quick-actions button.in .qa-icon{ background:var(--mint); color:#fff; }
-.quick-actions button.out{ background:var(--rose-bg); color:var(--rose); }
-.quick-actions button.out .qa-icon{ background:var(--rose); color:#fff; }
+.quick-actions .qa-icon svg{ width:19px; height:19px; }
+.quick-actions button.in .qa-icon{ background:var(--mint-bg); color:var(--mint); }
+.quick-actions button.out .qa-icon{ background:var(--rose-bg); color:var(--rose); }
 
 /* ---------- Forms ---------- */
 .field{ margin-bottom:14px; }
@@ -659,12 +657,18 @@ body.printing-receipt #receiptPrintArea{
 .op-status-item{
   background:var(--paper); border-radius:12px; padding:12px 8px; text-align:center;
   box-shadow:var(--shadow-card); cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
   transition:transform .12s ease, box-shadow .15s ease;
 }
 .op-status-item:hover{ box-shadow:0 4px 14px rgba(20,42,77,.1); }
 .op-status-item:active{ transform:scale(.96); }
-.op-status-num{ font-family:var(--font-mono); font-size:24px; font-weight:700; }
-.op-status-label{ font-size:10.5px; font-weight:600; color:var(--text-muted); margin-top:2px; }
+.op-status-icon{
+  width:32px; height:32px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+}
+.op-status-icon svg{ width:16px; height:16px; }
+.op-status-num{ font-family:var(--font-mono); font-size:20px; font-weight:700; }
+.op-status-label{ font-size:9.5px; font-weight:600; color:var(--text-muted); line-height:1.3; }
 
 .akun-menu-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
 .akun-menu-item{

@@ -317,6 +317,13 @@ const DB = {
     return data[key] !== undefined ? data[key] : fallback;
   },
 
+  /** Fetches the whole businessSettings doc in ONE round-trip, instead of
+   *  calling getSetting() repeatedly (which re-fetches the same doc every time). */
+  async getAllSettings(){
+    const doc = await fs.collection("businessSettings").doc(_businessId).get();
+    return doc.exists ? doc.data() : {};
+  },
+
   /** Admin-only: fetch businessSettings for ANY business (not just the current session's). */
   async getBusinessSettingsById(businessId){
     const doc = await fs.collection("businessSettings").doc(businessId).get();

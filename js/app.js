@@ -701,22 +701,27 @@ async function pageDashboard(){
     <h3 class="section-title no-print">Status Cucian</h3>
     <div class="op-status-grid no-print">
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="needs-pickup">
+        <div class="op-status-icon" style="background:var(--coin-bg); color:var(--coin);">${ICONS.pin}</div>
         <div class="op-status-num" style="color:var(--coin);">${opStats.perluDijemput}</div>
         <div class="op-status-label">Perlu Dijemput</div>
       </div>
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="belum-diproses">
+        <div class="op-status-icon" style="background:#EAF3FF; color:var(--suds-blue);">${ICONS.clock}</div>
         <div class="op-status-num" style="color:var(--suds-blue);">${opStats.belumDiproses}</div>
         <div class="op-status-label">Belum Diproses</div>
       </div>
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="sedang-diproses">
+        <div class="op-status-icon" style="background:var(--coin-bg); color:var(--coin);">${ICONS.bubble}</div>
         <div class="op-status-num" style="color:var(--coin);">${opStats.sedangDiproses}</div>
         <div class="op-status-label">Sedang Diproses</div>
       </div>
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="ready">
+        <div class="op-status-icon" style="background:var(--mint-bg); color:var(--mint);">${ICONS.check}</div>
         <div class="op-status-num" style="color:var(--mint);">${opStats.siapDiambilAntar}</div>
         <div class="op-status-label">Siap Diambil/Antar</div>
       </div>
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="overdue">
+        <div class="op-status-icon" style="background:var(--rose-bg); color:var(--rose);">${ICONS.alertTriangle}</div>
         <div class="op-status-num" style="color:var(--rose);">${opStats.terlambat}</div>
         <div class="op-status-label">Terlambat</div>
       </div>
@@ -945,7 +950,23 @@ const INVENTORY_CATEGORIES = {
   "perlengkapan": { label: "Perlengkapan Lain" }
 };
 
+let _xlsxLoadPromise = null;
+function ensureXlsxLoaded(){
+  if(window.XLSX) return Promise.resolve();
+  if(_xlsxLoadPromise) return _xlsxLoadPromise;
+  _xlsxLoadPromise = new Promise((resolve, reject)=>{
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  return _xlsxLoadPromise;
+}
+
 async function exportAsetTetapExcel(){
+  toast("Menyiapkan file Excel...");
+  await ensureXlsxLoaded();
   const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
   let assets = await DB.getAssets();
   if(activeBranchId) assets = assets.filter(a => a.branchId === activeBranchId);
@@ -982,6 +1003,8 @@ async function exportAsetTetapExcel(){
 }
 
 async function exportPersediaanExcel(){
+  toast("Menyiapkan file Excel...");
+  await ensureXlsxLoaded();
   const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
   let items = await DB.getInventoryItems();
   if(activeBranchId) items = items.filter(i => i.branchId === activeBranchId);
@@ -6651,12 +6674,13 @@ async function startApp(){
   }
 
   await DB.init();
-  state.businessName = await DB.getSetting("businessName", "Usaha Laundry Saya");
-  state.businessTagline = await DB.getSetting("businessTagline", "");
-  state.businessPhone = await DB.getSetting("businessPhone", "");
-  state.businessInstagram = await DB.getSetting("businessInstagram", "");
-  state.businessAddress = await DB.getSetting("businessAddress", "");
-  state.businessLogo = await DB.getSetting("businessLogo", "");
+  const settings = await DB.getAllSettings();
+  state.businessName = settings.businessName ?? "Usaha Laundry Saya";
+  state.businessTagline = settings.businessTagline ?? "";
+  state.businessPhone = settings.businessPhone ?? "";
+  state.businessInstagram = settings.businessInstagram ?? "";
+  state.businessAddress = settings.businessAddress ?? "";
+  state.businessLogo = settings.businessLogo ?? "";
   state.categories = await DB.getCategories();
   state.branches = await ensureDefaultBranch();
 
