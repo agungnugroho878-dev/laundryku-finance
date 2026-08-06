@@ -1,4 +1,4 @@
-const CACHE_NAME = "laman-v46";
+const CACHE_NAME = "laman-v47";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -30,9 +30,28 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Cache-first for app shell, network-first fallback for anything else
+// Network-first for the app shell (HTML/JS/CSS) — these change often as the
+// app is updated, so always try the network first and only fall back to
+// cache when offline. Cache-first only for truly static assets (icons).
+const NETWORK_FIRST_PATTERNS = [/\.html$/, /\.js$/, /\.css$/, /^\.\/$|\/$/];
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = event.request.url;
+  const isNetworkFirst = NETWORK_FIRST_PATTERNS.some(p => p.test(url)) || url.endsWith("/");
+
+  if (isNetworkFirst) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {

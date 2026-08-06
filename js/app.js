@@ -6751,9 +6751,12 @@ function wireAuthForm(mode, root){
     const email = root.querySelector("#authEmail").value.trim();
     const password = root.querySelector("#authPassword").value;
     if(!email || !password){ setErr("Isi email dan password."); return; }
+    const loginBtn = root.querySelector("[data-action='do-login']");
+    loginBtn.disabled = true; loginBtn.textContent = "Memproses...";
     try{
       await auth.signInWithEmailAndPassword(email, password);
     }catch(err){
+      loginBtn.disabled = false; loginBtn.textContent = "Masuk";
       console.error("Auth error:", err); setErr(authErrorMessage(err));
     }
   });
@@ -6999,23 +7002,40 @@ async function enterAppForUser(user, profile){
 auth.onAuthStateChanged(async (user) => {
   if(user){
     if(_registrationInProgress) return; // registration handler will call enterAppForUser() itself once ready
-    const profile = await loadUserProfile(user);
-    if(!profile.businessId){
+    try{
+      const profile = await loadUserProfile(user);
+      if(!profile.businessId){
+        hideSplashScreen();
+        document.getElementById("app").style.display = "none";
+        const root = document.getElementById("authRoot") || document.body.appendChild(Object.assign(document.createElement("div"), {id:"authRoot"}));
+        root.style.display = "block";
+        root.innerHTML = authShellHtml(`
+          <div class="auth-error" style="margin-bottom:14px;">
+            Akun ini belum terhubung ke usaha manapun (kemungkinan akun lama sebelum update sistem multi-usaha).
+            Buka <b>/migrate.html</b>, login pakai akun ini, dan jalankan migrasi satu kali — setelah itu login ulang di sini.
+          </div>
+          <button class="btn btn-outline btn-block" data-action="logout-stuck">Keluar</button>
+        `);
+        root.querySelector("[data-action='logout-stuck']").addEventListener("click", ()=> auth.signOut());
+        return;
+      }
+      await enterAppForUser(user, profile);
+    }catch(err){
+      console.error("Post-login error:", err);
       hideSplashScreen();
       document.getElementById("app").style.display = "none";
       const root = document.getElementById("authRoot") || document.body.appendChild(Object.assign(document.createElement("div"), {id:"authRoot"}));
       root.style.display = "block";
       root.innerHTML = authShellHtml(`
         <div class="auth-error" style="margin-bottom:14px;">
-          Akun ini belum terhubung ke usaha manapun (kemungkinan akun lama sebelum update sistem multi-usaha).
-          Buka <b>/migrate.html</b>, login pakai akun ini, dan jalankan migrasi satu kali — setelah itu login ulang di sini.
+          Gagal memuat akun: ${escapeHtml(err?.message || "Terjadi kesalahan tidak diketahui.")}
         </div>
+        <button class="btn btn-primary btn-block" data-action="retry-post-login" style="margin-bottom:10px;">Coba Lagi</button>
         <button class="btn btn-outline btn-block" data-action="logout-stuck">Keluar</button>
       `);
+      root.querySelector("[data-action='retry-post-login']").addEventListener("click", ()=> location.reload());
       root.querySelector("[data-action='logout-stuck']").addEventListener("click", ()=> auth.signOut());
-      return;
     }
-    await enterAppForUser(user, profile);
   } else {
     state.user = null;
     state.role = null;
