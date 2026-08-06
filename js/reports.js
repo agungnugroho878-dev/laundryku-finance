@@ -238,6 +238,10 @@ const Reports = {
   },
 
   async getOpeningBalances(branchId = null){
+    const cacheKey = "opening_" + (branchId || "all");
+    if(this._obCache?.[cacheKey]) return this._obCache[cacheKey];
+    if(!this._obCache) this._obCache = {};
+
     const def = {
       date: "1970-01-01",
       kas: 0, piutang: 0, persediaan: 0, asetTetap: 0,
@@ -247,10 +251,11 @@ const Reports = {
     if(branchId){
       const branch = await DB.getBranchById(branchId);
       const saved = branch?.openingBalances || null;
-      if(!saved) return def;
+      if(!saved){ this._obCache[cacheKey] = def; return def; }
       const merged = { ...def, ...saved };
       merged.modal = (merged.kas + merged.piutang + merged.persediaan + merged.asetTetap)
                    - (merged.utangUsaha + merged.utangBank);
+      this._obCache[cacheKey] = merged;
       return merged;
     }
 
@@ -266,6 +271,7 @@ const Reports = {
     }
     sum.date = sum.date || def.date;
     sum.modal = (sum.kas + sum.piutang + sum.persediaan + sum.asetTetap) - (sum.utangUsaha + sum.utangBank);
+    this._obCache[cacheKey] = sum;
     return sum;
   },
 

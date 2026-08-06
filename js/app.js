@@ -245,6 +245,8 @@ function updateHeaderBranchInfo(){
 }
 
 async function render(){
+  invalidateReportCaches();
+  if(Reports._obCache) Reports._obCache = {};
   if(state.page === "laporan" && !isOwnerOrManager()) state.page = "dashboard";
   renderNav();
   initFabQuickAction();

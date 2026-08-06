@@ -44,6 +44,13 @@ const DEFAULT_CATEGORIES = [
 let _txCache = null;
 function invalidateTxCache(){ _txCache = null; }
 
+// Generic short-lived cache for other report-heavy queries (assets, inventory
+// purchases/opnames, unpaid orders, opening balances). These get read many
+// times per page render (Neraca alone touches several of them repeatedly),
+// so caching avoids redundant round-trips within the same session.
+let _reportCaches = {};
+function invalidateReportCaches(){ _reportCaches = {}; }
+
 let _businessId = null;
 
 /** Build a business-namespaced document ID (e.g. category/member keys)
@@ -434,12 +441,14 @@ const DB = {
   /** Orders with an outstanding balance (piutang) — used for the Neraca's
    *  Piutang Usaha figure and the "belum lunas" list. */
   async getUnpaidOrders(){
+    if(_reportCaches.unpaidOrders) return _reportCaches.unpaidOrders;
     const snap = await fs.collection("orders")
       .where("businessId","==",_businessId)
       .where("paymentStatus","==","belum-lunas")
       .get();
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     list.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    _reportCaches.unpaidOrders = list;
     return list;
   },
 
@@ -510,9 +519,11 @@ const DB = {
   },
 
   async getAssets(){
+    if(_reportCaches.assets) return _reportCaches.assets;
     const snap = await fs.collection("assets").where("businessId","==",_businessId).get();
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     list.sort((a,b) => (a.acquisitionDate||"").localeCompare(b.acquisitionDate||""));
+    _reportCaches.assets = list;
     return list;
   },
 
@@ -578,9 +589,11 @@ const DB = {
   },
 
   async getAllInventoryPurchases(){
+    if(_reportCaches.inventoryPurchases) return _reportCaches.inventoryPurchases;
     const snap = await fs.collection("inventoryPurchases").where("businessId","==",_businessId).get();
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     list.sort((a,b) => (b.date||"").localeCompare(a.date||""));
+    _reportCaches.inventoryPurchases = list;
     return list;
   },
 
@@ -596,9 +609,11 @@ const DB = {
   },
 
   async getAllStockOpnames(){
+    if(_reportCaches.stockOpnames) return _reportCaches.stockOpnames;
     const snap = await fs.collection("stockOpnames").where("businessId","==",_businessId).get();
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     list.sort((a,b) => (b.date||"").localeCompare(a.date||""));
+    _reportCaches.stockOpnames = list;
     return list;
   },
 
