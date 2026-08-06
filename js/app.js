@@ -485,7 +485,8 @@ async function render(){
           cursor.setDate(cursor.getDate()+1);
         }
       });
-      const slip = calculatePayslip(staffMember, myRecords, range.start, range.end, approvedLeaveDates);
+      const slip = calculatePayslip(staffMember, myRecords, range.start, range.end, approvedLeaveDates,
+        staffMember.salaryConfig?.type === "borongan" ? await DB.getOrdersProcessedByInRange(uid, range.start, range.end) : null);
       if(!slip){ toast("Pegawai ini belum diatur gajinya", "warn"); return; }
       const id = await DB.addPayslip(slip);
       toast("Slip gaji dibuat");
@@ -1515,9 +1516,16 @@ function openSalaryConfigModal(staffMember){
         <option value="harian" ${cfg.type==='harian'?'selected':''}>Harian (dihitung dari jumlah hari absen masuk)</option>
         <option value="mingguan" ${cfg.type==='mingguan'?'selected':''}>Mingguan (nominal tetap per periode)</option>
         <option value="bulanan" ${cfg.type==='bulanan'?'selected':''}>Bulanan (nominal tetap per periode)</option>
+        <option value="borongan" ${cfg.type==='borongan'?'selected':''}>Borongan (dihitung per kg cucian yang diselesaikan)</option>
       </select>
     </div>
-    <div class="field"><label id="salBaseLabel">Nominal Gaji Pokok (Rp)</label><input type="number" id="salBase" value="${cfg.baseAmount}"></div>
+    <div id="salBaseField">
+      <div class="field"><label id="salBaseLabel">Nominal Gaji Pokok (Rp)</label><input type="number" id="salBase" value="${cfg.baseAmount}"></div>
+    </div>
+    <div id="salBoronganField" style="display:none;">
+      <div class="field"><label>Tarif per Kg (Rp)</label><input type="number" id="salRatePerKg" value="${cfg.ratePerKg||0}" placeholder="Contoh: 1000"></div>
+      <p class="small muted" style="margin:-10px 0 14px;">Dihitung otomatis dari total kg pesanan Kiloan yang ditandai "Selesai" oleh pegawai ini selama periode slip gaji. Cuma berlaku untuk layanan Kiloan.</p>
+    </div>
 
     <div class="field" style="background:var(--foam-white); border-radius:10px; padding:12px;">
       <p class="small" style="font-weight:700; margin-bottom:8px;">Tunjangan (opsional, bisa pilih beberapa)</p>
@@ -1555,9 +1563,18 @@ function openSalaryConfigModal(staffMember){
 
   const salType = modal.querySelector("#salType");
   const salBaseLabel = modal.querySelector("#salBaseLabel");
+  const salBaseField = modal.querySelector("#salBaseField");
+  const salBoronganField = modal.querySelector("#salBoronganField");
   function updateBaseLabel(){
     const map = { harian: "Nominal Gaji Pokok per Hari (Rp)", mingguan: "Nominal Gaji Pokok per Minggu (Rp)", bulanan: "Nominal Gaji Pokok per Bulan (Rp)" };
-    salBaseLabel.textContent = map[salType.value];
+    if(salType.value === "borongan"){
+      salBaseField.style.display = "none";
+      salBoronganField.style.display = "block";
+    } else {
+      salBaseField.style.display = "block";
+      salBoronganField.style.display = "none";
+      salBaseLabel.textContent = map[salType.value];
+    }
   }
   salType.addEventListener("change", updateBaseLabel);
   updateBaseLabel();
@@ -1612,6 +1629,7 @@ function openSalaryConfigModal(staffMember){
     const salaryConfig = {
       type: salType.value,
       baseAmount: parseFloat(modal.querySelector("#salBase").value) || 0,
+      ratePerKg: parseFloat(modal.querySelector("#salRatePerKg").value) || 0,
       allowances: allowances.filter(a=>a.label.trim()),
       lateDeduction: {
         enabled: modal.querySelector("#salLateEnabled").checked,
@@ -2937,13 +2955,21 @@ async function renderMyLeaveRequestsSection(userId){
   `;
 }
 
-function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd, approvedLeaveDates){
+function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd, approvedLeaveDates, processedOrders){
   const cfg = staffMember.salaryConfig;
   if(!cfg) return null;
   const leaveDates = approvedLeaveDates || new Set();
   const attendanceCount = attendanceRecords.length;
 
-  const basePay = cfg.type === "harian" ? cfg.baseAmount * attendanceCount : cfg.baseAmount;
+  let basePay, totalKgProcessed = 0, processedOrderCount = 0;
+  if(cfg.type === "borongan"){
+    const orders = processedOrders || [];
+    totalKgProcessed = orders.reduce((s,o)=>s+(o.weightKg||0), 0);
+    processedOrderCount = orders.length;
+    basePay = totalKgProcessed * (cfg.ratePerKg||0);
+  } else {
+    basePay = cfg.type === "harian" ? cfg.baseAmount * attendanceCount : cfg.baseAmount;
+  }
 
   const allowanceDetails = (cfg.allowances||[]).filter(a=>a.enabled).map(a=>{
     // Fall back to the old (pre-per-allowance-type) behavior for configs saved before this option existed.
@@ -3001,6 +3027,7 @@ function calculatePayslip(staffMember, attendanceRecords, periodStart, periodEnd
     userId: staffMember.uid, userName: staffMember.name || staffMember.email,
     periodStart, periodEnd,
     salaryType: cfg.type, baseAmount: cfg.baseAmount, attendanceCount,
+    ratePerKg: cfg.ratePerKg||0, totalKgProcessed, processedOrderCount,
     basePay, allowanceDetails, totalAllowances,
     deductionDetails, absenceDetails, excusedDetails, totalAbsenceDeduction, totalDeduction,
     totalPay: basePay + totalAllowances - totalDeduction
@@ -3017,8 +3044,13 @@ function payslipDetailHtml(s){
       <p class="small muted" style="text-align:center; margin-top:-8px;">${escapeHtml(state.businessName)}</p>
       <div class="r-row"><span>Nama</span><span class="val">${escapeHtml(s.userName)}</span></div>
       <div class="r-row"><span>Periode</span><span class="val">${fmtDate(s.periodStart)} — ${fmtDate(s.periodEnd)}</span></div>
-      <div class="r-row"><span>Jenis Gaji Pokok</span><span class="val">${s.salaryType === 'harian' ? 'Harian' : s.salaryType === 'mingguan' ? 'Mingguan' : 'Bulanan'}</span></div>
+      <div class="r-row"><span>Jenis Gaji Pokok</span><span class="val">${s.salaryType === 'harian' ? 'Harian' : s.salaryType === 'mingguan' ? 'Mingguan' : s.salaryType === 'borongan' ? 'Borongan (per Kg)' : 'Bulanan'}</span></div>
       ${s.salaryType === "harian" ? `<div class="r-row"><span>Jumlah Hari Masuk</span><span class="val">${s.attendanceCount} hari</span></div>` : ""}
+      ${s.salaryType === "borongan" ? `
+        <div class="r-row"><span>Pesanan Diselesaikan</span><span class="val">${s.processedOrderCount} pesanan</span></div>
+        <div class="r-row"><span>Total Berat Diproses</span><span class="val num">${s.totalKgProcessed} kg</span></div>
+        <div class="r-row"><span>Tarif per Kg</span><span class="val num">${Reports.formatRupiah(s.ratePerKg)}</span></div>
+      ` : ""}
       <div class="r-row" style="margin-top:10px;"><span>Gaji Pokok</span><span class="val num">${Reports.formatRupiah(s.basePay)}</span></div>
       ${s.allowanceDetails.map(a=>`<div class="r-row"><span>${escapeHtml(a.label)}</span><span class="val num">${Reports.formatRupiah(a.amount)}</span></div>`).join("")}
       ${s.deductionDetails.length ? `
@@ -3891,6 +3923,9 @@ function bindCucianCardEvents(){
   document.querySelectorAll("[data-action='advance-order']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       await DB.updateOrderStatus(btn.dataset.id, btn.dataset.next);
+      if(btn.dataset.next === "selesai" && state.user){
+        await DB.updateOrderFields(btn.dataset.id, { processedBy: state.user.uid, processedAt: Reports.todayStr() });
+      }
       toast(`Status diubah: ${STATUS_LABEL[btn.dataset.next]}`);
       if(btn.dataset.next === "selesai"){
         const o = await DB.getOrderById(btn.dataset.id);

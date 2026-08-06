@@ -369,6 +369,15 @@ Setelah itu, setiap kali ongkir otomatis dihitung (di form Pesanan Cucian Baru),
 
     > ⚠️ **Usaha lama yang sudah punya beberapa cabang sebelum fitur ini ada** (termasuk kalau Wash Space Anda sudah multi-cabang) otomatis dianggap Paket Rintisan (1 cabang) secara default — cabang yang SUDAH ADA tidak akan dihapus/terganggu, tapi mereka tidak akan bisa **tambah cabang baru** sampai paketnya disesuaikan manual lewat Kelola Langganan.
 
+9l. **Gaji Borongan (per Kg)** — opsi ke-4 di "Jenis Gaji Pokok" (Atur → Anggota Tim → Kelola Pegawai), selain Harian/Mingguan/Bulanan:
+    - Owner isi **Tarif per Kg** (misal Rp1.000/kg)
+    - Setiap kali pegawai menandai pesanan **Kiloan** jadi "Selesai", sistem otomatis mencatat siapa yang menyelesaikannya
+    - Saat generate slip gaji, gaji pokok dihitung otomatis: **total kg Kiloan yang diselesaikan pegawai itu selama periode slip × tarif per kg**
+    - Tunjangan & potongan (telat, alpa) tetap bisa dipakai bersamaan seperti metode lain
+    - Tetap otomatis masuk ke Laporan Keuangan (Beban Gaji) lewat tombol "Tandai Sudah Dibayar", sama seperti metode Harian/Mingguan/Bulanan
+
+    > ⚠️ **Perlu index Firestore baru** — begitu pertama kali generate slip gaji Borongan, kemungkinan muncul error index di Console (F12). Klik link "Create Index" yang muncul, tunggu "Enabled", lalu coba lagi.
+
 9k. **Piutang, Metode Pembayaran & Arus Kas Harian** (untuk usaha yang membolehkan bayar belakangan):
     - Form Pesanan Baru sekarang punya **Metode Pembayaran** (Tunai/QRIS/Transfer) — wajib dipilih tiap transaksi
     - Kalau isi **"Bayar (Rp)" lebih kecil dari Total**, otomatis muncul peringatan dan pesanan itu tercatat **"Belum Lunas"** — sisanya jadi **piutang**, bukan ikut kehitung sebagai kas masuk (supaya Saldo Kas di Beranda tidak salah lebih besar dari uang fisik yang sebenarnya diterima)

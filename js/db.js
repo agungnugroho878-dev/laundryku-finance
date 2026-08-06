@@ -460,6 +460,18 @@ const DB = {
     return doc.exists ? { id: doc.id, ...doc.data() } : null;
   },
 
+  /** Kiloan orders a specific staff member marked "selesai" within a date
+   *  range — used to calculate borongan (piece-rate per kg) salary. */
+  async getOrdersProcessedByInRange(uid, startDate, endDate){
+    const snap = await fs.collection("orders")
+      .where("businessId","==",_businessId)
+      .where("processedBy","==",uid)
+      .where("processedAt",">=",startDate)
+      .where("processedAt","<=",endDate)
+      .get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => o.serviceType === "kiloan");
+  },
+
   async getRecentOrders(limitCount = 10){
     const snap = await fs.collection("orders")
       .where("businessId","==",_businessId)
