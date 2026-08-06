@@ -5867,6 +5867,14 @@ function openAddTxModal(defaultType){
       <input type="date" id="txDate" value="${Reports.todayStr()}">
     </div>
     <div class="field">
+      <label>Metode Pembayaran</label>
+      <select id="txPaymentMethod">
+        <option value="tunai">Tunai</option>
+        <option value="qris">QRIS</option>
+        <option value="transfer">Transfer</option>
+      </select>
+    </div>
+    <div class="field">
       <label>Catatan (opsional)</label>
       <textarea id="txNote" placeholder="Contoh: Beli deterjen"></textarea>
     </div>
@@ -5953,6 +5961,7 @@ function openAddTxModal(defaultType){
     const categoryId = modal.querySelector("#txCategory").value;
     const date = modal.querySelector("#txDate").value;
     const note = modal.querySelector("#txNote").value.trim();
+    const paymentMethod = modal.querySelector("#txPaymentMethod").value;
 
     if(isNaN(amount) || amount <= 0){ toast("Isi jumlah yang valid", "warn"); return; }
     if(!categoryId){ toast("Pilih kategori", "warn"); return; }
@@ -5960,7 +5969,7 @@ function openAddTxModal(defaultType){
 
     const record = {
       type: currentType, categoryId, categoryName: cat?.name,
-      account: cat?.account, amount, date, note, branchId
+      account: cat?.account, amount, date, note, branchId, paymentMethod
     };
 
     await DB.addTransaction(record);
