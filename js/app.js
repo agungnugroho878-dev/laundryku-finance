@@ -55,7 +55,8 @@ const state = {
   reportTab: "labarugi",
   labaRugiRange: { start: Reports.startOfMonth(), end: Reports.todayStr() },
   neracaDate: Reports.todayStr(),
-  kasHarianDate: Reports.todayStr(),
+  kasHarianRange: { start: Reports.todayStr(), end: Reports.todayStr() },
+  kasHarianPreset: "harian",
   kasHarianFloat: 0,
   cucianFilter: "belum-diproses",
   cucianSort: "deadline-asc",
@@ -1192,8 +1193,8 @@ async function renderAsetTetapSection(){
 
 async function renderArusKasHarianSection(){
   const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
-  const date = state.kasHarianDate;
-  let txs = await DB.getTransactionsInRange(date, date);
+  const { start, end } = state.kasHarianRange;
+  let txs = await DB.getTransactionsInRange(start, end);
   if(activeBranchId) txs = txs.filter(t => t.branchId === activeBranchId);
 
   const inTxs = txs.filter(t => t.type === "in");
@@ -1208,18 +1209,30 @@ async function renderArusKasHarianSection(){
   const totalKeluar = outTxs.reduce((s,t)=>s+(t.amount||0), 0);
   const totalKeluarTunai = outTxs.filter(t => !t.paymentMethod || t.paymentMethod === "tunai").reduce((s,t)=>s+(t.amount||0), 0);
   const kasTunaiSeharusnya = (state.kasHarianFloat||0) + byMethod.tunai - totalKeluarTunai;
+  const periodLabel = start === end ? fmtDate(start) : `${fmtDate(start)} — ${fmtDate(end)}`;
+
+  const presetBtn = (id,label) => `<button type="button" class="btn ${state.kasHarianPreset===id?'btn-primary':'btn-outline'}" data-kas-preset="${id}" style="flex:1; padding:9px 4px; font-size:12.5px;">${label}</button>`;
 
   return `
     <div class="card no-print">
-      <div class="card-title">Tanggal</div>
-      <input type="date" id="kasHarianDateInput" value="${date}">
+      <div class="card-title">Rentang Waktu</div>
+      <div class="btn-row" style="margin-bottom:10px;">
+        ${presetBtn("harian","Harian")}
+        ${presetBtn("bulanan","Bulanan")}
+        ${presetBtn("tahunan","Tahunan")}
+      </div>
+      <div class="date-range">
+        <input type="date" id="kasHarianStart" value="${start}">
+        <span class="muted small">s/d</span>
+        <input type="date" id="kasHarianEnd" value="${end}">
+      </div>
     </div>
 
     <div class="receipt" style="margin-bottom:14px;">
       <div class="r-head">
         <div class="biz">${state.businessName}</div>
         <div class="small muted" style="margin:2px 0 4px;">${reportBranchLabel()}</div>
-        <div class="period">Arus Kas Harian<br>${fmtDate(date)}</div>
+        <div class="period">Arus Kas<br>${periodLabel}</div>
       </div>
       <div class="r-row"><span>Jumlah Transaksi</span><span class="val num">${txs.length}</span></div>
       <div class="r-row section">Pendapatan per Metode Pembayaran</div>
@@ -1234,14 +1247,15 @@ async function renderArusKasHarianSection(){
 
     <div class="card" style="background:var(--foam-white);">
       <div class="card-title">Cek Posisi Kas Tunai Fisik</div>
-      <p class="small muted" style="margin-bottom:12px;">Isi modal awal (uang kembalian yang ditaruh pagi hari), lalu sistem hitung berapa uang tunai yang seharusnya ada di laci sekarang — cocokkan dengan uang fisiknya saat tutup buku.</p>
-      <div class="field">
+      <p class="small muted" style="margin-bottom:12px;">Isi modal awal (uang kembalian yang ditaruh pagi hari), lalu sistem hitung berapa uang tunai yang seharusnya ada di laci sekarang — cocokkan dengan uang fisiknya saat tutup buku. Paling akurat kalau rentang waktu di atas diset ke "Harian".</p>
+      <div class="field" style="margin-bottom:8px;">
         <label>Modal Awal / Uang Kembalian Pagi (Rp)</label>
         <input type="text" inputmode="numeric" id="kasHarianFloatInput" value="${state.kasHarianFloat ? formatThousands(state.kasHarianFloat) : ''}" placeholder="0">
       </div>
+      <button class="btn btn-outline btn-block no-print" id="kasHarianFloatSaveBtn" style="margin-bottom:14px;">Simpan Modal Awal</button>
       <div class="r-row"><span>Modal Awal</span><span class="val num">${Reports.formatRupiah(state.kasHarianFloat||0)}</span></div>
-      <div class="r-row"><span>+ Pendapatan Tunai Hari Ini</span><span class="val pos num">${Reports.formatRupiah(byMethod.tunai)}</span></div>
-      <div class="r-row"><span>− Kas Keluar Tunai Hari Ini</span><span class="val neg num">${Reports.formatRupiah(totalKeluarTunai)}</span></div>
+      <div class="r-row"><span>+ Pendapatan Tunai</span><span class="val pos num">${Reports.formatRupiah(byMethod.tunai)}</span></div>
+      <div class="r-row"><span>− Kas Keluar Tunai</span><span class="val neg num">${Reports.formatRupiah(totalKeluarTunai)}</span></div>
       <div class="r-row total"><span>Kas Tunai Seharusnya Ada</span><span class="val num" style="color:var(--mint);">${Reports.formatRupiah(kasTunaiSeharusnya)}</span></div>
     </div>
 
@@ -1781,7 +1795,7 @@ async function pageLaporan(){
       ${tabBtn("neraca","Neraca")}
       ${tabBtn("aset-tetap","Aset Tetap")}
       ${tabBtn("persediaan","Persediaan")}
-      ${tabBtn("kas-harian","Arus Kas Harian")}
+      ${tabBtn("kas-harian","Arus Kas")}
     </div>
     ${body}
     ${(state.reportTab === "labarugi" || state.reportTab === "neraca") ? `
@@ -6256,13 +6270,34 @@ function bindPageEvents(){
   const neracaDate = document.getElementById("neracaDate");
   if(neracaDate) neracaDate.addEventListener("change", ()=>{ state.neracaDate = neracaDate.value; render(); });
 
-  const kasHarianDateInput = document.getElementById("kasHarianDateInput");
-  if(kasHarianDateInput) kasHarianDateInput.addEventListener("change", ()=>{ state.kasHarianDate = kasHarianDateInput.value; render(); });
+  document.querySelectorAll("[data-kas-preset]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const preset = btn.dataset.kasPreset;
+      state.kasHarianPreset = preset;
+      const today = Reports.todayStr();
+      if(preset === "harian"){
+        state.kasHarianRange = { start: today, end: today };
+      } else if(preset === "bulanan"){
+        state.kasHarianRange = { start: Reports.startOfMonth(), end: today };
+      } else if(preset === "tahunan"){
+        state.kasHarianRange = { start: today.slice(0,4)+"-01-01", end: today };
+      }
+      render();
+    });
+  });
+  const kasHarianStart = document.getElementById("kasHarianStart");
+  const kasHarianEnd = document.getElementById("kasHarianEnd");
+  if(kasHarianStart) kasHarianStart.addEventListener("change", ()=>{ state.kasHarianRange.start = kasHarianStart.value; state.kasHarianPreset = null; render(); });
+  if(kasHarianEnd) kasHarianEnd.addEventListener("change", ()=>{ state.kasHarianRange.end = kasHarianEnd.value; state.kasHarianPreset = null; render(); });
+
   const kasHarianFloatInput = document.getElementById("kasHarianFloatInput");
-  if(kasHarianFloatInput){
-    attachThousandsInput(kasHarianFloatInput);
-    kasHarianFloatInput.addEventListener("change", ()=>{ state.kasHarianFloat = parseThousands(kasHarianFloatInput.value); render(); });
-  }
+  if(kasHarianFloatInput) attachThousandsInput(kasHarianFloatInput);
+  const kasHarianFloatSaveBtn = document.getElementById("kasHarianFloatSaveBtn");
+  if(kasHarianFloatSaveBtn) kasHarianFloatSaveBtn.addEventListener("click", ()=>{
+    state.kasHarianFloat = parseThousands(kasHarianFloatInput.value);
+    toast("Modal awal disimpan");
+    render();
+  });
 
   const printBtn = document.querySelector("[data-action='print']");
   if(printBtn) printBtn.addEventListener("click", ()=> window.print());
