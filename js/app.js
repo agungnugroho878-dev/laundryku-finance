@@ -1994,7 +1994,7 @@ async function pagePengaturan(){
           <div class="card" style="background:${urgent ? 'var(--rose-bg)' : 'var(--coin-bg)'}; margin-bottom:16px;">
             <div style="font-weight:700; color:${urgent ? 'var(--rose)' : 'var(--coin)'}; display:flex; align-items:center; gap:6px;">${ICONS.clock} Masa Trial — ${PLAN_CONFIG[state.businessPlan]?.label || 'Rintisan'}</div>
             <div class="small" style="margin-top:4px; color:var(--ink-navy);">${trialLabel}</div>
-            <a href="https://wa.me/6285353846073?text=Halo%2C%20saya%20mau%20aktifkan%20langganan%20LAMAN" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="margin-top:10px;">Aktifkan Langganan</a>
+            <a href="https://wa.me/6281282548223?text=Halo%2C%20saya%20mau%20aktifkan%20langganan%20LAMAN" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="margin-top:10px;">Aktifkan Langganan</a>
           </div>`;
       }
     }
@@ -6508,7 +6508,7 @@ function bindPageEvents(){
       openModal(`
         <h2>Batas Paket Tercapai</h2>
         <p class="small muted" style="margin-bottom:16px;">Paket <b>${plan.label}</b> Anda maksimal ${plan.maxBranches} cabang. Upgrade paket untuk menambah cabang lagi.</p>
-        <a href="https://wa.me/6285353846073?text=${waMsg}" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="text-decoration:none; display:block; text-align:center;">Hubungi via WhatsApp untuk Upgrade</a>
+        <a href="https://wa.me/6281282548223?text=${waMsg}" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="text-decoration:none; display:block; text-align:center;">Hubungi via WhatsApp untuk Upgrade</a>
         <button class="btn btn-outline btn-block" data-action="detail-close" style="margin-top:10px;">Tutup</button>
       `);
       document.querySelector("[data-action='detail-close']")?.addEventListener("click", closeModal);
@@ -6975,7 +6975,7 @@ function showTrialExpiredScreen(sub, trialEnd){
       <h2 style="margin-bottom:8px;">Masa Trial Berakhir</h2>
       <p class="small muted">Trial 14 hari usaha Anda berakhir pada <b>${fmtDate(trialEnd.toISOString().slice(0,10))}</b>. Data Anda tetap aman tersimpan — hubungi kami untuk lanjut berlangganan dan aktifkan kembali akses.</p>
     </div>
-    <a href="https://wa.me/6285353846073?text=${waMsg}" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="text-decoration:none; display:block; text-align:center;">Hubungi via WhatsApp untuk Berlangganan</a>
+    <a href="https://wa.me/6281282548223?text=${waMsg}" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="text-decoration:none; display:block; text-align:center;">Hubungi via WhatsApp untuk Berlangganan</a>
     <button class="btn btn-outline btn-block" data-action="logout-trial-expired" style="margin-top:10px;">Keluar</button>
   `);
   root.querySelector("[data-action='logout-trial-expired']").addEventListener("click", ()=> auth.signOut());
