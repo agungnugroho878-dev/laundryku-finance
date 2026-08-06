@@ -66,8 +66,28 @@ async function loadOrder(){
     const settingsDoc = await fs.collection("businessSettings").doc(o.businessId).get();
     const settings = settingsDoc.exists ? settingsDoc.data() : {};
     document.getElementById("bizName").textContent = settings.businessName || "LaundryKu";
-    const contactBits = [settings.businessTagline, settings.businessAddress, settings.businessPhone ? `WhatsApp: ${settings.businessPhone}` : null, settings.businessInstagram ? `Instagram: ${settings.businessInstagram}` : null].filter(Boolean);
-    document.getElementById("bizTagline").textContent = contactBits.join(" · ");
+    document.getElementById("bizTagline").textContent = settings.businessTagline || "";
+    document.getElementById("bizTagline").style.display = settings.businessTagline ? "block" : "none";
+
+    if(settings.businessAddress){
+      const addrEl = document.getElementById("bizAddress");
+      addrEl.style.display = "flex";
+      addrEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0118 0Z"/><circle cx="12" cy="10" r="3"/></svg><span>${settings.businessAddress}</span>`;
+    }
+
+    const contactItems = [];
+    if(settings.businessPhone){
+      contactItems.push(`<span class="contact-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5a2 2 0 0 1 2-2h3l2 5-2.5 1.5a11 11 0 0 0 5 5L14 12l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 5Z"/></svg>${settings.businessPhone}</span>`);
+    }
+    if(settings.businessInstagram){
+      contactItems.push(`<span class="contact-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>${settings.businessInstagram}</span>`);
+    }
+    if(contactItems.length){
+      const rowEl = document.getElementById("bizContactRow");
+      rowEl.style.display = "flex";
+      rowEl.innerHTML = contactItems.join("");
+    }
+
     if(settings.businessLogo){
       const logoEl = document.getElementById("bizLogo");
       logoEl.src = settings.businessLogo;

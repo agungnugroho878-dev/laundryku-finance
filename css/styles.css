@@ -621,6 +621,26 @@ body.printing-receipt #receiptPrintArea{
   .kib-table th{ background:none !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 }
 
+.cash-calc{ display:flex; flex-direction:column; gap:2px; margin-bottom:4px; }
+.cash-calc-row{
+  display:flex; align-items:center; gap:12px;
+  padding:9px 4px;
+}
+.cash-calc-op{
+  width:26px; height:26px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:700; font-size:14px;
+}
+.cash-calc-label{ flex:1; font-size:13.5px; color:var(--ink-navy); }
+.cash-calc-val{ font-weight:700; font-size:14px; white-space:nowrap; }
+.cash-calc-result{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  margin-top:12px; padding:16px; border-radius:14px;
+  background:var(--brand-grad); color:#fff;
+}
+.cash-calc-result span:first-child{ font-size:13px; font-weight:600; opacity:.9; }
+.cash-calc-result span:last-child{ font-size:19px; font-weight:700; }
+
 .receipt .r-row{
   display:flex; justify-content:space-between; gap:10px;
   padding:4px 0; font-size:12.5px;

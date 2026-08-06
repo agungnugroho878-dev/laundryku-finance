@@ -645,13 +645,11 @@ async function getServiceTrend(n = 6, branchId = null){
 }
 
 async function pagePegawaiDashboard(){
-  const activeOrders = filterOrdersByBranch(await DB.getActiveOrders());
-  const belumDiproses = activeOrders.filter(o=>o.status==="belum-diproses").length;
-  const sedangDiproses = activeOrders.filter(o=>o.status==="sedang-diproses").length;
   const today = Reports.todayStr();
   const txToday = (await DB.getTransactions()).filter(t=>t.date===today && t.branchId===state.currentBranchId).length;
   const recentOrders = filterOrdersByBranch(await DB.getRecentOrders(10)).slice(0,5);
   const branchName = state.branches.find(b=>b.id===state.currentBranchId)?.name || "";
+  const opStatusStrip = await renderOpStatusStrip(state.currentBranchId);
 
   return `
     <div class="hero-balance">
@@ -659,23 +657,13 @@ async function pagePegawaiDashboard(){
       <div class="amount" style="font-family:var(--font-display); font-size:24px;">${escapeHtml(state.userName || "")}</div>
       <div class="sub"><span>Pegawai · ${escapeHtml(branchName)}</span></div>
     </div>
+    ${opStatusStrip}
 
     <div class="quick-actions">
       <button class="in" data-action="add" data-type="in"><span class="qa-icon">${ICONS.arrowDown}</span>Catat Kas Masuk</button>
       <button class="out" data-action="add" data-type="out"><span class="qa-icon">${ICONS.arrowUp}</span>Catat Kas Keluar</button>
     </div>
     <button class="btn btn-primary btn-block" data-action="add-order" style="margin-bottom:14px;">${ICONS.plus} Pesanan Cucian Baru</button>
-
-    <div class="stat-grid">
-      <div class="card stat-card income">
-        <div class="card-title">Belum Diproses</div>
-        <div class="amount num">${belumDiproses}</div>
-      </div>
-      <div class="card stat-card expense">
-        <div class="card-title">Sedang Diproses</div>
-        <div class="amount num">${sedangDiproses}</div>
-      </div>
-    </div>
 
     <div class="card">
       <div class="card-title">Transaksi Tercatat Hari Ini</div>
@@ -702,26 +690,7 @@ async function pagePegawaiDashboard(){
   `;
 }
 
-async function pageDashboard(){
-  if(!isOwnerOrManager()) return pagePegawaiDashboard();
-
-  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
-  const neraca = await Reports.neraca(Reports.todayStr(), activeBranchId);
-  const monthRange = { start: Reports.startOfMonth(), end: Reports.todayStr() };
-  const lr = await Reports.labaRugi(monthRange.start, monthRange.end, activeBranchId);
-  const months = await Reports.lastMonthsNet(6);
-  const maxAbs = Math.max(1, ...months.map(m => Math.max(m.pendapatan, m.beban)));
-  let txs = await DB.getTransactions();
-  if(activeBranchId) txs = txs.filter(t=>t.branchId===activeBranchId);
-  txs = txs.slice(0,5);
-  const cats = Object.fromEntries(state.categories.map(c=>[c.id,c]));
-
-  const period = state.dashboardPeriod || "month";
-  const periodRange = getPeriodRange(period);
-  const { breakdown, omzetTotal, omzetCount } = await computeServiceBreakdown(periodRange.start, periodRange.end, activeBranchId);
-  const trend = await getServiceTrend(6, activeBranchId);
-  const trendMax = Math.max(1, ...trend.map(m => m.kiloan + m.satuan + m["self-service"]));
-
+async function renderOpStatusStrip(activeBranchId){
   let opActiveOrders = await DB.getActiveOrders();
   let opSelesaiOrders = await getSelesaiOrdersForDisplay();
   if(activeBranchId){
@@ -735,7 +704,7 @@ async function pageDashboard(){
     siapDiambilAntar: opSelesaiOrders.filter(o=>!o.needsDelivery || !o.deliveryDone).length,
     terlambat: opActiveOrders.filter(o=>o.estimatedReadyAt && formatCountdown(o.estimatedReadyAt).overdue).length
   };
-  const opStatusStrip = `
+  return `
     <h3 class="section-title no-print">Status Cucian</h3>
     <div class="op-status-grid no-print">
       <div class="op-status-item" data-action="goto-cucian-filter" data-filter="needs-pickup">
@@ -765,6 +734,29 @@ async function pageDashboard(){
       </div>
     </div>
   `;
+}
+
+async function pageDashboard(){
+  if(!isOwnerOrManager()) return pagePegawaiDashboard();
+
+  const activeBranchId = state.currentBranchId !== "all" ? state.currentBranchId : null;
+  const neraca = await Reports.neraca(Reports.todayStr(), activeBranchId);
+  const monthRange = { start: Reports.startOfMonth(), end: Reports.todayStr() };
+  const lr = await Reports.labaRugi(monthRange.start, monthRange.end, activeBranchId);
+  const months = await Reports.lastMonthsNet(6);
+  const maxAbs = Math.max(1, ...months.map(m => Math.max(m.pendapatan, m.beban)));
+  let txs = await DB.getTransactions();
+  if(activeBranchId) txs = txs.filter(t=>t.branchId===activeBranchId);
+  txs = txs.slice(0,5);
+  const cats = Object.fromEntries(state.categories.map(c=>[c.id,c]));
+
+  const period = state.dashboardPeriod || "month";
+  const periodRange = getPeriodRange(period);
+  const { breakdown, omzetTotal, omzetCount } = await computeServiceBreakdown(periodRange.start, periodRange.end, activeBranchId);
+  const trend = await getServiceTrend(6, activeBranchId);
+  const trendMax = Math.max(1, ...trend.map(m => m.kiloan + m.satuan + m["self-service"]));
+
+  const opStatusStrip = await renderOpStatusStrip(activeBranchId);
 
   return `
     <div class="hero-balance">
@@ -1252,11 +1244,30 @@ async function renderArusKasHarianSection(){
         <label>Modal Awal / Uang Kembalian Pagi (Rp)</label>
         <input type="text" inputmode="numeric" id="kasHarianFloatInput" value="${state.kasHarianFloat ? formatThousands(state.kasHarianFloat) : ''}" placeholder="0">
       </div>
-      <button class="btn btn-outline btn-block no-print" id="kasHarianFloatSaveBtn" style="margin-bottom:14px;">Simpan Modal Awal</button>
-      <div class="r-row"><span>Modal Awal</span><span class="val num">${Reports.formatRupiah(state.kasHarianFloat||0)}</span></div>
-      <div class="r-row"><span>+ Pendapatan Tunai</span><span class="val pos num">${Reports.formatRupiah(byMethod.tunai)}</span></div>
-      <div class="r-row"><span>− Kas Keluar Tunai</span><span class="val neg num">${Reports.formatRupiah(totalKeluarTunai)}</span></div>
-      <div class="r-row total"><span>Kas Tunai Seharusnya Ada</span><span class="val num" style="color:var(--mint);">${Reports.formatRupiah(kasTunaiSeharusnya)}</span></div>
+      <button class="btn btn-outline btn-block no-print" id="kasHarianFloatSaveBtn" style="margin-bottom:16px;">Simpan Modal Awal</button>
+
+      <div class="cash-calc">
+        <div class="cash-calc-row">
+          <div class="cash-calc-op" style="background:var(--foam-white); color:var(--ink-navy); border:1.5px solid var(--line);">=</div>
+          <span class="cash-calc-label">Modal Awal</span>
+          <span class="cash-calc-val num">${Reports.formatRupiah(state.kasHarianFloat||0)}</span>
+        </div>
+        <div class="cash-calc-row">
+          <div class="cash-calc-op" style="background:var(--mint-bg); color:var(--mint);">+</div>
+          <span class="cash-calc-label">Pendapatan Tunai</span>
+          <span class="cash-calc-val num" style="color:var(--mint);">${Reports.formatRupiah(byMethod.tunai)}</span>
+        </div>
+        <div class="cash-calc-row">
+          <div class="cash-calc-op" style="background:var(--rose-bg); color:var(--rose);">−</div>
+          <span class="cash-calc-label">Kas Keluar Tunai</span>
+          <span class="cash-calc-val num" style="color:var(--rose);">${Reports.formatRupiah(totalKeluarTunai)}</span>
+        </div>
+      </div>
+
+      <div class="cash-calc-result">
+        <span>Kas Tunai Seharusnya Ada</span>
+        <span class="num">${Reports.formatRupiah(kasTunaiSeharusnya)}</span>
+      </div>
     </div>
 
     <div class="btn-row no-print" style="margin-top:14px;">

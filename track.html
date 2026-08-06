@@ -15,7 +15,11 @@
   }
   .header{ background:#16232E; color:#F3F7F6; padding:20px; text-align:center; }
   .header .biz{ font-family:Georgia, serif; font-size:19px; font-weight:700; }
-  .header .tagline{ font-size:12px; color:#9FB6BF; margin-top:2px; }
+  .header .tagline{ font-size:12px; color:#9FB6BF; margin-top:2px; font-style:italic; }
+  .header .biz-info-line{ font-size:12px; color:#C7D6DB; margin-top:6px; display:flex; align-items:center; justify-content:center; gap:5px; }
+  .header .biz-info-line svg{ width:13px; height:13px; flex-shrink:0; color:#9FB6BF; }
+  .header .contact-item{ font-size:12px; color:#C7D6DB; display:inline-flex; align-items:center; gap:5px; }
+  .header .contact-item svg{ width:13px; height:13px; color:#9FB6BF; }
   .wrap{ max-width:480px; margin:0 auto; padding:16px; }
   .card{ background:#fff; border-radius:14px; box-shadow:0 1px 2px rgba(22,35,46,.06), 0 6px 16px rgba(22,35,46,.06); padding:18px; margin-bottom:14px; }
   .status-track{ display:flex; align-items:center; justify-content:space-between; margin:8px 0 4px; }
@@ -77,6 +81,8 @@
     <img id="bizLogo" src="" alt="" style="display:none; width:48px; height:48px; object-fit:cover; border-radius:10px; margin:0 auto 8px;">
     <div class="biz" id="bizName">Memuat...</div>
     <div class="tagline" id="bizTagline"></div>
+    <div id="bizAddress" class="biz-info-line" style="display:none;"></div>
+    <div id="bizContactRow" style="display:none; justify-content:center; gap:16px; flex-wrap:wrap; margin-top:6px;"></div>
   </div>
   <div class="wrap" id="content">
     <div class="card center muted">Memuat data pesanan...</div>
