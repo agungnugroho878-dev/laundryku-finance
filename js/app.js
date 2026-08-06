@@ -2223,6 +2223,8 @@ async function pagePengaturan(){
       LAMAN v1.0 — aplikasi manajemen usaha laundry: kasir, laporan keuangan, kurir & ongkir, absensi, dan gaji pegawai. Data tersimpan online (Firestore) dan tersinkron ke semua perangkat yang login.
       <br><br>
       Peta & pencarian alamat oleh OpenStreetMap contributors. Perhitungan jarak jalan oleh <a href="https://openrouteservice.org" target="_blank" rel="noopener">openrouteservice.org</a> by HeiGIT.
+      <br><br>
+      <span style="color:var(--rose);">♥</span> Made with love by <b style="color:var(--ink-navy);">@callmebudi</b>
     </div>
   `;
 
@@ -6693,7 +6695,16 @@ function registerFormHtml(){
   `);
 }
 
+function hideSplashScreen(){
+  const splash = document.getElementById("splashScreen");
+  if(!splash || splash.classList.contains("splash-hide")) return;
+  splash.classList.add("splash-hide");
+  setTimeout(()=> splash.remove(), 500);
+}
+setTimeout(hideSplashScreen, 8000); // safety net for very slow connections
+
 function showAuthScreen(mode){
+  hideSplashScreen();
   document.getElementById("app").style.display = "none";
   let root = document.getElementById("authRoot");
   if(!root){
@@ -6707,6 +6718,7 @@ function showAuthScreen(mode){
 }
 
 function hideAuthScreen(){
+  hideSplashScreen();
   const root = document.getElementById("authRoot");
   if(root) root.style.display = "none";
   document.getElementById("app").style.display = "";
@@ -6764,33 +6776,47 @@ function wireAuthForm(mode, root){
     if(!name || !email || !password){ setErr("Lengkapi semua kolom."); return; }
     if(password.length < 6){ setErr("Password minimal 6 karakter."); return; }
 
+    const registerBtn = root.querySelector("[data-action='do-register']");
+    registerBtn.disabled = true; registerBtn.textContent = "Mendaftarkan...";
+    _registrationInProgress = true;
+
     if(regType === "owner"){
       const bizName = root.querySelector("#authBizName").value.trim();
-      if(!bizName){ setErr("Isi nama usaha."); return; }
+      if(!bizName){ setErr("Isi nama usaha."); _registrationInProgress = false; registerBtn.disabled = false; registerBtn.textContent = "Daftar"; return; }
       try{
         const cred = await auth.createUserWithEmailAndPassword(email, password);
         const businessId = await DB.createBusiness(bizName, cred.user.uid);
-        await fs.collection("users").doc(cred.user.uid).set({
-          name, email, role: "owner", businessId, createdAt: Date.now()
-        });
+        const profile = { name, email, role: "owner", businessId, createdAt: Date.now() };
+        await fs.collection("users").doc(cred.user.uid).set(profile);
+        _registrationInProgress = false;
+        toast("Usaha berhasil dibuat!");
+        await enterAppForUser(cred.user, profile);
       }catch(err){
+        _registrationInProgress = false;
+        registerBtn.disabled = false; registerBtn.textContent = "Daftar";
         console.error("Auth error:", err); setErr(authErrorMessage(err));
       }
     } else {
       const code = root.querySelector("#authInviteCode").value.trim();
-      if(!code){ setErr("Isi kode undangan dari pemilik/manajer cabang."); return; }
+      if(!code){ setErr("Isi kode undangan dari pemilik/manajer cabang."); _registrationInProgress = false; registerBtn.disabled = false; registerBtn.textContent = "Daftar"; return; }
       try{
         const cred = await auth.createUserWithEmailAndPassword(email, password);
         const branch = await DB.getBranchById(code);
         if(!branch){
           await cred.user.delete().catch(()=>{});
+          _registrationInProgress = false;
+          registerBtn.disabled = false; registerBtn.textContent = "Daftar";
           setErr("Kode undangan tidak ditemukan. Cek lagi dengan pemilik/manajer cabang.");
           return;
         }
-        await fs.collection("users").doc(cred.user.uid).set({
-          name, email, role: "pegawai", businessId: branch.businessId, branchId: code, createdAt: Date.now()
-        });
+        const profile = { name, email, role: "pegawai", businessId: branch.businessId, branchId: code, createdAt: Date.now() };
+        await fs.collection("users").doc(cred.user.uid).set(profile);
+        _registrationInProgress = false;
+        toast("Berhasil bergabung!");
+        await enterAppForUser(cred.user, profile);
       }catch(err){
+        _registrationInProgress = false;
+        registerBtn.disabled = false; registerBtn.textContent = "Daftar";
         console.error("Auth error:", err); setErr(authErrorMessage(err));
       }
     }
@@ -6912,6 +6938,14 @@ function showTrialExpiredScreen(sub, trialEnd){
   root.querySelector("[data-action='logout-trial-expired']").addEventListener("click", ()=> auth.signOut());
 }
 
+/** Guards against a race condition: Firebase Auth signs the user in the
+ *  instant createUserWithEmailAndPassword() resolves, which fires
+ *  onAuthStateChanged BEFORE the registration handler has finished writing
+ *  the business/user profile documents. Without this flag, the auth
+ *  listener would briefly see "no profile yet" and show a scary
+ *  "account not linked to any business" error mid-registration. */
+let _registrationInProgress = false;
+
 async function startApp(){
   const sub = await DB.getCurrentBusinessSubscription();
   state.businessPlan = sub?.plan || "rintisan";
@@ -6951,10 +6985,23 @@ async function startApp(){
   runPhotoCleanupIfDue(); // fire-and-forget, throttled to ~once/day, owner-only
 }
 
+async function enterAppForUser(user, profile){
+  state.user = user;
+  state.role = profile.role || "pegawai";
+  state.userName = profile.name || user.email;
+  state.businessId = profile.businessId;
+  state.userBranchId = profile.branchId || null;
+  DB.setBusinessContext(profile.businessId);
+  hideAuthScreen();
+  await startApp();
+}
+
 auth.onAuthStateChanged(async (user) => {
   if(user){
+    if(_registrationInProgress) return; // registration handler will call enterAppForUser() itself once ready
     const profile = await loadUserProfile(user);
     if(!profile.businessId){
+      hideSplashScreen();
       document.getElementById("app").style.display = "none";
       const root = document.getElementById("authRoot") || document.body.appendChild(Object.assign(document.createElement("div"), {id:"authRoot"}));
       root.style.display = "block";
@@ -6968,14 +7015,7 @@ auth.onAuthStateChanged(async (user) => {
       root.querySelector("[data-action='logout-stuck']").addEventListener("click", ()=> auth.signOut());
       return;
     }
-    state.user = user;
-    state.role = profile.role || "pegawai";
-    state.userName = profile.name || user.email;
-    state.businessId = profile.businessId;
-    state.userBranchId = profile.branchId || null;
-    DB.setBusinessContext(profile.businessId);
-    hideAuthScreen();
-    await startApp();
+    await enterAppForUser(user, profile);
   } else {
     state.user = null;
     state.role = null;
