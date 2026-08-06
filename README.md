@@ -62,10 +62,14 @@ service cloud.firestore {
       allow update: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
+    function isBizOwnerBootstrap(bizId) {
+      return isSignedIn() && get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerUid == request.auth.uid;
+    }
+
     match /businessSettings/{bizId} {
       allow get: if true;
       allow list: if false;
-      allow write, delete: if sameBusiness(bizId) || isSuperAdmin();
+      allow write, delete: if sameBusiness(bizId) || isSuperAdmin() || isBizOwnerBootstrap(bizId);
     }
 
     match /transactions/{id} {

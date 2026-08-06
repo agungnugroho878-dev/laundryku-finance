@@ -99,7 +99,8 @@ const DB = {
       status: data.subscriptionStatus || "trial",
       trialStartDate: data.trialStartDate || null,
       trialDays: data.trialDays || 14,
-      plan: data.plan || "rintisan"
+      plan: data.plan || "rintisan",
+      subscriptionRenewedAt: data.subscriptionRenewedAt || null
     };
   },
 

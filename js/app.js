@@ -1959,8 +1959,48 @@ async function pagePengaturan(){
   const section = state.settingsSection;
 
   if(!section){
+    const sub = state.subscriptionInfo;
+    let subCard = "";
+    if(sub){
+      if(sub.status === "active"){
+        let dueLabel = "";
+        if(sub.subscriptionRenewedAt){
+          const start = new Date(sub.subscriptionRenewedAt+"T00:00:00");
+          const due = new Date(start);
+          due.setMonth(due.getMonth()+1);
+          const daysLeft = Math.ceil((due - new Date())/(24*60*60*1000));
+          dueLabel = `Mulai: <b>${fmtDate(sub.subscriptionRenewedAt)}</b> · Jatuh tempo berikutnya: <b>${fmtDate(due.toISOString().slice(0,10))}</b>${daysLeft >= 0 ? ` (${daysLeft} hari lagi)` : ` (terlambat ${Math.abs(daysLeft)} hari)`}`;
+        }
+        subCard = `
+          <div class="card" style="background:var(--mint-bg); margin-bottom:16px;">
+            <div class="row-between" style="align-items:flex-start;">
+              <div>
+                <div style="font-weight:700; color:var(--mint); display:flex; align-items:center; gap:6px;">${ICONS.check} Langganan Aktif — ${PLAN_CONFIG[state.businessPlan]?.label || 'Rintisan'}</div>
+                ${dueLabel ? `<div class="small" style="margin-top:4px; color:var(--ink-navy);">${dueLabel}</div>` : ''}
+              </div>
+            </div>
+          </div>`;
+      } else {
+        let trialLabel = "Tanggal mulai trial tidak diketahui.";
+        let urgent = false;
+        if(sub.trialStartDate){
+          const trialEnd = new Date(sub.trialStartDate+"T00:00:00");
+          trialEnd.setDate(trialEnd.getDate() + (sub.trialDays||14));
+          const daysLeft = Math.ceil((trialEnd - new Date())/(24*60*60*1000));
+          urgent = daysLeft <= 3;
+          trialLabel = `Mulai: <b>${fmtDate(sub.trialStartDate)}</b> · Berakhir: <b>${fmtDate(trialEnd.toISOString().slice(0,10))}</b> — ${daysLeft >= 0 ? `${daysLeft} hari lagi` : `sudah berakhir`}`;
+        }
+        subCard = `
+          <div class="card" style="background:${urgent ? 'var(--rose-bg)' : 'var(--coin-bg)'}; margin-bottom:16px;">
+            <div style="font-weight:700; color:${urgent ? 'var(--rose)' : 'var(--coin)'}; display:flex; align-items:center; gap:6px;">${ICONS.clock} Masa Trial — ${PLAN_CONFIG[state.businessPlan]?.label || 'Rintisan'}</div>
+            <div class="small" style="margin-top:4px; color:var(--ink-navy);">${trialLabel}</div>
+            <a href="https://wa.me/6285353846073?text=Halo%2C%20saya%20mau%20aktifkan%20langganan%20LAMAN" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="margin-top:10px;">Aktifkan Langganan</a>
+          </div>`;
+      }
+    }
     return `
       ${accountCard}
+      ${subCard}
       <h3 class="section-title">Pengaturan Usaha</h3>
       <div class="akun-menu-grid">
         ${Object.entries(SETTINGS_MENU_META).map(([id,m])=>`
@@ -6952,6 +6992,7 @@ let _registrationInProgress = false;
 async function startApp(){
   const sub = await DB.getCurrentBusinessSubscription();
   state.businessPlan = sub?.plan || "rintisan";
+  state.subscriptionInfo = sub;
   if(sub && sub.status === "trial" && sub.trialStartDate){
     const trialEnd = new Date(sub.trialStartDate+"T00:00:00");
     trialEnd.setDate(trialEnd.getDate() + (sub.trialDays||14));
