@@ -3955,9 +3955,12 @@ function bindCucianCardEvents(){
   });
   document.querySelectorAll("[data-action='delete-order']").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
-      if(!confirm("Hapus pesanan ini?")) return;
+      if(!confirm("Hapus pesanan ini? Transaksi keuangan yang terkait (termasuk pelunasan piutang jika ada) akan ikut terhapus dari laporan.")) return;
+      const allTx = await DB.getTransactions();
+      const linkedTx = allTx.filter(t => t.orderId === btn.dataset.id);
+      for(const t of linkedTx) await DB.deleteTransaction(t.id);
       await DB.deleteOrder(btn.dataset.id);
-      toast("Pesanan dihapus");
+      toast(linkedTx.length ? "Pesanan & transaksi terkait dihapus" : "Pesanan dihapus");
       renderCucianList();
     });
   });

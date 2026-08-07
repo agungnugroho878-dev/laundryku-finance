@@ -58,7 +58,8 @@ service cloud.firestore {
     match /branches/{branchId} {
       allow get: if isSignedIn();
       allow list: if sameBusiness(resource.data.businessId) || isSuperAdmin();
-      allow create, delete: if isOwner() && sameBusiness(request.resource.data.businessId);
+      allow create: if isOwner() && sameBusiness(request.resource.data.businessId);
+      allow delete: if isOwner() && sameBusiness(resource.data.businessId);
       allow update: if (isOwnerOrManager() && sameBusiness(resource.data.businessId)) || isSuperAdmin();
     }
 
