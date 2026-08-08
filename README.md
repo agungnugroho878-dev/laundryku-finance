@@ -370,7 +370,18 @@ Setelah itu, setiap kali ongkir otomatis dihitung (di form Pesanan Cucian Baru),
 
     > ⚠️ **Usaha lama yang sudah punya beberapa cabang sebelum fitur ini ada** (termasuk kalau Wash Space Anda sudah multi-cabang) otomatis dianggap Paket Rintisan (1 cabang) secara default — cabang yang SUDAH ADA tidak akan dihapus/terganggu, tapi mereka tidak akan bisa **tambah cabang baru** sampai paketnya disesuaikan manual lewat Kelola Langganan.
 
-9l. **Gaji Borongan (per Kg)** — opsi ke-4 di "Jenis Gaji Pokok" (Atur → Anggota Tim → Kelola Pegawai), selain Harian/Mingguan/Bulanan:
+9m. **Estimasi Selesai untuk Satuan** — form Pesanan Baru tab Satuan sekarang punya "Estimasi Selesai" (angka + Jam/Hari), sama seperti Kiloan — otomatis terhitung deadline & muncul di countdown/badge "Terlambat".
+
+9n. **Promo Event** (Atur → Promo & Loyalty, kartu paling atas) — beda dari promo akumulasi di bawahnya, ini diskon langsung untuk SEMUA pelanggan selama diaktifkan (misal Promo Opening). 3 jenis:
+    - **Persentase (%)** dari total pesanan
+    - **Potongan Rupiah tetap**
+    - **Potongan sejumlah Kg** (khusus Kiloan — dihitung dari harga per kg pesanan itu)
+
+    Begitu aktif, otomatis terpotong dari setiap pesanan baru (bisa gabung dengan promo akumulasi kalau dua-duanya aktif) dan muncul di struk (WA, cetak, gambar) sebagai baris "Diskon".
+
+9o. **Perbaikan alur "Belum Dibayar"** — form Pesanan Baru sekarang punya tombol **"Belum Dibayar (Catat sebagai Piutang)"** — klik sekali otomatis set Bayar=0 dengan jelas, supaya tidak keliru mengosongkan kolom Bayar (yang berarti "lunas pas", bukan "belum bayar").
+
+
     - Owner isi **Tarif per Kg** (misal Rp1.000/kg)
     - Setiap kali pegawai menandai pesanan **Kiloan** jadi "Selesai", sistem otomatis mencatat siapa yang menyelesaikannya
     - Saat generate slip gaji, gaji pokok dihitung otomatis: **total kg Kiloan yang diselesaikan pegawai itu selama periode slip × tarif per kg**

@@ -1932,6 +1932,7 @@ async function pagePengaturan(){
   const pricing = isOwner ? await getPricing() : null;
   const kiloanLoyalty = isOwner ? await getKiloanLoyalty() : null;
   const ssLoyalty = isOwner ? await getSelfServiceLoyalty() : null;
+  const eventPromo = isOwner ? await getEventPromo() : null;
   const printerSettings = isOwner ? await getPrinterSettings() : null;
   const photoRetentionDays = isOwner ? await DB.getSetting("photoRetentionDays", 10) : null;
   let staff = isOwner ? await DB.getBusinessStaff() : null;
@@ -2109,6 +2110,33 @@ async function pagePengaturan(){
   `;
 
   sections.promo = `
+    <h3 class="section-title">Promo Event</h3>
+    <p class="small muted" style="margin:-6px 0 10px;">Beda dari promo di bawah — ini bukan akumulasi, tapi diskon langsung untuk SEMUA pelanggan selama diaktifkan (misal Promo Opening, Promo 17 Agustus, dll). Otomatis muncul di struk sebagai potongan.</p>
+    <div class="card">
+      <div class="field">
+        <label>Aktifkan Promo Event?</label>
+        <select id="ep-enabled">
+          <option value="0" ${!eventPromo.enabled?'selected':''}>Nonaktif</option>
+          <option value="1" ${eventPromo.enabled?'selected':''}>Aktif</option>
+        </select>
+      </div>
+      <div class="field"><label>Nama Promo (muncul di struk)</label><input type="text" id="ep-name" value="${escapeHtml(eventPromo.name)}" placeholder="Contoh: Promo Opening"></div>
+      <div class="field">
+        <label>Jenis Potongan</label>
+        <select id="ep-type">
+          <option value="percent" ${eventPromo.type==='percent'?'selected':''}>Persentase dari Total (%)</option>
+          <option value="rupiah" ${eventPromo.type==='rupiah'?'selected':''}>Potongan Harga Tetap (Rp)</option>
+          <option value="kg" ${eventPromo.type==='kg'?'selected':''}>Potongan Sejumlah Kg (khusus Kiloan)</option>
+        </select>
+      </div>
+      <div class="field" id="ep-value-field">
+        <label id="ep-value-label">Nilai Potongan</label>
+        <input type="number" id="ep-value" value="${eventPromo.value}">
+      </div>
+      <p class="small muted" id="ep-kg-note" style="display:${eventPromo.type==='kg'?'block':'none'}; margin-top:-10px;">Contoh: potongan 2kg pada pesanan Kiloan Rp5.000/kg = potongan Rp10.000 otomatis dihitung dari harga per kg pesanan itu.</p>
+      <button class="btn btn-primary" data-action="save-event-promo" style="margin-top:4px;">Simpan Promo Event</button>
+    </div>
+
     <h3 class="section-title">Promo Kiloan</h3>
     <p class="small muted" style="margin:-6px 0 10px;">Tiap jenis kiloan punya target & bentuk promo sendiri-sendiri — akumulasi beratnya juga dihitung terpisah per jenis.</p>
     ${Object.entries(KILOAN_LABELS).map(([key,label]) => {
@@ -2448,6 +2476,30 @@ async function getSelfServiceLoyalty(){
 
 async function setSelfServiceLoyalty(v){
   await DB.setSetting("selfServiceLoyalty", v);
+}
+
+const DEFAULT_EVENT_PROMO = { enabled: false, name: "", type: "percent", value: 0 };
+
+async function getEventPromo(){
+  const saved = await DB.getSetting("eventPromo", null);
+  return { ...DEFAULT_EVENT_PROMO, ...(saved||{}) };
+}
+
+async function setEventPromo(v){
+  await DB.setSetting("eventPromo", v);
+}
+
+/** Computes the event-promo discount (Rp) for a given order subtotal/weight.
+ *  serviceType: only 'kg' promo type applies to kiloan orders (needs weightKg). */
+function computeEventPromoDiscount(promo, subtotal, weightKg){
+  if(!promo?.enabled) return 0;
+  if(promo.type === "percent") return Math.round(subtotal * (promo.value/100));
+  if(promo.type === "rupiah") return Math.min(promo.value, subtotal);
+  if(promo.type === "kg" && weightKg){
+    const rate = weightKg > 0 ? subtotal / weightKg : 0;
+    return Math.min(Math.round(promo.value * rate), subtotal);
+  }
+  return 0;
 }
 
 function durationMs(duration, unit){
@@ -3674,6 +3726,7 @@ function openOrderDetailModal(o){
     ` : ""}
 
     ${o.customerPhone ? `<button class="btn btn-block" data-action="detail-send-tracking" style="margin-top:16px; background:#EAF3FF; color:#1E5FA8;">${ICONS.star} Kirim Link Pantau</button>` : ""}
+    <button class="btn btn-outline btn-block" data-action="detail-print-receipt" data-id="${o.id}" style="margin-top:10px;">${ICONS.printer} Cetak / Kirim Struk</button>
     <button class="btn btn-outline btn-block" data-action="detail-close" style="margin-top:10px;">Tutup</button>
   `);
 
@@ -3786,6 +3839,14 @@ function openOrderDetailModal(o){
     const waUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
     trackWaSendAndWarn();
     window.open(waUrl, "_blank");
+  });
+
+  const printReceiptBtn = modal.querySelector("[data-action='detail-print-receipt']");
+  if(printReceiptBtn) printReceiptBtn.addEventListener("click", async ()=>{
+    const txs = await DB.getTransactions();
+    const t = (o.transactionId && txs.find(x => x.id === o.transactionId)) || txs.find(x => x.orderId === o.id);
+    if(!t){ toast("Transaksi untuk pesanan ini tidak ditemukan", "warn"); return; }
+    openPrintChoiceModal(t);
   });
 
   modal.querySelector("[data-action='detail-close']").addEventListener("click", closeModal);
@@ -4033,6 +4094,7 @@ async function openAddOrderModal(){
   const pricing = await getPricing();
   const kiloanLoyalty = await getKiloanLoyalty();
   const ssLoyalty = await getSelfServiceLoyalty();
+  const eventPromo = await getEventPromo();
   const kiloanJenisOptions = Object.entries(KILOAN_LABELS).map(([id,label])=>`<option value="${id}">${label}</option>`).join("");
   const selfServiceOptions = Object.entries(SELF_SERVICE_LABELS).map(([id,label])=>`<option value="${id}">${label} (Rp${pricing.selfService[id].toLocaleString('id-ID')})</option>`).join("");
   const satuanOptions = pricing.satuan.map(s=>`<option value="${s.id}">${s.name} (${Reports.formatRupiah(s.price)})</option>`).join("");
@@ -4067,6 +4129,13 @@ async function openAddOrderModal(){
           <button type="button" class="btn btn-outline" id="addSatuanLine" style="margin-bottom:14px;">+</button>
         </div>
         <div id="satuanCart" style="margin:10px 0;"></div>
+        <div class="field-row" style="display:flex; gap:8px; align-items:flex-end;">
+          <div class="field" style="flex:1; margin-bottom:0;"><label>Estimasi Selesai</label><input type="number" id="satuanDurationValue" value="1" min="1" style="text-align:center;"></div>
+          <div class="field" style="flex:1.4; margin-bottom:14px;"><select id="satuanDurationUnit">
+            <option value="jam">Jam</option>
+            <option value="hari" selected>Hari</option>
+          </select></div>
+        </div>
       `}
     </div>
 
@@ -4084,6 +4153,7 @@ async function openAddOrderModal(){
       <div class="field" style="flex:1;"><label>Bayar (Rp)</label><input type="text" inputmode="numeric" id="ordBayar" placeholder="Samakan dengan Total jika pas"></div>
       <div class="field" style="flex:1;"><label>Kembalian</label><input type="text" id="ordKembalian" value="Rp0" disabled style="background:var(--foam-white);"></div>
     </div>
+    <button type="button" class="btn btn-outline" id="ordMarkUnpaidBtn" style="width:100%; margin:-10px 0 14px; font-size:12.5px; padding:9px;">${ICONS.clock} Belum Dibayar (Catat sebagai Piutang)</button>
     <div class="field">
       <label>Metode Pembayaran</label>
       <select id="ordPaymentMethod">
@@ -4370,6 +4440,11 @@ async function openAddOrderModal(){
   attachThousandsInput(modal.querySelector("#ordBayar"));
   attachThousandsInput(modal.querySelector("#ordDeliveryFee"));
   modal.querySelector("#ordBayar").addEventListener("input", recalcKembalian);
+  modal.querySelector("#ordMarkUnpaidBtn").addEventListener("click", ()=>{
+    modal.querySelector("#ordBayar").value = "0";
+    recalcKembalian();
+    toast("Ditandai belum dibayar — akan tercatat sebagai piutang");
+  });
 
   const courierToggle = modal.querySelector("#ordCourierToggle");
   const courierFields = modal.querySelector("#courierFields");
@@ -4575,6 +4650,10 @@ async function openAddOrderModal(){
       if(satuanCart.length === 0){ toast("Tambahkan minimal 1 barang", "warn"); return; }
       categoryId = "cuci-satuan";
       if(customerPhone) await ensureMemberIdentity(customerPhone, customerName);
+      const durValue = parseFloat(modal.querySelector("#satuanDurationValue").value) || 1;
+      const durUnit = modal.querySelector("#satuanDurationUnit").value;
+      estimatedReadyAt = Date.now() + durationMs(durValue, durUnit);
+      durationLabel = `${durValue} ${durUnit}`;
     } else {
       const subType = modal.querySelector("#ordSubTypeSelf").value;
       categoryId = "self-service";
@@ -4588,6 +4667,15 @@ async function openAddOrderModal(){
     if(serviceType === "self-service" && customerPhone){
       const visitResult = await recordSelfServiceVisit(customerPhone, customerName);
       isFreeVisit = visitResult.isFree;
+    }
+
+    if(eventPromo.enabled && total > 0){
+      const epDiscount = computeEventPromoDiscount(eventPromo, total, totalWeightKg);
+      if(epDiscount > 0){
+        total -= epDiscount;
+        discountAmount = (discountAmount||0) + epDiscount;
+        discountReason = discountReason ? `${discountReason} + ${eventPromo.name}` : eventPromo.name;
+      }
     }
 
     const receiptNo = await DB.getNextReceiptCode(serviceType, Reports.todayStr());
@@ -4674,7 +4762,7 @@ async function openAddOrderModal(){
     await DB.addOrder(orderPayload, orderId);
 
     closeModal();
-    toast("Pesanan & pendapatan tersimpan");
+    toast(discountAmount > 0 ? `Pesanan tersimpan — potongan ${Reports.formatRupiah(discountAmount)} (${discountReason}) diterapkan` : "Pesanan & pendapatan tersimpan");
 
     const loyaltyProgressText = await buildLoyaltyProgressText(txRecord);
     offerSendReceipt({ ...txRecord, id: txId, orderId, hasPhotos: photoUrls.length > 0, loyaltyProgressText });
@@ -6498,6 +6586,30 @@ function bindPageEvents(){
       visitTarget: parseInt(document.getElementById("ss-target").value) || 10
     });
     toast("Promo self-service disimpan");
+    render();
+  });
+
+  const epTypeSelect = document.getElementById("ep-type");
+  if(epTypeSelect){
+    const epValueLabel = document.getElementById("ep-value-label");
+    const epKgNote = document.getElementById("ep-kg-note");
+    const updateEpLabel = ()=>{
+      const map = { percent: "Nilai Potongan (%)", rupiah: "Nilai Potongan (Rp)", kg: "Jumlah Kg Potongan" };
+      epValueLabel.textContent = map[epTypeSelect.value];
+      epKgNote.style.display = epTypeSelect.value === "kg" ? "block" : "none";
+    };
+    epTypeSelect.addEventListener("change", updateEpLabel);
+    updateEpLabel();
+  }
+  const saveEventPromoBtn = document.querySelector("[data-action='save-event-promo']");
+  if(saveEventPromoBtn) saveEventPromoBtn.addEventListener("click", async ()=>{
+    await setEventPromo({
+      enabled: document.getElementById("ep-enabled").value === "1",
+      name: document.getElementById("ep-name").value.trim() || "Promo",
+      type: document.getElementById("ep-type").value,
+      value: parseFloat(document.getElementById("ep-value").value) || 0
+    });
+    toast("Promo event disimpan");
     render();
   });
 
