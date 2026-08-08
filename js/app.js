@@ -4149,6 +4149,8 @@ async function openAddOrderModal(){
       <label>Total (Rp) <span class="small muted">— otomatis, bisa diubah manual</span></label>
       <input type="text" inputmode="numeric" class="amount-input" id="ordTotal" value="0">
     </div>
+    <p class="small" id="ordEventPromoNote" style="display:none; margin:-10px 0 14px; padding:9px 12px; background:var(--mint-bg); color:var(--mint); border-radius:10px; font-weight:600;"></p>
+    <p class="small" id="ordLoyaltyPromoNote" style="display:none; margin:-10px 0 14px; padding:9px 12px; background:var(--coin-bg); color:var(--coin); border-radius:10px; font-weight:700; text-align:center;"></p>
     <div class="field-row" style="display:flex; gap:10px;">
       <div class="field" style="flex:1;"><label>Bayar (Rp)</label><input type="text" inputmode="numeric" id="ordBayar" placeholder="Samakan dengan Total jika pas"></div>
       <div class="field" style="flex:1;"><label id="ordKembalianLabel">Kembalian</label><input type="text" id="ordKembalian" value="Rp0" disabled style="background:var(--foam-white);"></div>
@@ -4230,6 +4232,7 @@ async function openAddOrderModal(){
   let satuanCart = []; // [{id, name, price, qty}]
   let photoUrls = [];
   let pendingKiloanPromo = null; // preview only — authoritative check happens again on save
+  let appliedEventPromoDiscount = 0; // set live by recalcTotal(), read (not recomputed) on save to avoid double-discounting
 
   function refreshKiloanTierOptions(){
     const jenis = modal.querySelector("#kiloanJenisPicker").value;
@@ -4383,22 +4386,47 @@ async function openAddOrderModal(){
     }
     const deliveryFee = parseThousands(modal.querySelector("#ordDeliveryFee")?.value);
     total += deliveryFee;
+
+    const epNote = modal.querySelector("#ordEventPromoNote");
+    appliedEventPromoDiscount = 0;
+    if(eventPromo.enabled && total > 0){
+      const weightForPromo = serviceType === "kiloan" ? kiloanCart.reduce((s,l)=>s+l.weightKg,0) : null;
+      const epDiscount = computeEventPromoDiscount(eventPromo, total, weightForPromo);
+      if(epDiscount > 0){
+        total -= epDiscount;
+        appliedEventPromoDiscount = epDiscount;
+        epNote.style.display = "block";
+        epNote.textContent = `🎉 ${eventPromo.name}: -${Reports.formatRupiah(epDiscount)} sudah otomatis terpotong dari Total di bawah`;
+      } else {
+        epNote.style.display = "none";
+      }
+    } else {
+      epNote.style.display = "none";
+    }
+
     modal.querySelector("#ordTotal").value = formatThousands(Math.round(total));
     recalcKembalian();
   }
 
   async function refreshLoyaltyPreview(){
     const box = modal.querySelector("#loyaltyLookup");
+    const loyaltyNote = modal.querySelector("#ordLoyaltyPromoNote");
     const phone = modal.querySelector("#ordCustPhone").value.trim();
 
     if(serviceType === "self-service"){
-      if(phone.length < 8){ box.innerHTML = ""; return; }
+      if(phone.length < 8){ box.innerHTML = ""; loyaltyNote.style.display = "none"; return; }
       const status = await getMemberStatus(phone);
       box.innerHTML = loyaltyNoteHtml(status, ssLoyalty);
       const ssTarget = ssLoyalty.visitTarget || 10;
-      if(ssLoyalty.enabled && status.visits >= ssTarget){ modal.querySelector("#ordTotal").value = 0; recalcKembalian(); }
+      if(ssLoyalty.enabled && status.visits >= ssTarget){
+        modal.querySelector("#ordTotal").value = 0; recalcKembalian();
+        loyaltyNote.style.display = "block";
+        loyaltyNote.textContent = `🎉 Selamat! Kunjungan ke-${status.visits+1} pelanggan ini GRATIS (Program Loyalty Self-Service) — Total otomatis Rp0`;
+      } else {
+        loyaltyNote.style.display = "none";
+      }
     } else if(serviceType === "kiloan"){
-      if(phone.length < 8){ box.innerHTML = ""; pendingKiloanPromo = null; recalcTotal(); return; }
+      if(phone.length < 8){ box.innerHTML = ""; pendingKiloanPromo = null; loyaltyNote.style.display = "none"; recalcTotal(); return; }
       const status = await getMemberStatus(phone);
       const existingBalances = (typeof status.kiloanBalance === "object" && status.kiloanBalance) || {};
       const cartWeightBySubtype = {};
@@ -4419,9 +4447,17 @@ async function openAddOrderModal(){
           break;
         }
       }
+      if(pendingKiloanPromo){
+        loyaltyNote.style.display = "block";
+        const promoDesc = pendingKiloanPromo.promoType === "free-kg" ? `gratis ${pendingKiloanPromo.freeKg}kg` : `potongan ${Reports.formatRupiah(pendingKiloanPromo.discountAmount)}`;
+        loyaltyNote.textContent = `🎉 Akumulasi ${pendingKiloanPromo.thresholdKg}kg (${pendingKiloanPromo.subTypeLabel}) tercapai — ${promoDesc} otomatis terpotong dari Total`;
+      } else {
+        loyaltyNote.style.display = "none";
+      }
       recalcTotal();
     } else {
       box.innerHTML = "";
+      loyaltyNote.style.display = "none";
     }
   }
 
@@ -4671,13 +4707,12 @@ async function openAddOrderModal(){
       isFreeVisit = visitResult.isFree;
     }
 
-    if(eventPromo.enabled && total > 0){
-      const epDiscount = computeEventPromoDiscount(eventPromo, total, totalWeightKg);
-      if(epDiscount > 0){
-        total -= epDiscount;
-        discountAmount = (discountAmount||0) + epDiscount;
-        discountReason = discountReason ? `${discountReason} + ${eventPromo.name}` : eventPromo.name;
-      }
+    // Event promo discount was already subtracted from `total` live in recalcTotal()
+    // as the cashier filled the form — reuse that same figure here for the record
+    // (recomputing against the already-discounted total would double-discount it).
+    if(appliedEventPromoDiscount > 0){
+      discountAmount = (discountAmount||0) + appliedEventPromoDiscount;
+      discountReason = discountReason ? `${discountReason} + ${eventPromo.name}` : eventPromo.name;
     }
 
     const receiptNo = await DB.getNextReceiptCode(serviceType, Reports.todayStr());
