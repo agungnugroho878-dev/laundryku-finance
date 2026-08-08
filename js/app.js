@@ -4151,7 +4151,7 @@ async function openAddOrderModal(){
     </div>
     <div class="field-row" style="display:flex; gap:10px;">
       <div class="field" style="flex:1;"><label>Bayar (Rp)</label><input type="text" inputmode="numeric" id="ordBayar" placeholder="Samakan dengan Total jika pas"></div>
-      <div class="field" style="flex:1;"><label>Kembalian</label><input type="text" id="ordKembalian" value="Rp0" disabled style="background:var(--foam-white);"></div>
+      <div class="field" style="flex:1;"><label id="ordKembalianLabel">Kembalian</label><input type="text" id="ordKembalian" value="Rp0" disabled style="background:var(--foam-white);"></div>
     </div>
     <button type="button" class="btn btn-outline" id="ordMarkUnpaidBtn" style="width:100%; margin:-10px 0 14px; font-size:12.5px; padding:9px;">${ICONS.clock} Belum Dibayar (Catat sebagai Piutang)</button>
     <div class="field">
@@ -4348,11 +4348,13 @@ async function openAddOrderModal(){
     const total = parseThousands(modal.querySelector("#ordTotal").value);
     const bayarStr = modal.querySelector("#ordBayar").value.trim();
     const kembalianField = modal.querySelector("#ordKembalian");
+    const kembalianLabel = modal.querySelector("#ordKembalianLabel");
     const piutangHint = modal.querySelector("#ordPiutangHint");
-    if(!bayarStr){ kembalianField.value = "Rp0"; piutangHint.style.display = "none"; return; }
+    if(!bayarStr){ kembalianField.value = "Rp0"; kembalianLabel.textContent = "Kembalian"; piutangHint.style.display = "none"; return; }
     const bayar = parseThousands(bayarStr);
     const change = bayar - total;
-    kembalianField.value = Reports.formatRupiah(change);
+    kembalianLabel.textContent = change < 0 ? "Kurang Bayar" : "Kembalian";
+    kembalianField.value = Reports.formatRupiah(Math.abs(change));
     kembalianField.style.color = change < 0 ? "var(--rose)" : "";
     if(change < 0){
       piutangHint.style.display = "block";
@@ -5495,7 +5497,8 @@ function buildReceiptText(t){
   lines.push(`Total      : ${Reports.formatRupiah(trueTotal)}`);
   if(typeof t.amountPaid === "number"){
     lines.push(`Bayar      : ${Reports.formatRupiah(t.amountPaid)}`);
-    lines.push(`Kembalian  : ${Reports.formatRupiah(t.changeAmount||0)}`);
+    const change = t.changeAmount||0;
+    lines.push(change < 0 ? `Kurang Bayar: ${Reports.formatRupiah(Math.abs(change))}` : `Kembalian  : ${Reports.formatRupiah(change)}`);
   }
   if(t.paymentMethod) lines.push(`Metode     : ${PAYMENT_METHOD_LABEL[t.paymentMethod] || t.paymentMethod}`);
   if(t.paymentStatus === "belum-lunas"){
@@ -5689,7 +5692,8 @@ function buildEscPos(t, width){
 
   if(typeof t.amountPaid === "number"){
     text(padRow("Bayar", Reports.formatRupiah(t.amountPaid), width) + "\n");
-    text(padRow("Kembalian", Reports.formatRupiah(t.changeAmount||0), width) + "\n");
+    const change = t.changeAmount||0;
+    text(padRow(change < 0 ? "Kurang Bayar" : "Kembalian", Reports.formatRupiah(Math.abs(change)), width) + "\n");
     text("\n");
   }
   if(t.paymentMethod) text(padRow("Metode", PAYMENT_METHOD_LABEL[t.paymentMethod] || t.paymentMethod, width) + "\n");
@@ -5792,7 +5796,7 @@ function printReceiptSystemDialog(t){
       <div class="pr-total"><span>TOTAL</span><span>${Reports.formatRupiah(t.orderTotal ?? t.amount)}</span></div>
       ${typeof t.amountPaid === "number" ? `
         <div class="pr-row"><span>Bayar</span><span>${Reports.formatRupiah(t.amountPaid)}</span></div>
-        <div class="pr-row"><span>Kembalian</span><span>${Reports.formatRupiah(t.changeAmount||0)}</span></div>
+        <div class="pr-row"><span>${(t.changeAmount||0) < 0 ? 'Kurang Bayar' : 'Kembalian'}</span><span>${Reports.formatRupiah(Math.abs(t.changeAmount||0))}</span></div>
       ` : ""}
       ${t.paymentMethod ? `<div class="pr-row"><span>Metode</span><span>${PAYMENT_METHOD_LABEL[t.paymentMethod] || t.paymentMethod}</span></div>` : ""}
       ${t.paymentStatus === "belum-lunas" ? `
@@ -5848,7 +5852,8 @@ async function generateReceiptCanvas(t){
   const payRows = [];
   if(typeof t.amountPaid === "number"){
     payRows.push(["Bayar", Reports.formatRupiah(t.amountPaid)]);
-    payRows.push(["Kembalian", Reports.formatRupiah(t.changeAmount||0)]);
+    const change = t.changeAmount||0;
+    payRows.push([change < 0 ? "Kurang Bayar" : "Kembalian", Reports.formatRupiah(Math.abs(change))]);
   }
   if(t.paymentMethod) payRows.push(["Metode", PAYMENT_METHOD_LABEL[t.paymentMethod] || t.paymentMethod]);
   if(t.paymentStatus === "belum-lunas"){
